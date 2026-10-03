@@ -31,7 +31,7 @@ public sealed partial class McpServer : IDisposable
         NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
     };
 
-    private readonly Dictionary<string, McpTool> tools;
+    private readonly ToolRegistry tools;
     private readonly Configuration config;
     private readonly string version;
     private HttpListener? listener;
@@ -45,18 +45,19 @@ public sealed partial class McpServer : IDisposable
     public DateTime? StartedUtc { get; private set; }
     private long requestCount;
 
-    internal McpServer(IEnumerable<McpTool> tools, Configuration config, Util.CacheRegistry caches)
+    internal McpServer(ToolRegistry tools, Configuration config, Util.CacheRegistry caches)
     {
-        this.tools = tools.ToDictionary(t => t.Name);
+        this.tools = tools;
         this.config = config;
         this.caches = caches;
         caches.Updated += OnCacheUpdated;
         availableTools = AvailableToolNames();
         Svc.PluginInterface.ActivePluginsChanged += OnPluginsChanged;
+        tools.Changed += NotifyIfToolsChanged;
         version = typeof(McpServer).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
     }
 
-    public IReadOnlyCollection<McpTool> Tools => tools.Values;
+    public IReadOnlyCollection<McpTool> Tools => tools.All;
 
     public string Endpoint => $"http://localhost:{config.Port}/mcp";
 
@@ -97,19 +98,27 @@ public sealed partial class McpServer : IDisposable
     {
         caches.Updated -= OnCacheUpdated;
         Svc.PluginInterface.ActivePluginsChanged -= OnPluginsChanged;
+        tools.Changed -= NotifyIfToolsChanged;
         Stop();
     }
 
     private string availableTools;
+    private readonly Lock toolListLock = new();
 
-    private string AvailableToolNames() => string.Join(",", tools.Values.Where(t => t.IsAvailable).Select(t => t.Name).Order());
+    private string AvailableToolNames() => string.Join(",", tools.All.Where(t => t.IsAvailable).Select(t => t.Name).Order());
 
     /// <summary>Some tools only exist while the plugin they drive is loaded: tell clients when the tool list changes.</summary>
-    private void OnPluginsChanged(Dalamud.Plugin.IActivePluginsChangedEventArgs args)
+    private void OnPluginsChanged(Dalamud.Plugin.IActivePluginsChangedEventArgs args) => NotifyIfToolsChanged();
+
+    /// <summary>Sends notifications/tools/list_changed when the set of available tools differs from what clients last saw.</summary>
+    public void NotifyIfToolsChanged()
     {
         var now = AvailableToolNames();
-        if (now == availableTools) return;
-        availableTools = now;
+        lock (toolListLock)
+        {
+            if (now == availableTools) return;
+            availableTools = now;
+        }
         var frame = $"event: message\ndata: {new JsonObject { ["jsonrpc"] = "2.0", ["method"] = "notifications/tools/list_changed" }.ToJsonString(JsonOptions)}\n\n";
         foreach (var session in sessions.Values)
         {
@@ -261,7 +270,7 @@ public sealed partial class McpServer : IDisposable
             {
                 "initialize" => Initialize(@params, res),
                 "ping" => new JsonObject(),
-                "tools/list" => new JsonObject { ["tools"] = new JsonArray(tools.Values.Where(t => t.IsAvailable).OrderBy(t => t.Name).Select(t => (JsonNode)t.ToListEntry()).ToArray()) },
+                "tools/list" => new JsonObject { ["tools"] = new JsonArray(tools.All.Where(t => t.IsAvailable).OrderBy(t => t.Name).Select(t => (JsonNode)t.ToListEntry()).ToArray()) },
                 "tools/call" => await CallTool(@params, ct).ConfigureAwait(false),
                 "resources/list" => ListResources(),
                 "resources/templates/list" => new JsonObject { ["resourceTemplates"] = new JsonArray() },
@@ -327,7 +336,7 @@ public sealed partial class McpServer : IDisposable
     private async Task<JsonNode> CallTool(JsonObject? p, CancellationToken ct)
     {
         var name = p?["name"]?.GetValue<string>() ?? throw new RpcException(-32602, "Missing tool name");
-        if (!tools.TryGetValue(name, out var tool)) throw new RpcException(-32602, $"Unknown tool: {name}");
+        if (!tools.TryGet(name, out var tool)) throw new RpcException(-32602, $"Unknown tool: {name}");
         if (!tool.IsAvailable)
             return new JsonObject
             {

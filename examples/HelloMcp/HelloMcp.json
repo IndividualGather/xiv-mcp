@@ -1,0 +1,8 @@
+{
+  "Author": "IndividualGather",
+  "Name": "Hello MCP",
+  "Punchline": "Example plugin for the XIV MCP plugin API.",
+  "Description": "Offers a few example tools to AI assistants through XIV MCP and starts a background job. Meant as a starting point for plugin developers.",
+  "ApplicableVersion": "any",
+  "Tags": ["mcp", "example"]
+}

@@ -34,7 +34,12 @@ internal static class AutoDutyBridge
     public static void Run(uint territoryType, int loops) =>
         Svc.PluginInterface.GetIpcSubscriber<uint, int, bool, object>("AutoDuty.Run").InvokeAction(territoryType, loops, false);
 
-    public static void Stop() => Svc.PluginInterface.GetIpcSubscriber<object>("AutoDuty.Stop").InvokeAction();
+    /// <summary>Continues the current duty from where the path is (not from the start).</summary>
+    public static void Resume() => Svc.PluginInterface.GetIpcSubscriber<bool, object>("AutoDuty.Start").InvokeAction(false);
+
+    public static bool Running() => IsLooping() || !IsStopped();
+
+    public static void Stop() =>Svc.PluginInterface.GetIpcSubscriber<object>("AutoDuty.Stop").InvokeAction();
 
     public static bool IsLooping() => Svc.PluginInterface.GetIpcSubscriber<bool>("AutoDuty.IsLooping").InvokeFunc();
 

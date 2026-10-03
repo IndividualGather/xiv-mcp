@@ -27,6 +27,8 @@ public sealed class Plugin : IDalamudPlugin
     internal JobManager? Jobs => jobs;
     private readonly PluginCompat compat;
     private readonly CacheRegistry caches;
+    private readonly XivMcp.Api.PluginApi pluginApi;
+    internal XivMcp.Api.PluginApi PluginApi => pluginApi;
 
     internal static Plugin? Instance { get; private set; }
 
@@ -98,10 +100,12 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(CacheTools.Create(caches))
             .Concat(JobTools.Create(() => jobs!, () => Server?.LastClient))
             .ToList();
-        jobs = new JobManager(tools);
+        var registry = new ToolRegistry(tools);
+        jobs = new JobManager(registry);
         caches.Add(jobs);
         foreach (var t in tools) t.ParsedSchema(); // logs any tool whose input schema is not valid JSON, right at startup
-        Server = new McpServer(tools, Config, caches);
+        Server = new McpServer(registry, Config, caches);
+        pluginApi = new XivMcp.Api.PluginApi(registry, Config, () => jobs);
 
         configWindow = new ConfigWindow(this);
         windows.AddWindow(configWindow);
@@ -117,6 +121,7 @@ public sealed class Plugin : IDalamudPlugin
         });
 
         if (Config.ServerEnabled) Server.Start();
+        pluginApi.AnnounceReady(); // plugins that loaded before us register their tools now
     }
 
     public void Dispose()
@@ -127,6 +132,7 @@ public sealed class Plugin : IDalamudPlugin
         Svc.PluginInterface.UiBuilder.OpenMainUi -= configWindow.Toggle;
         Consent.DeclineAll();
         windows.RemoveAllWindows();
+        pluginApi.Dispose();
         jobs?.Dispose();
         Server.Dispose();
         workshop.Dispose();

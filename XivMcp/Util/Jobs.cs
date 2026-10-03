@@ -57,7 +57,7 @@ internal sealed class JobManager : IDisposable, ICache
     /// <summary>Tools that may not be steps (job control itself).</summary>
     public static readonly HashSet<string> ControlTools = ["start_job", "list_jobs", "get_job", "update_job", "pause_job", "resume_job", "cancel_job"];
 
-    private readonly Dictionary<string, McpTool> tools;
+    private readonly ToolRegistry tools;
     private readonly string file = Path.Combine(Svc.PluginInterface.GetPluginConfigDirectory(), "jobs.json");
     private readonly List<Job> jobs;
     private readonly Lock sync = new();
@@ -69,9 +69,9 @@ internal sealed class JobManager : IDisposable, ICache
 
     public static JobManager? Instance { get; private set; }
 
-    public JobManager(IEnumerable<McpTool> tools)
+    public JobManager(ToolRegistry tools)
     {
-        this.tools = tools.ToDictionary(t => t.Name);
+        this.tools = tools;
         try { jobs = File.Exists(file) ? JsonSerializer.Deserialize<List<Job>>(File.ReadAllText(file), JsonOptions) ?? [] : []; }
         catch (Exception ex) { Svc.Log.Warning($"[MCP] jobs.json unreadable, starting empty: {ex.Message}"); jobs = []; }
         // Whatever was running when the plugin stopped resumes only when someone says so.
@@ -105,6 +105,17 @@ internal sealed class JobManager : IDisposable, ICache
     public bool StepRunning
     {
         get { lock (sync) return runningJobId is not null; }
+    }
+
+    /// <summary>Adds a progress line to the running job's log if its current step is <paramref name="tool"/> (used by plugin tools).</summary>
+    public void StepProgress(string tool, string text)
+    {
+        lock (sync)
+        {
+            if (runningJobId is not { } id || jobs.FirstOrDefault(j => j.Id == id) is not { } job || job.Current?.Tool != tool) return;
+            AddLog(job, $"{job.Current.Id}: {text}");
+            Changed();
+        }
     }
 
     public string? RunningJobName
@@ -276,7 +287,9 @@ internal sealed class JobManager : IDisposable, ICache
             var interrupted = false;
             try
             {
-                result = await tools[step.Tool].Handler(new ToolArgs(args), stepCts.Token).ConfigureAwait(false);
+                if (!tools.TryGet(step.Tool, out var stepTool)) throw new ToolException($"The tool '{step.Tool}' no longer exists (its plugin was unloaded or unregistered it).");
+                if (!stepTool.IsAvailable) throw new ToolException($"'{step.Tool}' is not available right now (the plugin it needs is not loaded or not allowed).");
+                result = await stepTool.Handler(new ToolArgs(args), stepCts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) { interrupted = true; }
             catch (ToolException ex) { error = ex.Message; }
@@ -339,16 +352,14 @@ internal sealed class JobManager : IDisposable, ICache
                 case JsonObject o:
                     foreach (var key in o.Select(kv => kv.Key).ToList())
                     {
-                        if (o[key] is JsonValue v && v.TryGetValue<string>(out var s) && Placeholder.Match(s) is { Success: true } m)
-                            o[key] = Lookup(job, m.Groups[1].Value, m.Groups[2].Value);
+                        if (o[key] is JsonValue v && v.TryGetValue<string>(out var s) && s.Contains("{{")) o[key] = Substitute(job, s);
                         else Walk(o[key]);
                     }
                     break;
                 case JsonArray a:
                     for (var i = 0; i < a.Count; i++)
                     {
-                        if (a[i] is JsonValue v && v.TryGetValue<string>(out var s) && Placeholder.Match(s) is { Success: true } m)
-                            a[i] = Lookup(job, m.Groups[1].Value, m.Groups[2].Value);
+                        if (a[i] is JsonValue v && v.TryGetValue<string>(out var s) && s.Contains("{{")) a[i] = Substitute(job, s);
                         else Walk(a[i]);
                     }
                     break;
@@ -359,6 +370,20 @@ internal sealed class JobManager : IDisposable, ICache
     }
 
     private static readonly Regex Placeholder = new(@"^\{\{([A-Za-z0-9_-]+)\.([^}]+)\}\}$");
+    private static readonly Regex EmbeddedPlaceholder = new(@"\{\{([A-Za-z0-9_-]+)\.([^}]+)\}\}");
+
+    /// <summary>A whole-string placeholder keeps the value's type; placeholders inside a longer string are replaced by the value as text.</summary>
+    private static JsonNode? Substitute(Job job, string s)
+    {
+        if (Placeholder.Match(s) is { Success: true } whole) return Lookup(job, whole.Groups[1].Value, whole.Groups[2].Value);
+        if (!EmbeddedPlaceholder.IsMatch(s)) return JsonValue.Create(s);
+        return JsonValue.Create(EmbeddedPlaceholder.Replace(s, m => Lookup(job, m.Groups[1].Value, m.Groups[2].Value) switch
+        {
+            JsonValue v when v.TryGetValue<string>(out var text) => text,
+            null => "",
+            var node => node.ToJsonString(),
+        }));
+    }
 
     private static JsonNode? Lookup(Job job, string stepId, string path)
     {
@@ -385,9 +410,9 @@ internal sealed class JobManager : IDisposable, ICache
         var n = used.Count;
         foreach (var s in steps)
         {
-            if (!tools.ContainsKey(s.Tool)) throw new ToolException($"Unknown tool '{s.Tool}' in a step.");
+            if (!tools.TryGet(s.Tool, out var stepTool)) throw new ToolException($"Unknown tool '{s.Tool}' in a step.");
             if (ControlTools.Contains(s.Tool)) throw new ToolException($"'{s.Tool}' can't be a job step.");
-            if (!tools[s.Tool].IsAvailable) throw new ToolException($"'{s.Tool}' is not available right now (the plugin it needs is not loaded).");
+            if (!stepTool.IsAvailable) throw new ToolException($"'{s.Tool}' is not available right now (the plugin it needs is not loaded).");
             if (string.IsNullOrWhiteSpace(s.Id)) s.Id = $"s{++n}";
             if (!used.Add(s.Id)) throw new ToolException($"Duplicate step id '{s.Id}'.");
         }

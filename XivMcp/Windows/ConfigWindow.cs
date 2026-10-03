@@ -376,6 +376,8 @@ internal sealed class ConfigWindow : Window
             "Enable, disable and reload other Dalamud plugins, and read or change their settings. Every change is backed up to pluginConfigs/XivMcp/backups.",
             "Uses Dalamud internals; may need an update after Dalamud updates.");
 
+        DrawPluginTools();
+
         // Compatibility is only shown for plugins the player already has installed; otherwise the section doesn't exist.
         if (compat is not { } c || !(c.AutoRetainer || c.YesAlready || c.TextAdvance || c.Fcch || c.WaymarkPresetPlugin || c.Vnavmesh || c.Lifestream || c.Artisan || c.GatherBuddy || c.ItemVendorLocation)) return;
         ImGui.Spacing();
@@ -539,6 +541,40 @@ internal sealed class ConfigWindow : Window
         ImGui.PopTextWrapPos();
         footer?.Invoke();
         if (value) extra?.Invoke();
+    }
+
+    /// <summary>Plugins that offer tools through the plugin API: each one is off until the player allows it.</summary>
+    private void DrawPluginTools()
+    {
+        var owners = plugin.PluginApi.Owners();
+        if (owners.Count == 0) return;
+        ImGui.Spacing();
+        Section(FontAwesomeIcon.PlusSquare, "Tools from other plugins");
+        ImGui.PushTextWrapPos();
+        ImGui.TextColored(Muted, "These plugins offer their own tools to your assistant through XIV MCP. A plugin's tools are only offered once you allow it here; " +
+                                 "they act with that plugin's own logic, so only allow plugins you trust.");
+        ImGui.PopTextWrapPos();
+        foreach (var o in owners)
+        {
+            var allowed = o.Allowed;
+            if (ImGuiComponents.ToggleButton($"##ext-{o.InternalName}", ref allowed))
+            {
+                if (allowed) plugin.Config.AllowedToolPlugins.Add(o.InternalName);
+                else plugin.Config.AllowedToolPlugins.Remove(o.InternalName);
+                plugin.Config.Save();
+                plugin.Server.NotifyIfToolsChanged();
+            }
+            ImGui.SameLine();
+            ImGui.TextColored(allowed ? Gold : ImGui.GetStyle().Colors[(int)ImGuiCol.Text], o.DisplayName);
+            ImGui.SameLine();
+            var acting = o.Tools.Count(t => !t.ReadOnly);
+            var state = !o.Loaded ? "not loaded"
+                      : o.Tools.Count == 0 ? "no tools registered right now"
+                      : $"{o.Tools.Count} tool{(o.Tools.Count == 1 ? "" : "s")}" + (acting > 0 ? $", {acting} acting in game" : ", read only");
+            ImGui.TextColored(allowed && o.Loaded ? Green : Muted, state);
+            if (o.Tools.Count > 0)
+                Tooltip(string.Join("\n", o.Tools.Select(t => $"{t.Name}{(t.ReadOnly ? "" : t.Destructive ? "  (changes files)" : "  (acts in game)")}")));
+        }
     }
 
     private static void CompatRow(string name, string state)

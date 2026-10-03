@@ -44,6 +44,9 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Allows online lookups (FFXIV Teamcraft's item data, ffxiv.consolegameswiki.com, universalis.app prices).</summary>
     public bool AllowOnlineData { get; set; }
 
+    /// <summary>Plugins (by internal name) whose tools, registered through the plugin API, are offered to clients. Off until the player allows a plugin.</summary>
+    public System.Collections.Generic.HashSet<string> AllowedToolPlugins { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Optional: gil purchases costing more than this in one buy_item call also ask in game first (0 = gil never asks).</summary>
     public int AskAboveGil { get; set; }
 

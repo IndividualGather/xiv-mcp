@@ -24,6 +24,9 @@ public sealed class McpTool
     /// <summary>True for tools whose changes may be hard to undo (e.g. overwriting config files).</summary>
     public bool Destructive { get; init; }
 
+    /// <summary>Internal name of the plugin that registered the tool through the plugin API; null for built-in tools.</summary>
+    public string? Owner { get; init; }
+
     /// <summary>When set, the tool is only listed (and callable) while this returns true, e.g. while the plugin it drives is loaded.</summary>
     public Func<bool>? Available { get; init; }
 
@@ -74,6 +77,9 @@ public sealed class ToolException(string message) : Exception(message);
 public sealed class ToolArgs(JsonObject? args)
 {
     private readonly JsonObject args = args ?? [];
+
+    /// <summary>The arguments as sent by the client.</summary>
+    public JsonObject Raw => args;
 
     public JsonNode? Node(string name) => args[name];
 

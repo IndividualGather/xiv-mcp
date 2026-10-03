@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using Dalamud.Game.ClientState.Conditions;
 using XivMcp.Mcp;
 using XivMcp.Util;
 
@@ -96,16 +97,37 @@ internal static class DutyTools
 
         yield return new McpTool
         {
+            Name = "leave_duty",
+            Description = "Leaves the current duty like the Duty Finder's Leave entry. If AutoDuty is running it keeps fighting until you are out " +
+                          "of combat, then it is stopped and the duty left right away (never mid-fight). Needs 'Game & navigation' in /xivmcp.",
+            ReadOnly = false,
+            Handler = async (_, ct) =>
+            {
+                RequireEnabled();
+                if (!await Game.RunLoggedIn(DutyExit.InDuty).ConfigureAwait(false)) throw new ToolException("You are not in a duty.");
+                if (AutoDutyBridge.Loaded && await Game.Run(AutoDutyBridge.Running).ConfigureAwait(false))
+                {
+                    if (!await StopSafely(true, TimeSpan.FromMinutes(10), ct, ownsOverrides: false).ConfigureAwait(false))
+                        throw new ToolException("AutoDuty was stopped, but leaving the duty did not work.");
+                }
+                else await DutyExit.Leave(TimeSpan.FromMinutes(3), ct).ConfigureAwait(false);
+                return "Left the duty.";
+            },
+        };
+
+        yield return new McpTool
+        {
             Name = "stop_duty",
-            Description = "Stops AutoDuty (it may leave you inside the duty). A running run_duty job step is stopped with pause_job / cancel_job instead. " +
+            Description = "Stops AutoDuty, but never mid-fight: it keeps fighting until you are out of combat (it may leave you inside the duty; leave_duty leaves it). A running run_duty job step is stopped with pause_job / cancel_job instead. " +
                           "Only available while AutoDuty is loaded.",
             ReadOnly = false,
             Available = Available,
-            Handler = async (_, _) =>
+            Handler = async (_, ct) =>
             {
                 RequireEnabled();
-                await Game.Run(() => { AutoDutyBridge.Stop(); return true; }).ConfigureAwait(false);
-                return "AutoDuty stopped.";
+                if (!await Game.Run(AutoDutyBridge.Running).ConfigureAwait(false)) return "AutoDuty is not running.";
+                await StopSafely(false, TimeSpan.FromMinutes(10), ct, ownsOverrides: false).ConfigureAwait(false);
+                return "AutoDuty stopped (after the fight, if one was going on).";
             },
         };
 
@@ -285,14 +307,15 @@ internal static class DutyTools
 
                         if (DateTime.UtcNow - started > timeout)
                         {
-                            await Game.Run(() => { AutoDutyBridge.Stop(); return true; }).ConfigureAwait(false);
-                            throw new ToolException($"Timed out after {timeout.TotalMinutes:N0} minutes ({runsDone} runs done); AutoDuty was stopped.");
+                            var left = await StopAndLeaveAfterRun().ConfigureAwait(false);
+                            throw new ToolException($"Timed out after {timeout.TotalMinutes:N0} minutes ({runsDone} runs done); AutoDuty was stopped{(left ? " and the duty left" : "")}.");
                         }
                     }
                 }
                 catch (OperationCanceledException)
                 {
-                    await Game.Run(() => { AutoDutyBridge.Stop(); return true; }).ConfigureAwait(false);
+                    // Cancelled or paused: stop AutoDuty once out of combat and leave the duty, rather than leaving the player standing in it.
+                    await StopAndLeaveAfterRun().ConfigureAwait(false);
                     throw;
                 }
                 finally
@@ -322,6 +345,80 @@ internal static class DutyTools
                 return new { done = true, duty = plan.Duty.Name, mode = plan.Mode, gearset = switchedTo?.Name, runs = runsDone, minutes };
             },
         };
+    }
+
+    /// <summary>
+    /// Stops AutoDuty without leaving the player defenceless: it keeps fighting until the player has been out of combat for a few
+    /// seconds, and only then is stopped (and, with <paramref name="leave"/>, the duty left right away). If a fight starts again before
+    /// the player is out (a patrol, an add), AutoDuty is resumed for that fight and stopping is tried again afterwards. If the player is
+    /// still in combat at the timeout, AutoDuty is left running. Returns true if a duty was left.
+    /// <paramref name="ownsOverrides"/>: false when no run_duty overrides are active, so the loop-count override this may push for a
+    /// resume is popped here.
+    /// </summary>
+    private static async Task<bool> StopSafely(bool leave, TimeSpan timeout, CancellationToken ct, bool ownsOverrides)
+    {
+        var until = DateTime.UtcNow + timeout;
+        DateTime? calmSince = null;
+        var pushed = false;
+        try
+        {
+            while (DateTime.UtcNow < until)
+            {
+                var s = await Game.Run(() => (Combat: Svc.Condition[ConditionFlag.InCombat], InDuty: DutyExit.InDuty(),
+                                              Running: AutoDutyBridge.Loaded && AutoDutyBridge.Running())).ConfigureAwait(false);
+                if (s.Combat)
+                {
+                    calmSince = null;
+                    if (!s.Running && s.InDuty && AutoDutyBridge.Loaded)
+                    {
+                        // We stopped it and a fight started: let AutoDuty fight it (one loop, from where the path is).
+                        await Game.Run(() =>
+                        {
+                            if (!pushed) { AutoDutyBridge.Override("AutoDutyModeEnum", "Looping"); AutoDutyBridge.Override("LoopTimes", "1"); pushed = true; }
+                            AutoDutyBridge.Resume();
+                            return true;
+                        }).ConfigureAwait(false);
+                        Svc.Log.Information("[MCP] Combat started after stopping AutoDuty; resumed it until the fight is over.");
+                    }
+                    await Task.Delay(1000, ct).ConfigureAwait(false);
+                    continue;
+                }
+                if (!s.InDuty && !s.Running) return false;
+                calmSince ??= DateTime.UtcNow;
+                if (DateTime.UtcNow - calmSince < TimeSpan.FromSeconds(3))
+                {
+                    await Task.Delay(500, ct).ConfigureAwait(false);
+                    continue;
+                }
+                // Out of combat for 3 s: stop in the same frame as the check.
+                var stopped = await Game.Run(() =>
+                {
+                    if (Svc.Condition[ConditionFlag.InCombat]) return false;
+                    if (AutoDutyBridge.Loaded && AutoDutyBridge.Running()) AutoDutyBridge.Stop();
+                    return true;
+                }).ConfigureAwait(false);
+                if (!stopped) continue;
+                if (!leave || !s.InDuty) return false;
+                try { return await DutyExit.Leave(TimeSpan.FromSeconds(30), ct, abortOnCombat: true).ConfigureAwait(false); }
+                catch (ToolException ex) { Svc.Log.Information($"[MCP] {ex.Message} Retrying after the fight."); calmSince = null; }
+            }
+            throw new ToolException("Still in combat at the time limit, so AutoDuty was left running (stopping it mid-fight could get you killed).");
+        }
+        finally
+        {
+            if (pushed && !ownsOverrides) await Game.Run(() => { AutoDutyBridge.PopOverrides(); return true; }).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>run_duty's cancel / timeout path: stop safely and leave; never throws. True if a duty was left.</summary>
+    private static async Task<bool> StopAndLeaveAfterRun()
+    {
+        try { return await StopSafely(true, TimeSpan.FromMinutes(60), CancellationToken.None, ownsOverrides: true).ConfigureAwait(false); }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"[MCP] Stopping AutoDuty / leaving the duty: {ex.Message}");
+            return false;
+        }
     }
 
     private static AutoDutyBridge.Duty ResolveDuty(List<AutoDutyBridge.Duty> duties, string query)

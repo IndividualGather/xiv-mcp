@@ -2,7 +2,7 @@
 
 # XIV MCP
 
-A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV that runs a local **Model Context Protocol (MCP) server** inside the game client. It gives AI assistants such as Claude Code or Codex access to the live data of the logged-in character. Reading is always allowed; everything that changes something is opt-in.
+A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV that runs a local **Model Context Protocol (MCP) server** inside the game client. It gives AI assistants such as Claude Code or Codex access to the live data of the logged-in character. Reading is always allowed; everything that changes something is opt-in. Other plugins can add their own tools ([for plugin developers](#for-plugin-developers)).
 
 - **Transport:** MCP Streamable HTTP (JSON responses) at `http://localhost:37521/mcp`, bound to localhost only
 - **Auth:** bearer token, generated on first start (can be turned off)
@@ -23,6 +23,8 @@ A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV th
 | **Plugin management** | Enabling, disabling and reloading plugins, and editing their settings |
 
 Some tools need another plugin. The settings only show compatibility rows and plugin-specific options for plugins that are installed.
+
+**Tools from other plugins.** Other plugins can offer their own tools through XIV MCP ([plugin API](#for-plugin-developers)). Each one appears under **Tools from other plugins** with its tool count and stays off until you switch it on. Its tools then act with that plugin's own logic, so only allow plugins you trust.
 
 ## Tools
 
@@ -148,9 +150,10 @@ Neither plugin has IPC for its lists, so editing one briefly unloads the plugin,
 |---|---|
 | `list_duties` | Duties AutoDuty has a path for, with level and item level and the modes it can run them in (Support, Trust, Squadron, Regular, …) |
 | `run_duty` | Runs a duty with AutoDuty, `loops` times or `until` the inventory holds the items or currency you want (e.g. a drop, or tomestones: `{ item, quantity }` or `{ item, gain }`). `gearset` switches to a combat job first; on a crafter or gatherer it is required |
-| `get_duty_status` / `stop_duty` | What AutoDuty is doing (stage, duty, loop); stop it |
+| `get_duty_status` / `stop_duty` | What AutoDuty is doing (stage, duty, loop); stop it (after the current fight) |
+| `leave_duty` | Leaves the current duty like the Duty Finder's Leave entry; if AutoDuty is running it is stopped first, after the current fight (works without AutoDuty too) |
 
-AutoDuty does the running and the looping. For a `run_duty` call, its loop count, duty mode, unsynced setting and stop conditions are set temporarily through its IPC overrides (never saved), and its termination action is set to do nothing. They are restored afterwards. Its "stop at item quantity" list has no IPC, so it is swapped in memory while the run lasts and put back after. This may need an update when AutoDuty changes. A run takes about 20 minutes, so use `run_duty` as a job step. Pausing or cancelling the job stops AutoDuty, which may leave you inside the duty. These tools disappear from the tool list while AutoDuty isn't loaded, and clients are notified (`notifications/tools/list_changed`).
+AutoDuty does the running and the looping. For a `run_duty` call, its loop count, duty mode, unsynced setting and stop conditions are set temporarily through its IPC overrides (never saved), and its termination action is set to do nothing. They are restored afterwards. Its "stop at item quantity" list has no IPC, so it is swapped in memory while the run lasts and put back after. This may need an update when AutoDuty changes. A run takes about 20 minutes, so use `run_duty` as a job step. Pausing or cancelling the job (or its timeout) stops AutoDuty and leaves the duty, but **never mid-fight**: AutoDuty keeps fighting until you have been out of combat for a few seconds, and is resumed if a fight starts again before you are out. These tools disappear from the tool list while AutoDuty isn't loaded, and clients are notified (`notifications/tools/list_changed`).
 
 ### Background jobs
 
@@ -165,6 +168,8 @@ A job is a queue of tool calls XIV MCP runs in the game, one after another, for 
 | `wait` | A step that waits a number of seconds or until a time |
 
 When a step fails or is stopped, the job becomes **pending** and waits for the agent to fix it. While a step runs, other changing tool calls are refused so they can't collide with the job. Jobs survive plugin reloads and come back paused. Each step still needs its own permission.
+
+A string argument `"{{stepId.path}}"` takes the value from an earlier step's result, keeping its type. Inside a longer string (`"Made {{craft.crafted}} pies"`), it's replaced by the value as text.
 
 Example: `prepare_craft_plan` → `gather_until` (the missing materials) → `run_crafting_list` with `{{plan.list.id}}`.
 
@@ -277,6 +282,27 @@ http_headers = { "Authorization" = "Bearer <token>" }
 ```
 
 **The token** is generated once on first start and saved with the plugin settings. It stays the same across game restarts until you click **Regenerate** in `/xivmcp`.
+
+## For plugin developers
+
+Your Dalamud plugin can offer tools to AI assistants through XIV MCP, and start background jobs, over Dalamud IPC. You don't need a server or a reference to XIV MCP, and your plugin keeps working without it.
+
+```csharp
+mcp = new XivMcpClient(pluginInterface);                     // examples/XivMcpClient.cs, copied into your plugin
+mcp.AddTool(new("myplugin_status", "What My Plugin is doing right now.") { ReadOnly = true },
+            args => new { mode = Mode.ToString() });
+```
+
+- **Guide:** [docs/plugin-api.md](docs/plugin-api.md) covers quick start, writing tools assistants use well, long-running tools and cancellation, jobs, the IPC reference and troubleshooting.
+- **Examples:** [examples/](examples) holds the drop-in client `XivMcpClient.cs` and *Hello MCP*, a complete example plugin with a quick tool, an acting tool, a long-running tool and a job.
+
+Five things to get right:
+
+1. **Prefix tool names** with your plugin's name, and start them with a verb: `myplugin_set_mode`.
+2. **Write descriptions for the assistant:** what the tool does, when to use it, what it needs, and what comes before or after.
+3. **Set `ReadOnly` honestly.** Acting tools are held back while a job step runs, which prevents collisions.
+4. **Keep quick tools quick.** They run on the framework thread. Anything that waits is a long-running tool.
+5. **Cancel safely:** finish the fight, close the window, then stop.
 
 ## Notes
 
