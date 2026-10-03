@@ -225,15 +225,19 @@ internal sealed class ConfigWindow : Window
             "Enable, disable and reload other Dalamud plugins, and read or change their settings. Every change is backed up to pluginConfigs/XivMcp/backups.",
             "Uses Dalamud internals; may need an update after Dalamud updates.");
 
+        // Compatibility is only shown for plugins the player already has installed; otherwise the section doesn't exist.
+        if (compat is not { } c || !(c.AutoRetainer || c.YesAlready || c.TextAdvance)) return;
         ImGui.Spacing();
-        Section(FontAwesomeIcon.Robot, "Automation plugins");
-        if (compat is not { } c) return;
-        CompatRow("AutoRetainer", c.AutoRetainer,
-            c.SuppressedByUs ? "paused by XIV MCP while it uses the summoning bell"
-            : c.AutoRetainerBusy == true ? "busy (XIV MCP waits for it)"
-            : c.AutoRetainerSuppressed == true ? "suppressed by another plugin" : "idle — paused automatically when XIV MCP uses the bell");
-        CompatRow("YesAlready", c.YesAlready, c.ClickersPausedByUs ? "paused by XIV MCP" : "paused automatically while XIV MCP drives retainer windows");
-        CompatRow("TextAdvance", c.TextAdvance, c.ClickersPausedByUs ? "paused by XIV MCP" : "paused automatically while XIV MCP drives retainer windows");
+        Section(FontAwesomeIcon.Robot, "Compatibility");
+        if (c.AutoRetainer)
+            CompatRow("AutoRetainer",
+                c.SuppressedByUs ? "paused while XIV MCP uses the summoning bell"
+                : c.AutoRetainerBusy == true ? "busy, XIV MCP waits for it"
+                : "paused automatically when XIV MCP uses the summoning bell");
+        if (c.YesAlready)
+            CompatRow("YesAlready", c.ClickersPausedByUs ? "paused by XIV MCP right now" : "paused automatically while XIV MCP uses retainer windows");
+        if (c.TextAdvance)
+            CompatRow("TextAdvance", c.ClickersPausedByUs ? "paused by XIV MCP right now" : "paused automatically while XIV MCP uses retainer windows");
     }
 
     /// <summary>Pause between item moves: random within a range (default 500-800 ms) or an exact value.</summary>
@@ -313,13 +317,13 @@ internal sealed class ConfigWindow : Window
         if (value) extra?.Invoke();
     }
 
-    private static void CompatRow(string name, bool installed, string state)
+    private static void CompatRow(string name, string state)
     {
-        IconText(installed ? FontAwesomeIcon.Check : FontAwesomeIcon.Circle, installed ? Green : Muted);
+        IconText(FontAwesomeIcon.Check, Green);
         ImGui.SameLine();
         ImGui.TextUnformatted(name);
         ImGui.SameLine(150 * ImGuiHelpers.GlobalScale);
-        ImGui.TextColored(Muted, installed ? state : "not installed");
+        ImGui.TextColored(Muted, state);
     }
 
     // ---------------------------------------------------------------- caches
