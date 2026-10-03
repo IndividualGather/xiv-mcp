@@ -24,7 +24,7 @@ internal static class InteractionTools
     {
         [2] = ["Character"], [3] = ["ActionMenu"], [4] = ["Journal"], [5] = ["ContentsInfo"], [6] = ["Achievement"],
         [7] = ["GatheringNoteBook"], [8] = ["MonsterNote"], [9] = ["RecipeNote"], [10] = ["Inventory", "InventoryLarge", "InventoryExpansion"],
-        [11] = ["InventoryEvent"], [13] = ["FriendList"], [16] = ["AreaMap"], [17] = ["Emote"], [25] = ["ArmouryBoard"],
+        [11] = ["InventoryEvent"], [13] = ["FriendList"], [16] = ["AreaMap"], [17] = ["Emote"], [21] = ["Macro"], [25] = ["ArmouryBoard"],
         [27] = ["FreeCompany"], [29] = ["FishingNoteBook"], [33] = ["ContentsFinder"], [35] = ["Teleport"], [41] = ["FishGuide2"],
         [57] = ["LookingForGroup"], [60] = ["ContentsNote"], [61] = ["MountNoteBook"], [62] = ["MinionNoteBook"], [65] = ["GoldSaucerInfo"],
         [66] = ["Currency"], [67] = ["AetherCurrent"], [69] = ["OrchestrionPlayList"], [77] = ["InventoryBuddy"], [87] = ["Collection"],

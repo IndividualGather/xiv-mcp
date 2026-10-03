@@ -306,9 +306,15 @@ public sealed partial class McpServer : IDisposable
 
         string text;
         var isError = false;
+        IReadOnlyList<ToolImage> images = [];
         try
         {
             var result = await tool.Handler(new ToolArgs(p?["arguments"] as JsonObject), ct).ConfigureAwait(false);
+            if (result is ToolResultWithImages withImages)
+            {
+                images = withImages.Images;
+                result = withImages.Data;
+            }
             text = result as string ?? JsonSerializer.Serialize(result, JsonOptions);
         }
         catch (ToolException ex)
@@ -323,11 +329,13 @@ public sealed partial class McpServer : IDisposable
             isError = true;
         }
 
-        return new JsonObject
+        var content = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = text });
+        foreach (var image in images)
         {
-            ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = text }),
-            ["isError"] = isError,
-        };
+            if (image.Caption is not null) content.Add(new JsonObject { ["type"] = "text", ["text"] = image.Caption });
+            content.Add(new JsonObject { ["type"] = "image", ["data"] = Convert.ToBase64String(image.Png), ["mimeType"] = "image/png" });
+        }
+        return new JsonObject { ["content"] = content, ["isError"] = isError };
     }
 
     private static JsonObject Error(JsonNode? id, int code, string message) => new()

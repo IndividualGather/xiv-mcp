@@ -38,6 +38,12 @@ public sealed class McpTool
     };
 }
 
+/// <summary>A PNG returned as an MCP image content block, optionally preceded by a caption text block.</summary>
+public sealed record ToolImage(byte[] Png, string? Caption = null);
+
+/// <summary>Tool result that carries images besides its JSON data.</summary>
+public sealed record ToolResultWithImages(object? Data, IReadOnlyList<ToolImage> Images);
+
 /// <summary>Thrown by tool handlers for user-facing errors (reported as an MCP tool error, not a protocol error).</summary>
 public sealed class ToolException(string message) : Exception(message);
 

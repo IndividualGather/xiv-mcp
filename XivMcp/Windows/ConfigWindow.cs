@@ -337,6 +337,10 @@ internal sealed class ConfigWindow : Window
             "Create, edit and clear your individual and shared macros. The previous version of every changed macro is backed up.",
             null);
 
+        Card("waymarks", FontAwesomeIcon.MapMarkerAlt, "Waymark preset editing", config.AllowWaymarkEditing, v => config.AllowWaymarkEditing = v,
+            "Write the game's 30 waymark preset slots, e.g. copy a preset or set marker positions. Placing presets in a duty uses Game interaction.",
+            null);
+
         Card("inventory", FontAwesomeIcon.Boxes, "Inventory actions", config.AllowInventoryActions, v => config.AllowInventoryActions = v,
             "Sort with the game's /itemsort, move items between bags, armory, saddlebag and retainers, open retainers and transfer stacks between them.",
             "Automating game actions is against the FFXIV ToS. Moves are sent one at a time like manual drags.",

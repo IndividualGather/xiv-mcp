@@ -58,6 +58,7 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(RetainerTools.Create(Config, retainers, compat))
             .Concat(InteractionTools.Create(Config, compat))
             .Concat(ActionMacroTools.Create(Config))
+            .Concat(WaymarkTools.Create(Config))
             .Concat(CacheTools.Create(caches));
         Server = new McpServer(tools, Config, caches);
 
