@@ -58,7 +58,7 @@ internal static class CraftGatherTools
         {
             Name = "craft_item",
             Description = "Crafts an item a number of times with Artisan (like Artisan's \"craft X\"), by item name/id or recipe id. If several jobs " +
-                          "can craft it, the current job's recipe is preferred. Requires Artisan and 'Allow crafting & gathering automation'.",
+                          "can craft it, the current job's recipe is preferred. Requires Artisan and 'Crafting & gathering'.",
             InputSchema = """
                 {
                   "type": "object",
@@ -89,7 +89,7 @@ internal static class CraftGatherTools
         {
             Name = "crafting_control",
             Description = "Controls Artisan: start a crafting list (by id or name), pause / resume the running list, or stop. Requires Artisan and " +
-                          "'Allow crafting & gathering automation'.",
+                          "'Crafting & gathering'.",
             InputSchema = """
                 {
                   "type": "object",
@@ -142,7 +142,7 @@ internal static class CraftGatherTools
             Description = "Creates or edits an Artisan crafting list: name and recipes as [{ \"item\": name/id or \"recipe_id\": id, \"quantity\": n }] " +
                           "(quantity = number of crafts). Editing an existing list (by id or name) replaces its recipes unless append=true. Artisan has no " +
                           "IPC for lists, so it is briefly unloaded, its config is updated (with a backup) and it is loaded again — refused while Artisan " +
-                          "is crafting. Requires Artisan and 'Allow crafting & gathering automation'.",
+                          "is crafting. Requires Artisan and 'Crafting & gathering'.",
             InputSchema = """
                 {
                   "type": "object",
@@ -178,48 +178,7 @@ internal static class CraftGatherTools
                 }).ConfigureAwait(false);
                 if (listArg is null && name is null) throw new ToolException("A new list needs a 'name'.");
 
-                int listId = 0;
-                var backup = await PluginTools.ModifyPluginJson(Artisan, null, root =>
-                {
-                    var lists = root["NewCraftingLists"] as JsonArray ?? throw new ToolException("Artisan's config has no crafting lists section.");
-                    JsonObject list;
-                    if (listArg is not null)
-                    {
-                        list = MatchList(lists, listArg) ?? throw new ToolException($"No Artisan list '{listArg}'.");
-                        if (!append) list["Recipes"] = new JsonArray();
-                    }
-                    else
-                    {
-                        var used = lists.OfType<JsonObject>().Select(l => l["ID"]?.GetValue<int>() ?? 0).ToHashSet();
-                        int id;
-                        do id = Random.Shared.Next(10000, 99999); while (used.Contains(id));
-                        list = new JsonObject
-                        {
-                            ["$type"] = "Artisan.CraftingLists.NewCraftingList, Artisan",
-                            ["ID"] = id,
-                            ["Name"] = name,
-                            ["Recipes"] = new JsonArray(),
-                            ["ExpandedList"] = new JsonArray(),
-                        };
-                        lists.Add(list);
-                    }
-                    if (name is not null) list["Name"] = name;
-                    var target = (JsonArray)list["Recipes"]!;
-                    foreach (var (recipeId, quantity) in recipes)
-                    {
-                        var existing = target.OfType<JsonObject>().FirstOrDefault(r => r["ID"]?.GetValue<uint>() == recipeId);
-                        if (existing is not null) existing["Quantity"] = quantity;
-                        else target.Add(new JsonObject
-                        {
-                            ["$type"] = "Artisan.CraftingLists.ListItem, Artisan",
-                            ["ID"] = recipeId,
-                            ["Quantity"] = quantity,
-                            ["ListItemOptions"] = new JsonObject { ["$type"] = "Artisan.CraftingLists.ListItemOptions, Artisan", ["NQOnly"] = false, ["Skipping"] = false },
-                        });
-                    }
-                    listId = list["ID"]!.GetValue<int>();
-                    return root;
-                }).ConfigureAwait(false);
+                var (listId, backup) = await WriteCraftingList(listArg, name, recipes.Select(r => (r.RowId, r.Quantity)).ToList(), append).ConfigureAwait(false);
 
                 return new
                 {
@@ -236,7 +195,7 @@ internal static class CraftGatherTools
         {
             Name = "delete_crafting_list",
             Description = "Deletes an Artisan crafting list (by id or name), with a backup of Artisan's config. Artisan is briefly reloaded. Requires " +
-                          "Artisan and 'Allow crafting & gathering automation'.",
+                          "Artisan and 'Crafting & gathering'.",
             InputSchema = """
                 { "type": "object", "properties": { "list": { "type": "string", "description": "List id or name." } }, "required": ["list"] }
                 """,
@@ -299,7 +258,7 @@ internal static class CraftGatherTools
             Description = "Creates or edits a GatherBuddy Reborn auto-gather list: name, items as [{ \"item\": name/id, \"quantity\": n, \"enabled\": true }], " +
                           "active (whether auto-gather uses it), folder, description. Editing an existing list (by name or index) replaces its items unless " +
                           "append=true. GatherBuddy has no IPC for lists, so it is briefly unloaded, its list file updated (with a backup) and loaded again " +
-                          "— refused while auto-gather runs. Requires GatherBuddy Reborn and 'Allow crafting & gathering automation'.",
+                          "— refused while auto-gather runs. Requires GatherBuddy Reborn and 'Crafting & gathering'.",
             InputSchema = """
                 {
                   "type": "object",
@@ -388,7 +347,7 @@ internal static class CraftGatherTools
         {
             Name = "delete_gather_list",
             Description = "Deletes a GatherBuddy Reborn auto-gather list (by name or index), with a backup. GatherBuddy is briefly reloaded. Requires " +
-                          "GatherBuddy Reborn and 'Allow crafting & gathering automation'.",
+                          "GatherBuddy Reborn and 'Crafting & gathering'.",
             InputSchema = """
                 { "type": "object", "properties": { "list": { "type": "string", "description": "List name or index." } }, "required": ["list"] }
                 """,
@@ -416,7 +375,7 @@ internal static class CraftGatherTools
         {
             Name = "set_auto_gather",
             Description = "Starts or stops GatherBuddy Reborn's auto-gather (it gathers what the active auto-gather lists need). Requires GatherBuddy Reborn " +
-                          "and 'Allow crafting & gathering automation'.",
+                          "and 'Crafting & gathering'.",
             InputSchema = """
                 { "type": "object", "properties": { "enabled": { "type": "boolean" } }, "required": ["enabled"] }
                 """,
@@ -437,12 +396,12 @@ internal static class CraftGatherTools
 
     // ------------------------------------------------------------------ Artisan helpers
 
-    private static void RequireArtisan()
+    internal static void RequireArtisan()
     {
         if (!ArtisanLoaded) throw new ToolException("Artisan is not installed or not enabled.");
     }
 
-    private static object ArtisanState() => new
+    internal static object ArtisanState() => new
     {
         listRunning = Ipc("Artisan.IsListRunning"),
         listPaused = Ipc("Artisan.IsListPaused"),
@@ -450,10 +409,61 @@ internal static class CraftGatherTools
         busy = Ipc("Artisan.IsBusy"),
     };
 
-    private static void EnsureArtisanIdle()
+    internal static void EnsureArtisanIdle()
     {
         if (Ipc("Artisan.IsBusy") == true || Ipc("Artisan.IsListRunning") == true)
             throw new ToolException("Artisan is busy (crafting or running a list). Stop or pause it first.");
+    }
+
+    /// <summary>
+    /// Creates a list (listArg null) or edits one, with recipes in the given order (Artisan crafts in list order), by editing Artisan's
+    /// config with Artisan briefly unloaded. Returns the list id and the backup path.
+    /// </summary>
+    internal static async Task<(int Id, string? Backup)> WriteCraftingList(string? listArg, string? name, List<(uint RecipeId, int Quantity)> recipes, bool append)
+    {
+        int listId = 0;
+        var backup = await PluginTools.ModifyPluginJson(Artisan, null, root =>
+        {
+            var lists = root["NewCraftingLists"] as JsonArray ?? throw new ToolException("Artisan's config has no crafting lists section.");
+            JsonObject list;
+            if (listArg is not null)
+            {
+                list = MatchList(lists, listArg) ?? throw new ToolException($"No Artisan list '{listArg}'.");
+                if (!append) list["Recipes"] = new JsonArray();
+            }
+            else
+            {
+                var used = lists.OfType<JsonObject>().Select(l => l["ID"]?.GetValue<int>() ?? 0).ToHashSet();
+                int id;
+                do id = Random.Shared.Next(10000, 99999); while (used.Contains(id));
+                list = new JsonObject
+                {
+                    ["$type"] = "Artisan.CraftingLists.NewCraftingList, Artisan",
+                    ["ID"] = id,
+                    ["Name"] = name,
+                    ["Recipes"] = new JsonArray(),
+                    ["ExpandedList"] = new JsonArray(),
+                };
+                lists.Add(list);
+            }
+            if (name is not null) list["Name"] = name;
+            var target = (JsonArray)list["Recipes"]!;
+            foreach (var (recipeId, quantity) in recipes)
+            {
+                var existing = target.OfType<JsonObject>().FirstOrDefault(r => r["ID"]?.GetValue<uint>() == recipeId);
+                if (existing is not null) existing["Quantity"] = quantity;
+                else target.Add(new JsonObject
+                {
+                    ["$type"] = "Artisan.CraftingLists.ListItem, Artisan",
+                    ["ID"] = recipeId,
+                    ["Quantity"] = quantity,
+                    ["ListItemOptions"] = new JsonObject { ["$type"] = "Artisan.CraftingLists.ListItemOptions, Artisan", ["NQOnly"] = false, ["Skipping"] = false },
+                });
+            }
+            listId = list["ID"]!.GetValue<int>();
+            return root;
+        }).ConfigureAwait(false);
+        return (listId, backup);
     }
 
     private sealed record ListRef(int Id, string? Name);
@@ -494,7 +504,7 @@ internal static class CraftGatherTools
         return candidates.FirstOrDefault(c => c.CraftType.RowId + 8 == currentJob) is { RowId: not 0 } mine ? mine : candidates[0];
     }
 
-    private static object DescribeRecipe(uint recipeId, int quantity)
+    internal static object DescribeRecipe(uint recipeId, int quantity)
     {
         var r = Svc.Data.GetExcelSheet<Recipe>().GetRowOrDefault(recipeId);
         var job = r is { } rr ? Svc.Data.GetExcelSheet<ClassJob>().GetRowOrDefault(rr.CraftType.RowId + 8) : null;

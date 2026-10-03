@@ -27,8 +27,8 @@ internal static class RetainerTools
     {
         void RequireEnabled()
         {
-            if (!config.AllowInventoryActions)
-                throw new ToolException("Inventory actions are disabled. Enable \"Allow inventory actions\" in the XIV MCP settings window (/xivmcp) in game.");
+            if (!config.AllowItemsRetainers)
+                throw new ToolException("Inventory actions are disabled. Enable \"Items & retainers\" in the XIV MCP settings window (/xivmcp) in game.");
         }
 
         yield return new McpTool
@@ -86,20 +86,29 @@ internal static class RetainerTools
             Name = "open_retainer",
             Description = "Opens a retainer's inventory at the summoning bell (selects it in the retainer list, clicks through the greeting and chooses " +
                           "\"Entrust or withdraw items\"). The retainer list must already be open (interact with a summoning bell), or another retainer — " +
-                          "which is closed first. Opening refreshes that retainer's cached inventory. Requires 'Allow inventory actions' in /xivmcp.",
+                          "which is closed first. Opening refreshes that retainer's cached inventory. Requires 'Items & retainers' in /xivmcp.",
             InputSchema = """
-                { "type": "object", "properties": { "retainer": { "type": "string", "description": "Retainer name." } }, "required": ["retainer"] }
+                {
+                  "type": "object",
+                  "properties": {
+                    "retainer": { "type": "string", "description": "Retainer name." },
+                    "menu_only": { "type": "boolean", "description": "Stop at the retainer's menu instead of opening the inventory (then use get_menu / select_menu_option)." }
+                  },
+                  "required": ["retainer"]
+                }
                 """,
             ReadOnly = false,
             Handler = async (args, ct) =>
             {
                 RequireEnabled();
                 var name = args.String("retainer") ?? throw new ToolException("'retainer' is required.");
+                var menuOnly = args.Bool("menu_only", false);
                 await InventoryActionTools.Gate.WaitAsync(ct).ConfigureAwait(false);
                 try
                 {
                     await Game.RunLoggedIn(() => { InventoryActionTools.EnsureNotBusy(); compat.AcquireBell(); return true; }).ConfigureAwait(false);
-                    await RetainerUi.Open(name, ct).ConfigureAwait(false);
+                    if (menuOnly) await RetainerUi.OpenMenu(name, ct).ConfigureAwait(false);
+                    else await RetainerUi.Open(name, ct).ConfigureAwait(false);
                     await Task.Delay(1200, ct).ConfigureAwait(false); // give the tracker a poll to capture the inventory
                     return new { opened = await Svc.Framework.RunOnFrameworkThread(() => RetainerUi.ActiveRetainerName).ConfigureAwait(false) };
                 }
@@ -112,7 +121,7 @@ internal static class RetainerTools
             Name = "close_retainer",
             Description = "Closes the currently open retainer (inventory window, then \"Quit\" in the retainer menu) and returns to the retainer list. " +
                           "With close_list=true the retainer list is closed as well, ending the summoning bell session (AutoRetainer, if installed, " +
-                          "resumes then). Requires 'Allow inventory actions' in /xivmcp.",
+                          "resumes then). Requires 'Items & retainers' in /xivmcp.",
             InputSchema = """
                 { "type": "object", "properties": { "close_list": { "type": "boolean", "description": "Also close the retainer list / leave the bell (default false)." } } }
                 """,
@@ -140,7 +149,7 @@ internal static class RetainerTools
                           "Each transfer is { item_id, from, to, stacks?, hq? } where from/to is a retainer name or \"player\". " +
                           "Retainer-to-retainer goes through the player's bags (the game has no direct transfer): open source retainer → withdraw " +
                           "→ close → open target retainer → entrust. Needs enough free bag slots for the stacks in flight and the retainer list open " +
-                          "at a summoning bell. Every move is confirmed by the server before the next one. Requires 'Allow inventory actions' in /xivmcp.",
+                          "at a summoning bell. Every move is confirmed by the server before the next one. Requires 'Items & retainers' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
@@ -207,7 +216,7 @@ internal static class RetainerTools
                           "(the game only sends a retainer's inventory when it is opened — automation plugins usually don't). Opens the nearest bell " +
                           "itself if the retainer list isn't open (stand within ~8 yalms). Only opens and closes windows, never moves items. " +
                           "Choose retainers by name, or only those whose snapshot is older than older_than_hours. AutoRetainer, YesAlready and " +
-                          "TextAdvance are paused while it runs. Requires 'Allow game interaction' in /xivmcp.",
+                          "TextAdvance are paused while it runs. Requires 'Game & navigation' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
@@ -221,8 +230,8 @@ internal static class RetainerTools
             ReadOnly = false,
             Handler = async (args, ct) =>
             {
-                if (!config.AllowGameInteraction)
-                    throw new ToolException("Refreshing retainers needs \"Allow game interaction\" in the XIV MCP settings window (/xivmcp) in game.");
+                if (!config.AllowGameNavigation)
+                    throw new ToolException("Refreshing retainers needs \"Game & navigation\" in the XIV MCP settings window (/xivmcp) in game.");
                 var wanted = args.StringList("retainers");
                 var olderThan = args.Float("older_than_hours");
                 var closeBell = args.Bool("close_bell", true);

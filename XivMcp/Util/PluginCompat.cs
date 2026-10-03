@@ -119,7 +119,8 @@ internal sealed class PluginCompat : IDisposable
 
     public sealed record Info(bool AutoRetainer, bool? AutoRetainerBusy, bool? AutoRetainerSuppressed, bool SuppressedByUs,
                               bool YesAlready, bool TextAdvance, bool ClickersPausedByUs, bool HoldingBell,
-                              bool Fcch, bool? FcchBusy, bool WaymarkPresetPlugin, bool Vnavmesh, bool Lifestream, bool Artisan, bool GatherBuddy);
+                              bool Fcch, bool? FcchBusy, bool WaymarkPresetPlugin, bool Vnavmesh, bool Lifestream, bool Artisan, bool GatherBuddy,
+                              bool ItemVendorLocation);
 
     /// <summary>Snapshot for the settings window (IPC calls; don't call every frame).</summary>
     public Info GetInfo()
@@ -127,7 +128,8 @@ internal sealed class PluginCompat : IDisposable
         var ar = AutoRetainerLoaded;
         return new Info(ar, ar ? Ipc<bool>("AutoRetainer.PluginState.IsBusy") : null, ar ? Ipc<bool>("AutoRetainer.GetSuppressed") : null,
                         suppressedAutoRetainer, IsLoaded("YesAlready"), IsLoaded("TextAdvance"), pausedClickers, holdingBell,
-                        FcchLoaded, FcchLoaded ? Ipc<bool>("FCCH.IsBusy") : null, IsLoaded("WaymarkPresetPlugin"), IsLoaded("vnavmesh"), IsLoaded("Lifestream"), IsLoaded("Artisan"), IsLoaded("GatherbuddyReborn"));
+                        FcchLoaded, FcchLoaded ? Ipc<bool>("FCCH.IsBusy") : null, IsLoaded("WaymarkPresetPlugin"), IsLoaded("vnavmesh"), IsLoaded("Lifestream"), IsLoaded("Artisan"), IsLoaded("GatherbuddyReborn"),
+                        IsLoaded("ItemVendorLocation"));
     }
 
     public object Status() => new

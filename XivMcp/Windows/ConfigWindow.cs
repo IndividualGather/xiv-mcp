@@ -329,45 +329,52 @@ internal sealed class ConfigWindow : Window
         ImGui.TextColored(Muted, "Reading game data is always allowed. Everything that changes something is off until you switch it on.");
         ImGui.Spacing();
 
-        Card("interaction", FontAwesomeIcon.HandPointer, "Game interaction", config.AllowGameInteraction, v => config.AllowGameInteraction = v,
-            "Open game windows (Achievements, Saddlebag, ...) and interact with nearby objects: summoning bell, company chest, voyage control panel, NPC menus.",
-            null);
+        var navPlugins = compat is { } n && (n.Vnavmesh || n.Lifestream);
+        Card("game", FontAwesomeIcon.HandPointer, "Game & navigation", config.AllowGameNavigation, v => config.AllowGameNavigation = v,
+            "Open game windows, interact with objects and NPCs (summoning bell, company chest, voyage panel, NPC menus)" +
+            (navPlugins ? " and move the character: walking (vnavmesh), teleports and housing (Lifestream)." : ". Walking and teleports need vnavmesh / Lifestream."),
+            navPlugins ? "Teleports cost gil as usual. stop_navigation stops movement at any time." : null,
+            navPlugins ? DrawBellPreference : null, extraLines: 1.6f);
 
-        Card("macros", FontAwesomeIcon.Terminal, "Macro editing", config.AllowMacroEditing, v => config.AllowMacroEditing = v,
-            "Create, edit and clear your individual and shared macros. The previous version of every changed macro is backed up.",
-            null);
-
-        Card("waymarks", FontAwesomeIcon.MapMarkerAlt, "Waymark preset editing", config.AllowWaymarkEditing, v => config.AllowWaymarkEditing = v,
-            "Write the game's 30 waymark preset slots, e.g. copy a preset or set marker positions. Placing presets in a duty uses Game interaction.",
-            null);
-
-        Card("inventory", FontAwesomeIcon.Boxes, "Inventory actions", config.AllowInventoryActions, v => config.AllowInventoryActions = v,
-            "Sort with the game's /itemsort, move items between bags, armory, saddlebag and retainers, open retainers and transfer stacks between them.",
+        Card("items", FontAwesomeIcon.Boxes, "Items & retainers", config.AllowItemsRetainers, v => config.AllowItemsRetainers = v,
+            "Sort and move items between bags, armory, saddlebag, retainers and the FC chest, open retainers, and send retainers on ventures " +
+            "(costs venture tokens). Recalling a running venture always asks you in game first.",
             "Automating game actions is against the FFXIV ToS. Moves are sent one at a time like manual drags.",
             DrawMoveDelay, extraLines: 2.6f);
 
-        // Navigation builds on vnavmesh / Lifestream; only offered when at least one of them is installed.
-        if (compat is { } nav && (nav.Vnavmesh || nav.Lifestream))
-            Card("navigation", FontAwesomeIcon.Route, "Navigation", config.AllowNavigation, v => config.AllowNavigation = v,
-                "Move the character to a summoning bell, the company chest, the workshop, the inn or your house (walking and teleports).",
-                "Teleports cost gil as usual. stop_navigation stops it at any time.", DrawBellPreference, extraLines: 1.6f);
+        var vendorPlugin = compat?.ItemVendorLocation ?? false;
+        Card("market", FontAwesomeIcon.Store, "Market & purchases", config.AllowMarketPurchases, v => config.AllowMarketPurchases = v,
+            "Buy from NPC vendors, put items up for sale through retainers, undercut your listings and read sale histories. Gil purchases run " +
+            "directly; anything paid with tomestones, scrips, seals or items asks you in game first. Undercuts follow Penny Pincher's settings " +
+            "when installed and never target your own retainers.",
+            "Large price cuts are skipped and reported instead of applied; only you can approve a non-gil purchase.",
+            DrawGilLimit, extraLines: 1.6f,
+            footer: vendorPlugin ? null : DrawVendorPluginMissing, footerLines: 1.4f);
 
         // Crafting & gathering builds on Artisan / GatherBuddy Reborn; only offered when one of them is installed and enabled.
         if (compat is { } cg && (cg.Artisan || cg.GatherBuddy))
-            Card("craftgather", FontAwesomeIcon.Hammer, "Crafting & gathering automation", config.AllowCraftingGathering, v => config.AllowCraftingGathering = v,
+            Card("craftgather", FontAwesomeIcon.Hammer, "Crafting & gathering", config.AllowCraftingGathering, v => config.AllowCraftingGathering = v,
                 string.Join(" ", new[]
                 {
-                    cg.Artisan ? "Start crafts and crafting lists (pause, resume, stop) and create, edit or delete crafting lists." : null,
-                    cg.GatherBuddy ? "Start and stop auto-gathering and create, edit or delete auto-gather lists." : null,
+                    cg.Artisan ? "Start crafts and crafting lists, edit lists and prepare crafting projects (incl. Raphael solutions)." : null,
+                    cg.GatherBuddy ? "Start and stop auto-gathering and edit auto-gather lists." : null,
                 }.Where(s => s is not null)),
                 "Editing lists briefly reloads the plugin that owns them; their config is backed up first.");
+
+        Card("ui", FontAwesomeIcon.Terminal, "UI editing", config.AllowUiEditing, v => config.AllowUiEditing = v,
+            "Create, edit and clear macros and write the 30 waymark preset slots. Every changed macro is backed up first.",
+            null);
+
+        Card("online", FontAwesomeIcon.Globe, "Online lookups", config.AllowOnlineData, v => config.AllowOnlineData = v,
+            "Item sources from FFXIV Teamcraft (downloaded once, ~30 MB) and ffxiv.consolegameswiki.com, and market prices from universalis.app.",
+            null);
 
         Card("plugins", FontAwesomeIcon.PuzzlePiece, "Plugin management", config.AllowPluginManagement, v => config.AllowPluginManagement = v,
             "Enable, disable and reload other Dalamud plugins, and read or change their settings. Every change is backed up to pluginConfigs/XivMcp/backups.",
             "Uses Dalamud internals; may need an update after Dalamud updates.");
 
         // Compatibility is only shown for plugins the player already has installed; otherwise the section doesn't exist.
-        if (compat is not { } c || !(c.AutoRetainer || c.YesAlready || c.TextAdvance || c.Fcch || c.WaymarkPresetPlugin || c.Vnavmesh || c.Lifestream || c.Artisan || c.GatherBuddy)) return;
+        if (compat is not { } c || !(c.AutoRetainer || c.YesAlready || c.TextAdvance || c.Fcch || c.WaymarkPresetPlugin || c.Vnavmesh || c.Lifestream || c.Artisan || c.GatherBuddy || c.ItemVendorLocation)) return;
         ImGui.Spacing();
         Section(FontAwesomeIcon.Robot, "Compatibility");
         if (c.AutoRetainer)
@@ -391,6 +398,8 @@ internal sealed class ConfigWindow : Window
             CompatRow("Artisan", "crafts and crafting lists can be started and lists edited");
         if (c.GatherBuddy)
             CompatRow("GatherBuddy Reborn", "auto-gather can be started and its lists edited");
+        if (c.ItemVendorLocation)
+            CompatRow("Item Vendor Location", "used by Purchases to find vendors and where they stand");
     }
 
     private static readonly (string Id, string Label)[] BellLocations =
@@ -417,6 +426,38 @@ internal sealed class ConfigWindow : Window
                 config.PreferredBellLocation = id;
                 config.Save();
             }
+    }
+
+    /// <summary>Purchases find vendors through Item Vendor Location; offers to install it when it is missing.</summary>
+    private static void DrawVendorPluginMissing()
+    {
+        IconText(FontAwesomeIcon.InfoCircle, Cyan);
+        ImGui.SameLine();
+        ImGui.TextColored(Cyan, "Requires the Item Vendor Location plugin (finds the vendors).");
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Install Item Vendor Location"))
+            Svc.PluginInterface.OpenPluginInstallerTo(Dalamud.Interface.PluginInstallerOpenKind.AllPlugins, "Item Vendor Location");
+        Tooltip("Opens the Dalamud plugin installer filtered to Item Vendor Location; install it from there.");
+    }
+
+    /// <summary>Optional gil limit above which a gil purchase asks too.</summary>
+    private void DrawGilLimit()
+    {
+        var config = plugin.Config;
+        ImGui.Spacing();
+        IconText(FontAwesomeIcon.Coins, Muted);
+        ImGui.SameLine();
+        ImGui.TextUnformatted("Also ask for gil purchases above");
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(140 * ImGuiHelpers.GlobalScale);
+        var limit = config.AskAboveGil;
+        if (ImGui.InputInt("gil##ask-gil", ref limit, 1000, 10000))
+        {
+            config.AskAboveGil = Math.Clamp(limit, 0, 999_999_999);
+            config.Save();
+        }
+        ImGui.SameLine();
+        ImGui.TextColored(Muted, config.AskAboveGil == 0 ? "(0 = gil never asks)" : "");
     }
 
     /// <summary>Pause between item moves: random within a range (default 500-800 ms) or an exact value.</summary>
@@ -465,9 +506,9 @@ internal sealed class ConfigWindow : Window
     }
 
     private void Card(string id, FontAwesomeIcon icon, string title, bool value, Action<bool> set, string description, string? warning, Action? extra = null,
-                      float extraLines = 1.4f)
+                      float extraLines = 1.4f, Action? footer = null, float footerLines = 1.4f)
     {
-        var lines = 2.6f + (warning is null ? 0 : 1.2f) + (extra is null || !value ? 0 : extraLines);
+        var lines = 2.6f + (warning is null ? 0 : 1.2f) + (extra is null || !value ? 0 : extraLines) + (footer is null ? 0 : footerLines);
         using var bg = ImRaii.PushColor(ImGuiCol.ChildBg, value ? new Vector4(0.25f, 0.45f, 0.30f, 0.18f) : new Vector4(1, 1, 1, 0.04f));
         using var child = ImRaii.Child($"##card-{id}", new Vector2(-1, ImGui.GetTextLineHeightWithSpacing() * lines + 16 * ImGuiHelpers.GlobalScale), true);
 
@@ -493,6 +534,7 @@ internal sealed class ConfigWindow : Window
             ImGui.TextColored(Amber, warning);
         }
         ImGui.PopTextWrapPos();
+        footer?.Invoke();
         if (value) extra?.Invoke();
     }
 

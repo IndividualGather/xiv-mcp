@@ -33,7 +33,7 @@ internal static class PluginTools
         void RequireEnabled()
         {
             if (!config.AllowPluginManagement)
-                throw new ToolException("Plugin management is disabled. Enable \"Allow plugin management\" in the XIV MCP settings window (/xivmcp) in game.");
+                throw new ToolException("Plugin management is disabled. Enable \"Plugin management\" in the XIV MCP settings window (/xivmcp) in game.");
         }
 
         yield return new McpTool
@@ -68,7 +68,7 @@ internal static class PluginTools
         {
             Name = "set_plugin_enabled",
             Description = "Enables (loads) or disables (unloads) an installed Dalamud plugin, exactly like the toggle in the plugin installer. " +
-                          "The state is saved in the default collection so it persists across restarts. Requires 'Allow plugin management' in /xivmcp.",
+                          "The state is saved in the default collection so it persists across restarts. Requires 'Plugin management' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
@@ -120,7 +120,7 @@ internal static class PluginTools
         {
             Name = "reload_plugin",
             Description = "Reloads a loaded Dalamud plugin (unload, then load again) — e.g. to make it pick up a changed config file or recover from a bad state. " +
-                          "If the plugin is not loaded, it is simply loaded. Requires 'Allow plugin management' in /xivmcp.",
+                          "If the plugin is not loaded, it is simply loaded. Requires 'Plugin management' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
@@ -152,7 +152,7 @@ internal static class PluginTools
         {
             Name = "list_plugin_config_files",
             Description = "Lists the configuration files of a Dalamud plugin: its main <InternalName>.json and everything in its config directory, " +
-                          "with relative path, size and last modification time. Requires 'Allow plugin management' in /xivmcp.",
+                          "with relative path, size and last modification time. Requires 'Plugin management' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
@@ -181,7 +181,7 @@ internal static class PluginTools
             Name = "get_plugin_config",
             Description = "Reads a Dalamud plugin's configuration file (default: its main <InternalName>.json). For JSON you can select a sub-tree with 'path' " +
                           "(e.g. \"Profiles[0].Name\" or [\"key.with.dots\"]) and limit nesting with 'depth' to explore large configs. " +
-                          "Note: this is the saved file — a loaded plugin may hold unsaved changes in memory. Requires 'Allow plugin management' in /xivmcp.",
+                          "Note: this is the saved file — a loaded plugin may hold unsaved changes in memory. Requires 'Plugin management' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
@@ -227,7 +227,7 @@ internal static class PluginTools
                           "Because plugins keep their config in memory (and often save it on shutdown), a loaded plugin is unloaded first, the file is written, " +
                           "and the plugin is loaded again (reload=true, default). Existing keys keep their JSON type unless allow_type_change=true; " +
                           "new keys need create_missing=true. A backup of the previous file is kept. Read the config with get_plugin_config first. " +
-                          "Requires 'Allow plugin management' in /xivmcp.",
+                          "Requires 'Plugin management' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",

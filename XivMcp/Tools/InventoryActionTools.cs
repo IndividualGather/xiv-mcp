@@ -40,8 +40,8 @@ internal static class InventoryActionTools
     {
         void RequireEnabled()
         {
-            if (!config.AllowInventoryActions)
-                throw new ToolException("Inventory actions are disabled. Enable \"Allow inventory actions\" in the XIV MCP settings window (/xivmcp) in game.");
+            if (!config.AllowItemsRetainers)
+                throw new ToolException("Inventory actions are disabled. Enable \"Items & retainers\" in the XIV MCP settings window (/xivmcp) in game.");
         }
 
         yield return new McpTool
@@ -51,7 +51,7 @@ internal static class InventoryActionTools
                           "and executes the sort. Categories: inventory (main bags), armoury (whole armory chest) or a single armory slot " +
                           "(mh, oh, head, body, hands, legs, feet, neck, ears, wrists, rings, soul), saddlebag, rightsaddlebag (premium), retainer. " +
                           "Saddlebag and retainer need their window open in game. Use category \"armoury_slots\" to sort every armory slot with the same conditions. " +
-                          "Conditions are applied in order (first = primary). Requires 'Allow inventory actions' in /xivmcp.",
+                          "Conditions are applied in order (first = primary). Requires 'Items & retainers' in /xivmcp.",
             InputSchema = $$"""
                 {
                   "type": "object",
@@ -149,7 +149,7 @@ internal static class InventoryActionTools
                           "omit to_slot to use the first empty slot of to_container. Container names come from get_inventory (Inventory1-4, ArmoryHead, ..., " +
                           "SaddleBag1/2, PremiumSaddleBag1/2, RetainerPage1-7, FreeCompanyPage1-5). Saddlebag/retainer/company chest windows must be open. " +
                           "Armory containers only accept matching gear. " +
-                          "Stops at the first failed move unless continue_on_error=true. Requires 'Allow inventory actions' in /xivmcp.",
+                          "Stops at the first failed move unless continue_on_error=true. Requires 'Items & retainers' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",

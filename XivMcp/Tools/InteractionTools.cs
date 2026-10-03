@@ -38,8 +38,8 @@ internal static class InteractionTools
     {
         void RequireEnabled()
         {
-            if (!config.AllowGameInteraction)
-                throw new ToolException("Game interaction is disabled. Enable \"Allow game interaction\" in the XIV MCP settings window (/xivmcp) in game.");
+            if (!config.AllowGameNavigation)
+                throw new ToolException("Game interaction is disabled. Enable \"Game & navigation\" in the XIV MCP settings window (/xivmcp) in game.");
         }
 
         yield return new McpTool
@@ -61,7 +61,7 @@ internal static class InteractionTools
             Name = "open_window",
             Description = "Opens a game window like clicking it in the main menu, e.g. \"Achievements\" (needed once per session before achievement " +
                           "progress can be read), \"Chocobo Saddlebag\", \"Armoury Chest\", \"Currency\", \"Timers\". Use list_windows for names. " +
-                          "Does nothing if the window is already open. Use close_window to close it again. Requires 'Allow game interaction' in /xivmcp.",
+                          "Does nothing if the window is already open. Use close_window to close it again. Requires 'Game & navigation' in /xivmcp.",
             InputSchema = """
                 { "type": "object", "properties": { "window": { "type": "string", "description": "Window name (or main command id) from list_windows." } }, "required": ["window"] }
                 """,
@@ -97,7 +97,7 @@ internal static class InteractionTools
         {
             Name = "close_window",
             Description = "Closes a game window: a main menu window (see list_windows), or a window that interact_with_object reported in " +
-                          "openedWindows (e.g. FreeCompanyChest, SelectString). Requires 'Allow game interaction' in /xivmcp.",
+                          "openedWindows (e.g. FreeCompanyChest, SelectString). Requires 'Game & navigation' in /xivmcp.",
             InputSchema = """
                 { "type": "object", "properties": { "window": { "type": "string", "description": "Window name / main command id from list_windows, or a window name from openedWindows." } }, "required": ["window"] }
                 """,
@@ -106,7 +106,8 @@ internal static class InteractionTools
             {
                 RequireEnabled();
                 var window = args.String("window") ?? throw new ToolException("'window' is required.");
-                var addon = InterestingAddons.FirstOrDefault(a => a.Equals(window, StringComparison.OrdinalIgnoreCase));
+                var addon = InterestingAddons.FirstOrDefault(a => a.Equals(window, StringComparison.OrdinalIgnoreCase))
+                            ?? (Svc.GameGui.GetAddonByName(window, 1) is { IsNull: false, IsVisible: true } ? window : null); // any open addon by its name (inspect_window lists them)
                 if (addon is not null)
                     return Game.RunLoggedIn<object?>(() =>
                     {
@@ -140,7 +141,7 @@ internal static class InteractionTools
                           "NPCs, aetherytes, ... Choose by name (nearest match) or gameObjectId from get_nearby_objects. The character does not move: " +
                           $"the object must be within about {MaxInteractDistance} yalms. Summoning bell: if AutoRetainer is installed it is paused while XIV MCP " +
                           "uses the bell (so it doesn't start processing ventures) and resumes when the bell is closed; YesAlready/TextAdvance are paused too. " +
-                          "Returns which windows opened. Requires 'Allow game interaction' in /xivmcp.",
+                          "Returns which windows opened. Requires 'Game & navigation' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
@@ -224,7 +225,7 @@ internal static class InteractionTools
         {
             Name = "select_menu_option",
             Description = "Selects an entry of the currently open choice menu (see get_menu) by its text or index, like clicking it, " +
-                          "or advances a waiting dialogue text box (advance_dialogue=true). Requires 'Allow game interaction' in /xivmcp.",
+                          "or advances a waiting dialogue text box (advance_dialogue=true). Requires 'Game & navigation' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
@@ -278,7 +279,7 @@ internal static class InteractionTools
             Name = "load_game_data",
             Description = "Asks the game to load data that is normally only sent after opening its window, without opening anything: " +
                           "\"achievements\" (completed achievements) or \"titles\" (unlocked titles). Waits until the data arrived; the progress cache " +
-                          "then captures it. Requires 'Allow game interaction' in /xivmcp.",
+                          "then captures it. Requires 'Game & navigation' in /xivmcp.",
             InputSchema = """
                 { "type": "object", "properties": { "data": { "type": "string", "enum": ["achievements", "titles"] } }, "required": ["data"] }
                 """,

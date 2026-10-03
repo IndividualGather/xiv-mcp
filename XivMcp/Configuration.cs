@@ -7,7 +7,7 @@ namespace XivMcp;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 1;
+    public int Version { get; set; } = 2;
 
     /// <summary>Whether the MCP server should be running.</summary>
     public bool ServerEnabled { get; set; } = true;
@@ -26,23 +26,59 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Allows the plugin tools: enable/disable/reload other plugins and read/write their config files.</summary>
     public bool AllowPluginManagement { get; set; }
 
-    /// <summary>Allows the inventory action tools: /itemsort and moving items between slots and containers.</summary>
-    public bool AllowInventoryActions { get; set; }
+    /// <summary>Game & navigation: opening game windows, interacting with objects and NPCs, and moving the character (vnavmesh / Lifestream).</summary>
+    public bool AllowGameNavigation { get; set; }
 
-    /// <summary>Allows opening game windows and interacting with nearby objects (summoning bell, company chest, ...).</summary>
-    public bool AllowGameInteraction { get; set; }
+    /// <summary>UI editing: creating, editing and clearing macros and writing the waymark preset slots.</summary>
+    public bool AllowUiEditing { get; set; }
 
-    /// <summary>Allows creating, editing and clearing macros.</summary>
-    public bool AllowMacroEditing { get; set; }
+    /// <summary>Items & retainers: sorting and moving items, retainer and FC chest transfers, retainer ventures.</summary>
+    public bool AllowItemsRetainers { get; set; }
 
-    /// <summary>Allows writing the game's waymark preset slots.</summary>
-    public bool AllowWaymarkEditing { get; set; }
-
-    /// <summary>Allows moving the character with vnavmesh / Lifestream (navigate_to).</summary>
-    public bool AllowNavigation { get; set; }
+    /// <summary>Market & purchases: buying from NPC vendors (non-gil asks in game), selling and repricing through retainers.</summary>
+    public bool AllowMarketPurchases { get; set; }
 
     /// <summary>Allows starting crafts / lists in Artisan, editing Artisan and GatherBuddy Reborn lists and toggling auto-gather.</summary>
     public bool AllowCraftingGathering { get; set; }
+
+    /// <summary>Allows online lookups (FFXIV Teamcraft's item data, ffxiv.consolegameswiki.com, universalis.app prices).</summary>
+    public bool AllowOnlineData { get; set; }
+
+    /// <summary>Optional: gil purchases costing more than this in one buy_item call also ask in game first (0 = gil never asks).</summary>
+    public int AskAboveGil { get; set; }
+
+    // ---- Permissions before version 2 (merged above). Read once from older settings files, never written again.
+    public bool AllowInventoryActions { get; set; }
+    public bool AllowGameInteraction { get; set; }
+    public bool AllowMacroEditing { get; set; }
+    public bool AllowWaymarkEditing { get; set; }
+    public bool AllowNavigation { get; set; }
+    public bool AllowPurchasing { get; set; }
+    public bool AllowMarket { get; set; }
+    public bool AllowVentures { get; set; }
+    public bool ShouldSerializeAllowInventoryActions() => false;
+    public bool ShouldSerializeAllowGameInteraction() => false;
+    public bool ShouldSerializeAllowMacroEditing() => false;
+    public bool ShouldSerializeAllowWaymarkEditing() => false;
+    public bool ShouldSerializeAllowNavigation() => false;
+    public bool ShouldSerializeAllowPurchasing() => false;
+    public bool ShouldSerializeAllowMarket() => false;
+    public bool ShouldSerializeAllowVentures() => false;
+
+    /// <summary>
+    /// Version 1 → 2: the eleven permissions were merged into seven. A merged permission starts on only if every permission it replaces
+    /// was on (so nothing becomes allowed that wasn't before). Returns true if something changed and should be saved.
+    /// </summary>
+    public bool Migrate()
+    {
+        if (Version >= 2) return false;
+        AllowGameNavigation = AllowGameInteraction && AllowNavigation;
+        AllowUiEditing = AllowMacroEditing && AllowWaymarkEditing;
+        AllowItemsRetainers = AllowInventoryActions && AllowVentures;
+        AllowMarketPurchases = AllowPurchasing && AllowMarket;
+        Version = 2;
+        return true;
+    }
 
     /// <summary>Where navigate_to looks for a summoning bell when none is nearby: lifestream (its property priority), inn, fc, home, apartment.</summary>
     public string PreferredBellLocation { get; set; } = "lifestream";

@@ -34,13 +34,13 @@ internal static class WaymarkTools
     {
         void RequireEditing()
         {
-            if (!config.AllowWaymarkEditing)
-                throw new ToolException("Waymark preset editing is disabled. Enable \"Allow waymark preset editing\" in the XIV MCP settings window (/xivmcp) in game.");
+            if (!config.AllowUiEditing)
+                throw new ToolException("Waymark preset editing is disabled. Enable \"UI editing\" in the XIV MCP settings window (/xivmcp) in game.");
         }
         void RequireInteraction()
         {
-            if (!config.AllowGameInteraction)
-                throw new ToolException("Placing waymarks needs \"Allow game interaction\" in the XIV MCP settings window (/xivmcp) in game.");
+            if (!config.AllowGameNavigation)
+                throw new ToolException("Placing waymarks needs \"Game & navigation\" in the XIV MCP settings window (/xivmcp) in game.");
         }
 
         yield return new McpTool
@@ -118,7 +118,7 @@ internal static class WaymarkTools
                           "a game slot, a WaymarkPresetPlugin library preset, or \"current\" for the waymarks placed right now), and/or give markers " +
                           "explicitly as { \"A\": {\"x\":100,\"y\":0,\"z\":90}, \"1\": null, ... } (null removes a marker; omitted markers keep their value). " +
                           "duty is the duty (ContentFinderCondition id or name) the preset belongs to. Returns before/after with a picture; clear=true empties the slot. " +
-                          "Requires 'Allow waymark preset editing' in /xivmcp.",
+                          "Requires 'UI editing' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
@@ -192,7 +192,7 @@ internal static class WaymarkTools
             Name = "place_waymark_preset",
             Description = "Places a waymark preset in the current duty, like loading it from the Waymarks window. Works only inside a duty and out of " +
                           "combat (the game's rule for presets). Library presets are placed through WaymarkPresetPlugin when it is installed. " +
-                          "Requires 'Allow game interaction' in /xivmcp.",
+                          "Requires 'Game & navigation' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",

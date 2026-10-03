@@ -14,7 +14,7 @@ using static XivMcp.Util.Navigation;
 namespace XivMcp.Tools;
 
 /// <summary>Navigating the character to a summoning bell, the FC chest, the workshop, the inn or a property (vnavmesh + Lifestream).</summary>
-internal static class NavigationTools
+internal static partial class NavigationTools
 {
     private const float ArriveRange = 2.5f;
     private const float LocalSearchRange = 120f;
@@ -36,7 +36,7 @@ internal static class NavigationTools
                           "/xivmcp — by default Lifestream's own property priority, falling back to the inn), company_chest (FC house), workshop (FC " +
                           "workshop, walks to the voyage control panel), inn, home, fc_house, apartment, or object (by name in the current zone). " +
                           "Waits until arrived (or the timeout) and returns the steps taken; then use interact_with_object. stop_navigation aborts. " +
-                          "Teleports cost gil as usual. Requires 'Allow navigation' in /xivmcp.",
+                          "Teleports cost gil as usual. Requires 'Game & navigation' in /xivmcp.",
             InputSchema = $$"""
                 {
                   "type": "object",
@@ -51,8 +51,8 @@ internal static class NavigationTools
             ReadOnly = false,
             Handler = async (args, ct) =>
             {
-                if (!config.AllowNavigation)
-                    throw new ToolException("Navigation is disabled. Enable \"Allow navigation\" in the XIV MCP settings window (/xivmcp) in game.");
+                if (!config.AllowGameNavigation)
+                    throw new ToolException("Navigation is disabled. Enable \"Game & navigation\" in the XIV MCP settings window (/xivmcp) in game.");
                 if (!VnavmeshLoaded && !LifestreamLoaded)
                     throw new ToolException("Navigation needs vnavmesh (walking) and/or Lifestream (travel); neither is installed.");
                 var destination = args.String("destination")?.ToLowerInvariant() ?? throw new ToolException("'destination' is required.");
@@ -197,7 +197,7 @@ internal static class NavigationTools
     }
 
     /// <summary>Waits for Lifestream to finish and the zone to be loaded and stable.</summary>
-    private static async Task WaitUntilSettled(CancellationToken ct)
+    internal static async Task WaitUntilSettled(CancellationToken ct)
     {
         await Task.Delay(1500, ct).ConfigureAwait(false);
         var stableSince = DateTime.MaxValue;
@@ -215,7 +215,7 @@ internal static class NavigationTools
     }
 
     /// <summary>Finds the nearest matching object in the zone and walks to it with vnavmesh. Null if there is none.</summary>
-    private static async Task<object?> WalkTo(string label, Func<IGameObject, bool> match, List<string> steps, CancellationToken ct)
+    internal static async Task<object?> WalkTo(string label, Func<IGameObject, bool> match, List<string> steps, CancellationToken ct)
     {
         var target = await Game.RunLoggedIn(() =>
         {
@@ -256,7 +256,7 @@ internal static class NavigationTools
 
     // ------------------------------------------------------------------ helpers
 
-    private static void EnsureCanTravel()
+    internal static void EnsureCanTravel()
     {
         InventoryActionTools.EnsureNotBusy();
         if (Svc.Condition[ConditionFlag.BoundByDuty] || Svc.Condition[ConditionFlag.BoundByDuty56] || Svc.Condition[ConditionFlag.BoundByDuty95])
@@ -268,7 +268,7 @@ internal static class NavigationTools
         if (owns == false) throw new ToolException($"This character doesn't have {what} (according to Lifestream).");
     }
 
-    private static void StopAll()
+    internal static void StopAll()
     {
         Svc.Framework.RunOnFrameworkThread(() => { StopMoving(); LifestreamAbort(); });
     }

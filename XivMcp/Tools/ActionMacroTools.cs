@@ -30,8 +30,8 @@ internal static class ActionMacroTools
     {
         void RequireEnabled()
         {
-            if (!config.AllowMacroEditing)
-                throw new ToolException("Macro editing is disabled. Enable \"Allow macro editing\" in the XIV MCP settings window (/xivmcp) in game.");
+            if (!config.AllowUiEditing)
+                throw new ToolException("Macro editing is disabled. Enable \"UI editing\" in the XIV MCP settings window (/xivmcp) in game.");
         }
 
         // ------------------------------------------------------------------ actions
@@ -180,7 +180,7 @@ internal static class ActionMacroTools
             Description = $"Creates or edits a macro (like the in-game macro editor): name (max {MaxNameLength} characters), icon and up to {MacroLines} lines " +
                           $"(max {MaxLineLength} characters each). Omitted fields keep their current value; giving 'lines' replaces all lines. " +
                           "Returns the previous content, which is also backed up. Use dry_run to preview. Refuses while the in-game macro window is open " +
-                          "(it would overwrite the change). Requires 'Allow macro editing' in /xivmcp.",
+                          "(it would overwrite the change). Requires 'UI editing' in /xivmcp.",
             InputSchema = $$"""
                 {
                   "type": "object",
@@ -241,7 +241,7 @@ internal static class ActionMacroTools
         {
             Name = "clear_macro",
             Description = "Empties a macro slot (name, icon and all lines), like deleting it in the macro editor. The previous content is returned and " +
-                          "backed up. Refuses while the in-game macro window is open. Requires 'Allow macro editing' in /xivmcp.",
+                          "backed up. Refuses while the in-game macro window is open. Requires 'UI editing' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",

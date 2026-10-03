@@ -63,7 +63,12 @@ internal static class RetainerUi
     }
 
     /// <summary>Opens the inventory of the named retainer. The retainer list (summoning bell) or another retainer must be open.</summary>
-    public static async Task Open(string name, CancellationToken ct)
+    public static Task Open(string name, CancellationToken ct) => Open(name, false, ct);
+
+    /// <summary>Selects the named retainer and stops at its menu (instead of opening the inventory).</summary>
+    public static Task OpenMenu(string name, CancellationToken ct) => Open(name, true, ct);
+
+    private static async Task Open(string name, bool menuOnly, CancellationToken ct)
     {
         var target = await Svc.Framework.RunOnFrameworkThread(() => ResolveSortedIndex(name)).ConfigureAwait(false);
         var current = await Svc.Framework.RunOnFrameworkThread(() => ActiveRetainerName).ConfigureAwait(false);
@@ -76,7 +81,7 @@ internal static class RetainerUi
         {
             ct.ThrowIfCancellationRequested();
             if (DateTime.UtcNow > deadline) throw new ToolException($"Timed out opening retainer {target.Name}. Current windows may need manual attention.");
-            if (await Svc.Framework.RunOnFrameworkThread(() => OpenStep(target.Index, target.Name, state)).ConfigureAwait(false)) return;
+            if (await Svc.Framework.RunOnFrameworkThread(() => OpenStep(target.Index, target.Name, menuOnly, state)).ConfigureAwait(false)) return;
             await Task.Delay(150, ct).ConfigureAwait(false);
         }
     }
@@ -103,10 +108,11 @@ internal static class RetainerUi
     }
 
     /// <summary>One framework tick of opening a retainer. Returns true once its inventory is open and loaded.</summary>
-    private static unsafe bool OpenStep(int index, string name, StepState state)
+    private static unsafe bool OpenStep(int index, string name, bool menuOnly, StepState state)
     {
         var active = ActiveRetainerName;
         if (active == name && InventoryOpen && RetainerInventoryLoaded) return true;
+        if (menuOnly && (active == name || (active is null && state.LastAction != DateTime.MinValue && !RetainerListOpen)) && Ready("SelectString") && !Ready("Talk")) return true;
         if (active is not null && active != name) throw new ToolException($"Retainer {active} opened instead of {name}; aborting.");
         if (state.Throttled) return false;
 
@@ -206,7 +212,7 @@ internal static class RetainerUi
         throw new ToolException($"No retainer named '{name}'.");
     }
 
-    private static unsafe bool SelectMenuEntry(uint addonTextRow)
+    internal static unsafe bool SelectMenuEntry(uint addonTextRow)
     {
         // The game text contains a placeholder ("Entrust or withdraw items. (Slots filled: )"); compare only the part before it.
         var full = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Addon>().GetRow(addonTextRow).Text.ExtractText();
@@ -264,7 +270,7 @@ internal static class RetainerUi
         listener->ReceiveEvent((AtkEventType)4, 0, &evt, &data);
     }
 
-    private static unsafe void Fire(AtkUnitBase* addon, bool updateState, params object?[] values)
+    internal static unsafe void Fire(AtkUnitBase* addon, bool updateState, params object?[] values)
     {
         if (addon == null) throw new ToolException("Window disappeared.");
         var atk = stackalloc AtkValue[values.Length];

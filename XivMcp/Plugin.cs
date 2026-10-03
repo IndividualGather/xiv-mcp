@@ -15,11 +15,13 @@ public sealed class Plugin : IDalamudPlugin
 
     private readonly WindowSystem windows = new("XivMcp");
     private readonly ConfigWindow configWindow;
+    private readonly ConsentWindow consentWindow;
     private readonly WorkshopTracker workshop;
     private readonly RetainerTracker retainers;
     private readonly GlamourTracker glamour;
     private readonly ProgressTracker progress;
     private readonly StorageTracker storage;
+    private readonly SalesTracker sales;
     private readonly PluginCompat compat;
     private readonly CacheRegistry caches;
 
@@ -35,7 +37,10 @@ public sealed class Plugin : IDalamudPlugin
         Instance = this;
         pluginInterface.Create<Svc>();
         if (pluginInterface.GetPluginConfig() is Configuration saved)
+        {
             Config = saved;
+            if (Config.Migrate()) Config.Save();
+        }
         else
         {
             // First start: persist right away so the generated access token stays the same across game restarts.
@@ -48,6 +53,7 @@ public sealed class Plugin : IDalamudPlugin
         glamour = new GlamourTracker();
         progress = new ProgressTracker();
         storage = new StorageTracker();
+        sales = new SalesTracker();
         compat = new PluginCompat();
         caches = new CacheRegistry();
         caches.Add(workshop);
@@ -72,11 +78,20 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(FcChestTools.Create(Config))
             .Concat(NavigationTools.Create(Config))
             .Concat(CraftGatherTools.Create(Config))
+            .Concat(ItemSourceTools.Create(Config))
+            .Concat(ShopTools.Create(Config, compat))
+            .Concat(VentureTools.Create(Config, retainers, compat))
+            .Append(VentureTools.RecallTool(Config, compat))
+            .Concat(CraftPlanTools.Create(Config, retainers))
+            .Concat(MarketTools.Create(Config, retainers, sales, compat))
+            .Concat(WindowInspectTools.Create())
             .Concat(CacheTools.Create(caches));
         Server = new McpServer(tools, Config, caches);
 
         configWindow = new ConfigWindow(this);
         windows.AddWindow(configWindow);
+        consentWindow = new ConsentWindow();
+        windows.AddWindow(consentWindow);
         pluginInterface.UiBuilder.Draw += windows.Draw;
         pluginInterface.UiBuilder.OpenConfigUi += configWindow.Toggle;
         pluginInterface.UiBuilder.OpenMainUi += configWindow.Toggle;
@@ -95,6 +110,7 @@ public sealed class Plugin : IDalamudPlugin
         Svc.PluginInterface.UiBuilder.Draw -= windows.Draw;
         Svc.PluginInterface.UiBuilder.OpenConfigUi -= configWindow.Toggle;
         Svc.PluginInterface.UiBuilder.OpenMainUi -= configWindow.Toggle;
+        Consent.DeclineAll();
         windows.RemoveAllWindows();
         Server.Dispose();
         workshop.Dispose();
@@ -102,6 +118,7 @@ public sealed class Plugin : IDalamudPlugin
         glamour.Dispose();
         progress.Dispose();
         storage.Dispose();
+        sales.Dispose();
         compat.Dispose();
         Instance = null;
     }

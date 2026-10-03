@@ -80,7 +80,7 @@ internal static class FcChestTools
                           "you are standing at it. action: deposit | withdraw | withdraw_missing (withdraw up to the given amounts) | stop. " +
                           "Give 'items' as {\"itemId\": quantity}, or a preset: all, duplicates (deposit only), custom (your FCCH list), workshop " +
                           "(withdraw workshop materials), or 'gil' with an amount like 15k, 5m, 50% or all. Waits until FCCH is done. " +
-                          "Requires 'Allow inventory actions' in /xivmcp.",
+                          "Requires 'Items & retainers' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
@@ -97,8 +97,8 @@ internal static class FcChestTools
             ReadOnly = false,
             Handler = async (args, ct) =>
             {
-                if (!config.AllowInventoryActions)
-                    throw new ToolException("Inventory actions are disabled. Enable \"Allow inventory actions\" in the XIV MCP settings window (/xivmcp) in game.");
+                if (!config.AllowItemsRetainers)
+                    throw new ToolException("Inventory actions are disabled. Enable \"Items & retainers\" in the XIV MCP settings window (/xivmcp) in game.");
                 if (!PluginCompat.FcchLoaded)
                     throw new ToolException("Free company chest transfers use FCCH, which is not installed. Without it, open the chest and move items in game.");
 
