@@ -89,15 +89,25 @@ internal static class InteractionTools
         yield return new McpTool
         {
             Name = "close_window",
-            Description = "Closes a game window opened from the main menu (see list_windows). Requires 'Allow game interaction' in /xivmcp.",
+            Description = "Closes a game window: a main menu window (see list_windows), or a window that interact_with_object reported in " +
+                          "openedWindows (e.g. FreeCompanyChest, SelectString). Requires 'Allow game interaction' in /xivmcp.",
             InputSchema = """
-                { "type": "object", "properties": { "window": { "type": "string", "description": "Window name (or main command id) from list_windows." } }, "required": ["window"] }
+                { "type": "object", "properties": { "window": { "type": "string", "description": "Window name / main command id from list_windows, or a window name from openedWindows." } }, "required": ["window"] }
                 """,
             ReadOnly = false,
             Handler = (args, _) =>
             {
                 RequireEnabled();
-                var cmd = ResolveCommand(args.String("window"));
+                var window = args.String("window") ?? throw new ToolException("'window' is required.");
+                var addon = InterestingAddons.FirstOrDefault(a => a.Equals(window, StringComparison.OrdinalIgnoreCase));
+                if (addon is not null)
+                    return Game.RunLoggedIn<object?>(() =>
+                    {
+                        if (Svc.GameGui.GetAddonByName(addon, 1) is not { IsNull: false, IsVisible: true }) return new { window = addon, action = "already closed" };
+                        CloseAddon(addon);
+                        return new { window = addon, action = "closed" };
+                    });
+                var cmd = ResolveCommand(window);
                 return Game.RunLoggedIn<object?>(() =>
                 {
                     var open = IsOpen(cmd.RowId);
@@ -144,19 +154,24 @@ internal static class InteractionTools
                     var isBell = IsSummoningBell(obj);
                     if (isBell) compat.AcquireBell();
                     var before = VisibleAddons();
+                    var conditionsBefore = Svc.Condition.AsReadOnlySet().ToHashSet();
+                    ulong result;
                     unsafe
                     {
                         var native = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)obj.Address;
                         TargetSystem.Instance()->SetHardTarget(native, false, false, 0);
-                        TargetSystem.Instance()->InteractWithObject(native, true);
+                        result = TargetSystem.Instance()->InteractWithObject(native, true);
                     }
-                    return (Name: obj.Name.TextValue, Distance: distance, IsBell: isBell, Before: before);
+                    return (Name: obj.Name.TextValue, Distance: distance, IsBell: isBell, Before: before, ConditionsBefore: conditionsBefore, Result: result);
                 }).ConfigureAwait(false);
 
                 // Report what the interaction opened.
-                await WaitFor(() => VisibleAddons().Except(target.Before).Any() || Svc.Condition[ConditionFlag.OccupiedInEvent] ||
-                                    Svc.Condition[ConditionFlag.OccupiedSummoningBell], TimeSpan.FromSeconds(3), ct).ConfigureAwait(false);
+                bool Reacted() => VisibleAddons().Except(target.Before).Any() || !Svc.Condition.AsReadOnlySet().SetEquals(target.ConditionsBefore);
+                var reacted = await WaitFor(Reacted, TimeSpan.FromSeconds(3), ct).ConfigureAwait(false);
                 await Task.Delay(300, ct).ConfigureAwait(false);
+                if (!reacted)
+                    throw new ToolException($"The game did not react to interacting with {target.Name} ({target.Distance:0.#} yalms away, result {target.Result}). " +
+                                            "It is most likely out of interaction range or line of sight; move closer (within ~3 yalms is safe) and retry.");
                 return await Svc.Framework.RunOnFrameworkThread(() => (object?)new
                 {
                     interactedWith = target.Name,
@@ -204,6 +219,9 @@ internal static class InteractionTools
         }
         return match;
     }
+
+    private static unsafe void CloseAddon(string name) =>
+        Svc.GameGui.GetAddonByName<FFXIVClientStructs.FFXIV.Component.GUI.AtkUnitBase>(name, 1)->Close(true);
 
     private static unsafe bool IsUnlocked(uint command) => UIModule.Instance()->IsMainCommandUnlocked(command);
 

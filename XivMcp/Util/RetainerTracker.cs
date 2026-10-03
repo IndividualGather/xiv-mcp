@@ -82,7 +82,8 @@ internal sealed class RetainerTracker : IDisposable, ICache
         var rm = RetainerManager.Instance();
         if (rm == null || !rm->IsReady) return;
         // The game keeps retainer data in memory after leaving the bell; it is only refreshed by the server while at a bell.
-        if (!Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.OccupiedSummoningBell] && !RetainerUi.RetainerListOpen && !RetainerUi.InventoryOpen) return;
+        // (The "OccupiedSummoningBell" condition is also set at the company chest, so check the retainer windows themselves.)
+        if (!RetainerUi.RetainerListOpen && !RetainerUi.InventoryOpen) return;
 
         var contentId = Svc.PlayerState.ContentId;
         CharacterRetainers current;
