@@ -75,7 +75,8 @@ internal static class ActionMacroTools
                 foreach (var a in actions)
                 {
                     // Actions without an unlock quest (UnlockLink 0) are learned by level alone; the game's unlock check only covers quest unlocks.
-                    var unlocked = level >= a.ClassJobLevel && (a.UnlockLink.RowId == 0 || !isCurrent || Svc.Unlocks.IsActionUnlocked(a));
+                    var questGated = a.UnlockLink.RowId != 0;
+                    var unlocked = level >= a.ClassJobLevel && (!questGated || Svc.Unlocks.IsActionUnlocked(a));
                     if (onlyUnlocked && !unlocked) continue;
                     var maxCharges = a.MaxCharges;
                     var entry = new Dictionary<string, object?>
@@ -84,6 +85,7 @@ internal static class ActionMacroTools
                         ["name"] = a.Name.ExtractText(),
                         ["level"] = a.ClassJobLevel,
                         ["unlocked"] = unlocked,
+                        ["unlockedBy"] = questGated ? UnlockSource(a) : "level",
                         ["type"] = Excel.Name(a.ActionCategory),
                         ["gcd"] = a.CooldownGroup == GcdCooldownGroup,
                         ["roleAction"] = a.IsRoleAction ? true : null,
@@ -285,6 +287,15 @@ internal static class ActionMacroTools
                         (c.Abbreviation.ExtractText().Equals(job, StringComparison.OrdinalIgnoreCase) ||
                          c.Name.ExtractText().Equals(job, StringComparison.OrdinalIgnoreCase)));
         return match.RowId != 0 ? match : throw new ToolException($"Unknown job '{job}'. Use an abbreviation like PLD or a name like Paladin.");
+    }
+
+    /// <summary>What unlocks a quest-gated action: the quest's name if the unlock link is a quest, otherwise the raw link id.</summary>
+    private static object UnlockSource(Action a)
+    {
+        var link = a.UnlockLink.RowId;
+        if (link >= 65536 && Svc.Data.GetExcelSheet<Quest>().GetRowOrDefault(link) is { } quest && !quest.Name.IsEmpty)
+            return new { quest = Game.Clean(quest.Name.ExtractText()), questId = link };
+        return new { unlockLink = link };
     }
 
     /// <summary>ClassJobCategory has one boolean column per class/job abbreviation (GLA, PLD, ...).</summary>
