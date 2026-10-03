@@ -150,6 +150,6 @@ internal static class JsonPath
     {
         null => "Null",
         System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False => "Boolean",
-        var k => k.ToString(),
+        var k => k.Value.ToString(),
     };
 }
