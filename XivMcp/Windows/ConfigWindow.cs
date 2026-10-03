@@ -332,7 +332,8 @@ internal sealed class ConfigWindow : Window
         var navPlugins = compat is { } n && (n.Vnavmesh || n.Lifestream);
         Card("game", FontAwesomeIcon.HandPointer, "Game & navigation", config.AllowGameNavigation, v => config.AllowGameNavigation = v,
             "Open game windows, interact with objects and NPCs (summoning bell, company chest, voyage panel, NPC menus)" +
-            (navPlugins ? " and move the character: walking (vnavmesh), teleports and housing (Lifestream)." : ". Walking and teleports need vnavmesh / Lifestream."),
+            (navPlugins ? " and move the character: walking (vnavmesh), teleports, housing and world travel (Lifestream)." : ". Walking and teleports need vnavmesh / Lifestream.") +
+            " Log into other characters of the account on any world, data center and service account.",
             navPlugins ? "Teleports cost gil as usual. stop_navigation stops movement at any time." : null,
             navPlugins ? DrawBellPreference : null, extraLines: 1.6f);
 
@@ -399,7 +400,7 @@ internal sealed class ConfigWindow : Window
         if (c.GatherBuddy)
             CompatRow("GatherBuddy Reborn", "auto-gather can be started and its lists edited");
         if (c.ItemVendorLocation)
-            CompatRow("Item Vendor Location", "used by Purchases to find vendors and where they stand");
+            CompatRow("Item Vendor Location", "used by Market & purchases to find vendors and where they stand");
     }
 
     private static readonly (string Id, string Label)[] BellLocations =

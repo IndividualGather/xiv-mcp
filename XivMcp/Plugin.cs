@@ -22,6 +22,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ProgressTracker progress;
     private readonly StorageTracker storage;
     private readonly SalesTracker sales;
+    private readonly CharacterRoster roster;
     private readonly PluginCompat compat;
     private readonly CacheRegistry caches;
 
@@ -54,6 +55,7 @@ public sealed class Plugin : IDalamudPlugin
         progress = new ProgressTracker();
         storage = new StorageTracker();
         sales = new SalesTracker();
+        roster = new CharacterRoster();
         compat = new PluginCompat();
         caches = new CacheRegistry();
         caches.Add(workshop);
@@ -84,6 +86,7 @@ public sealed class Plugin : IDalamudPlugin
             .Append(VentureTools.RecallTool(Config, compat))
             .Concat(CraftPlanTools.Create(Config, retainers))
             .Concat(MarketTools.Create(Config, retainers, sales, compat))
+            .Concat(LoginTools.Create(Config, roster))
             .Concat(WindowInspectTools.Create())
             .Concat(CacheTools.Create(caches));
         Server = new McpServer(tools, Config, caches);
@@ -119,6 +122,7 @@ public sealed class Plugin : IDalamudPlugin
         progress.Dispose();
         storage.Dispose();
         sales.Dispose();
+        roster.Dispose();
         compat.Dispose();
         Instance = null;
     }
