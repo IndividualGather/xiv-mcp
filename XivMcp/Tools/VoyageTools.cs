@@ -69,8 +69,8 @@ internal static class VoyageTools
     }
 
     private const string NoDataMessage =
-        "No submersible data recorded yet. Enter your free company's workshop once (the data is only sent by the game there); " +
-        "the plugin saves it automatically. If you are already inside, open the voyage control panel and retry.";
+        "No submersible data recorded yet. The game only sends it when the voyage control panel in your free company's workshop is opened: " +
+        "go there and open submersible management — the plugin saves the data automatically (use wait_for_cache_refresh with cache=\"submersibles\" to wait for it).";
 
     private static object Describe(WorkshopSnapshot s, WorkshopTracker tracker, (bool Airships, bool Loot, bool Sectors) options)
     {

@@ -69,7 +69,7 @@ The game only sends some data in certain places. XIV MCP snapshots it there and 
 
 | Cache | Refreshed when |
 |---|---|
-| `submersibles` | You are inside the FC workshop |
+| `submersibles` | You open the voyage control panel in the FC workshop |
 | `retainers` | You are at a summoning bell (retainer list), and per retainer while that retainer is open |
 
 Every cached result carries a `cache` block: `capturedAt`, `age`, `live`, `stale` (older than *Cache stale after* hours, default 12) and a `suggestion` that says exactly what to do in game to refresh it.
@@ -100,7 +100,7 @@ Automating game actions is against the FFXIV ToS. These tools send the same requ
 
 The unlock and game-data tools work by reflection over Dalamud's `IUnlockState` and Lumina's sheet types. New categories and sheets therefore show up automatically when Dalamud is updated.
 
-The game only sends submersible and airship data while you are inside the FC workshop. While you're there, XIV MCP saves a snapshot every few seconds to `pluginConfigs/XivMcp/workshop.json`, one per character. `get_submersibles` then works from anywhere, including for alts (`all_characters=true`). Return times are absolute, so "voyaging / ready to collect" stays correct between visits. Rank and loot reflect your last visit (`capturedAt`).
+The game only sends submersible and airship data when you open the voyage control panel in the FC workshop. From then on, while you are in the workshop, XIV MCP saves a snapshot every few seconds to `pluginConfigs/XivMcp/workshop.json`, one per character. `get_submersibles` then works from anywhere, including for alts (`all_characters=true`). Return times are absolute, so "voyaging / ready to collect" stays correct between visits. Rank and loot reflect your last visit (`capturedAt`).
 
 Some data is only filled in by the game after the matching window has been opened once per session. This applies to the Achievements window, the title list, the retainer list (summoning bell), the saddlebag and retainer inventories. The tools say so when this is the case.
 

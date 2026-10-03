@@ -161,7 +161,7 @@ internal sealed class WorkshopTracker : IDisposable, ICache
     public string Description => "Snapshot of the free company workshop (submersibles, airships, sectors), captured while inside the workshop.";
     public long Version => Interlocked.Read(ref version);
     public event Action<ICache>? Updated;
-    public const string RefreshHint = "enter your free company's workshop (the snapshot updates automatically while you are inside).";
+    public const string RefreshHint = "go to your free company's workshop and open the voyage control panel (submersible management); the snapshot updates automatically.";
 
     public IEnumerable<CacheEntryStatus> Entries() =>
         All().Select(s => new CacheEntryStatus($"{s.Character}{(s.World is null ? "" : " @ " + s.World)}", null, s.CapturedUtc, RefreshHint));
