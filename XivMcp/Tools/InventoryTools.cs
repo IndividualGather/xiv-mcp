@@ -67,7 +67,8 @@ internal static class InventoryTools
                         container = c.ToString(),
                         slots = items.Length,
                         used = items.ToArray().Count(i => !i.IsEmpty),
-                        items = items.ToArray().Where(i => !i.IsEmpty).Select(i => DescribeItem(i, details)).ToList(),
+                        // Listed in the order the player sees (the game's sort only changes the displayed order, not the slots).
+                        items = WithDisplayOrder(c, items.ToArray().Where(i => !i.IsEmpty), details),
                     };
                 }).ToList();
                 unsafe
@@ -238,6 +239,23 @@ internal static class InventoryTools
             else throw new ToolException($"Unknown container '{name}'. {ContainerHelp}");
         }
         return result.Distinct().ToList();
+    }
+
+    /// <summary>
+    /// Adds "shown" (page/slot as displayed in game, 0-based) and orders by it. "slot" stays the physical slot that move_items uses.
+    /// </summary>
+    private static List<Dictionary<string, object?>> WithDisplayOrder(GameInventoryType container, IEnumerable<GameInventoryItem> items, bool details)
+    {
+        var order = ItemOrder.For(container);
+        return items.Select(i =>
+            {
+                var d = DescribeItem(i, details);
+                if (order.TryGetValue((container, (int)i.InventorySlot), out var pos)) d["shown"] = new { page = pos.Page, slot = pos.Slot };
+                return (d, index: order.TryGetValue((container, (int)i.InventorySlot), out var p) ? p.Index : int.MaxValue);
+            })
+            .OrderBy(x => x.index)
+            .Select(x => x.d)
+            .ToList();
     }
 
     public static string? ItemName(uint itemId)
