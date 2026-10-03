@@ -184,25 +184,49 @@ internal sealed class ConfigWindow : Window
 
         ImGui.Spacing();
         Section(FontAwesomeIcon.Link, "Add to your AI client");
-        var header = config.RequireToken ? $" --header \"Authorization: Bearer {config.Token}\"" : "";
-        var masked = config.RequireToken ? " --header \"Authorization: Bearer ••••••\"" : "";
-        if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Copy, "Claude Code command"))
-            ImGui.SetClipboardText($"claude mcp add --transport http ffxiv {server.Endpoint}{header}");
-        ImGui.SameLine();
-        if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Copy, "JSON config"))
-            ImGui.SetClipboardText(JsonConfig(server.Endpoint, config));
-        Tooltip("For Cursor, VS Code and other clients with HTTP MCP support");
+        var endpoint = server.Endpoint;
+        var token = config.RequireToken ? config.Token : null;
 
+        // Claude Code
+        ClientBlock("claude", "Claude Code", "Run in a terminal:",
+            ClaudeCommand(endpoint, token), ClaudeCommand(endpoint, token is null ? null : "••••••"), "Copy command");
+
+        // Codex: the CLI reads the token from an environment variable; config.toml can hold it directly.
+        ClientBlock("codex", "Codex", token is null ? "Run in a terminal:" : "Run in a terminal (sets the token variable, then adds the server; open a new terminal before starting Codex):",
+            CodexCommand(endpoint, token), CodexCommand(endpoint, token is null ? null : "••••••"), "Copy command");
+        ImGui.SameLine();
+        if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Copy, "Copy config.toml entry"))
+            ImGui.SetClipboardText(CodexToml(endpoint, token));
+        Tooltip("Alternative: paste into ~/.codex/config.toml (no environment variable needed).");
+    }
+
+    private void ClientBlock(string id, string name, string hint, string command, string preview, string buttonLabel)
+    {
+        ImGui.Spacing();
+        ImGui.TextUnformatted(name);
+        ImGui.SameLine();
+        ImGui.TextColored(Muted, hint);
         using (ImRaii.PushColor(ImGuiCol.ChildBg, new Vector4(0, 0, 0, 0.25f)))
-        using (ImRaii.Child("##cmd", new Vector2(-1, ImGui.GetTextLineHeightWithSpacing() * 2.6f), true))
+        using (ImRaii.Child($"##cmd-{id}", new Vector2(-1, ImGui.GetTextLineHeightWithSpacing() * (preview.Count(ch => ch == '\n') + 2.4f)), true))
         using (ImRaii.PushFont(UiBuilder.MonoFont))
         {
             ImGui.PushTextWrapPos();
-            ImGui.TextColored(Cyan, $"claude mcp add --transport http ffxiv {server.Endpoint}{masked}");
+            ImGui.TextColored(Cyan, preview);
             ImGui.PopTextWrapPos();
         }
-        ImGui.TextColored(Muted, "Clients that only support stdio can use: npx mcp-remote <url> --header \"Authorization: Bearer <token>\"");
+        if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Copy, $"{buttonLabel}##{id}"))
+            ImGui.SetClipboardText(command);
     }
+
+    private static string ClaudeCommand(string endpoint, string? token) =>
+        $"claude mcp add --transport http ffxiv {endpoint}" + (token is null ? "" : $" --header \"Authorization: Bearer {token}\"");
+
+    private static string CodexCommand(string endpoint, string? token) => token is null
+        ? $"codex mcp add ffxiv --url {endpoint}"
+        : $"setx XIVMCP_TOKEN \"{token}\"\ncodex mcp add ffxiv --url {endpoint} --bearer-token-env-var XIVMCP_TOKEN";
+
+    private static string CodexToml(string endpoint, string? token) =>
+        $"[mcp_servers.ffxiv]\nurl = \"{endpoint}\"" + (token is null ? "" : $"\nhttp_headers = {{ \"Authorization\" = \"Bearer {token}\" }}");
 
     // ---------------------------------------------------------------- permissions
 
@@ -451,18 +475,4 @@ internal sealed class ConfigWindow : Window
         ImGui.PopTextWrapPos();
     }
 
-    private static string JsonConfig(string endpoint, Configuration config)
-    {
-        var headers = config.RequireToken ? $",\n      \"headers\": {{ \"Authorization\": \"Bearer {config.Token}\" }}" : "";
-        return $$"""
-            {
-              "mcpServers": {
-                "ffxiv": {
-                  "type": "http",
-                  "url": "{{endpoint}}"{{headers}}
-                }
-              }
-            }
-            """;
-    }
 }

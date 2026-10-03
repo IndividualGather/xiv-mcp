@@ -2,7 +2,7 @@
 
 # XIV MCP
 
-A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV that runs a local **Model Context Protocol (MCP) server** inside the game client. It gives AI assistants such as Claude Code, Claude Desktop, Cursor or VS Code read-only access to the live data of the logged-in character.
+A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV that runs a local **Model Context Protocol (MCP) server** inside the game client. It gives AI assistants such as Claude Code or Codex access to the live data of the logged-in character, read-only by default.
 
 - **Transport:** MCP Streamable HTTP (JSON responses) at `http://localhost:37521/mcp`, bound to localhost only
 - **Auth:** bearer token, generated on first start (can be turned off)
@@ -146,33 +146,34 @@ The plugin is written to `XivMcp/bin/Debug/XivMcp.dll`.
 
 ## Connecting a client
 
-**Claude Code** (the settings window has a button that copies this command with your token filled in):
+The **Connect** tab in `/xivmcp` has copy buttons for both commands below, with your token already filled in.
+
+**Claude Code:**
 
 ```sh
 claude mcp add --transport http ffxiv http://localhost:37521/mcp --header "Authorization: Bearer <token>"
 ```
 
-**JSON config** (Cursor, VS Code and other clients that support HTTP MCP servers):
+**Codex:** Codex reads the token from an environment variable. Open a new terminal after `setx` and before starting Codex:
 
-```json
-{
-  "mcpServers": {
-    "ffxiv": {
-      "type": "http",
-      "url": "http://localhost:37521/mcp",
-      "headers": { "Authorization": "Bearer <token>" }
-    }
-  }
-}
+```sh
+setx XIVMCP_TOKEN "<token>"
+codex mcp add ffxiv --url http://localhost:37521/mcp --bearer-token-env-var XIVMCP_TOKEN
 ```
 
-Clients that only support stdio servers can use a bridge such as `npx mcp-remote http://localhost:37521/mcp --header "Authorization: Bearer <token>"`.
+Or add the server to `~/.codex/config.toml` directly:
+
+```toml
+[mcp_servers.ffxiv]
+url = "http://localhost:37521/mcp"
+http_headers = { "Authorization" = "Bearer <token>" }
+```
 
 ## Notes
 
 - All game-memory reads run on the game's framework thread. Static sheet lookups run on a background thread.
 - The server answers only on `localhost`, rejects browser requests from non-local `Origin`s (DNS rebinding protection) and requires the token by default.
-- This is a read-only data plugin, but third-party tools are against the FFXIV ToS. Use at your own discretion, and don't share data about other players.
+- By default XIV MCP only reads data; everything that acts in game is opt-in. Third-party tools are against the FFXIV ToS, so use it at your own discretion, and don't share data about other players.
 
 ## License
 
