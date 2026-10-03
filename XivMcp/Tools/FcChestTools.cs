@@ -25,7 +25,8 @@ internal static class FcChestTools
         yield return new McpTool
         {
             Name = "get_fc_chest",
-            Description = "Contents of the free company chest (item tabs, crystals and gil) while it is loaded — the game sends it when the chest is opened. " +
+            Description = "Contents of the free company chest (item tabs, crystals and gil): live while the game has it loaded, otherwise the last " +
+                          "snapshot with its age (the game only sends the chest when it is opened). " +
                           "Filter by item name.",
             InputSchema = """
                 { "type": "object", "properties": { "query": { "type": "string", "description": "Only items whose name contains this text." } } }
@@ -33,6 +34,26 @@ internal static class FcChestTools
             Handler = (args, _) => Game.RunLoggedIn<object?>(() =>
             {
                 var query = args.String("query");
+                if (!StorageTracker.IsLoaded("fc_chest"))
+                {
+                    // Not loaded right now: answer from the last snapshot, with its age.
+                    var group = StorageTracker.Groups["fc_chest"];
+                    var stored = StorageTracker.Instance?.Get("fc_chest")
+                        ?? throw new ToolException("The free company chest is not loaded and was never captured. To capture it: " + group.Hint);
+                    return new
+                    {
+                        gil = stored.Gil,
+                        tabs = stored.Items.Where(i => i.Container.StartsWith("FreeCompanyPage", StringComparison.Ordinal))
+                            .Select(i => (i, name: InventoryTools.ItemName(i.ItemId))).Where(x => Game.Matches(x.name, query))
+                            .GroupBy(x => x.i.Container).OrderBy(g => g.Key)
+                            .Select(g => new { tab = g.Key, items = g.Select(x => new { itemId = x.i.ItemId, name = x.name, quantity = x.i.Quantity, hq = x.i.Hq ? true : (bool?)null }).ToList() })
+                            .ToList(),
+                        crystals = stored.Items.Where(i => i.Container == "FreeCompanyCrystals")
+                            .Select(i => new { itemId = i.ItemId, name = InventoryTools.ItemName(i.ItemId), quantity = i.Quantity }).ToList(),
+                        cache = CacheFreshness.Describe(stored.CapturedUtc, false, group.Hint),
+                        fcch = PluginCompat.FcchLoaded ? "installed: use fc_chest_transfer to deposit or withdraw" : null,
+                    };
+                }
                 var tabs = ChestPages.Select(page => new
                 {
                     tab = page.ToString(),
@@ -42,8 +63,6 @@ internal static class FcChestTools
                         .Select(x => new { itemId = x.i.BaseItemId, name = x.name, quantity = x.i.Quantity, hq = x.i.IsHq ? true : (bool?)null })
                         .ToList(),
                 }).ToList();
-                if (tabs.All(t => t.items.Count == 0) && query is null)
-                    throw new ToolException("The free company chest is not loaded. Open the company chest (or use interact_with_object \"Company Chest\"), then retry.");
                 var crystals = Svc.Inventory.GetInventoryItems(GameInventoryType.FreeCompanyCrystals).ToArray().Where(i => !i.IsEmpty)
                     .Select(i => new { itemId = i.BaseItemId, name = InventoryTools.ItemName(i.BaseItemId), quantity = i.Quantity }).ToList();
                 unsafe

@@ -11,7 +11,8 @@ using FFXIVClientStructs.FFXIV.Client.Game.UI;
 namespace XivMcp.Util;
 
 /// <summary>
-/// The armoire and the glamour dresser are only sent by the server after they were opened (inn room / dresser / glamour plates).
+/// The glamour dresser is only sent by the server after it (or a glamour plate) was opened. The armoire is loaded at login and
+/// read live instead (see <see cref="ArmoireLive"/>).
 /// This tracker snapshots them whenever they are loaded and persists them per character.
 /// </summary>
 internal sealed class GlamourTracker : IDisposable, ICache
@@ -19,7 +20,6 @@ internal sealed class GlamourTracker : IDisposable, ICache
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan NewVisitGap = TimeSpan.FromSeconds(60);
 
-    public const string ArmoireHint = "open the armoire in an inn room (the snapshot updates automatically).";
     public const string DresserHint = "open the glamour dresser in an inn room, or a glamour plate (the snapshot updates automatically).";
 
     private readonly string filePath;
@@ -38,8 +38,8 @@ internal sealed class GlamourTracker : IDisposable, ICache
     public void Dispose() => Svc.Framework.Update -= OnUpdate;
 
     public string Id => "glamour";
-    public string Title => "Armoire & glamour dresser";
-    public string Description => "Items stored in the armoire and in the glamour dresser (with dyes), captured when they were last opened.";
+    public string Title => "Glamour dresser";
+    public string Description => "Items stored in the glamour dresser (with dyes), captured when it was last opened.";
     public long Version => Interlocked.Read(ref version);
     public event Action<ICache>? Updated;
 
@@ -47,8 +47,9 @@ internal sealed class GlamourTracker : IDisposable, ICache
     {
         foreach (var s in All())
         {
-            yield return new CacheEntryStatus(s.Character, "armoire", s.ArmoireCapturedUtc, ArmoireHint);
-            yield return new CacheEntryStatus(s.Character, "glamour dresser", s.DresserCapturedUtc, DresserHint);
+
+            yield return new CacheEntryStatus(s.Character, "glamour dresser", s.DresserCapturedUtc, DresserHint,
+                Live: Svc.PlayerState.IsLoaded && Svc.PlayerState.ContentId == s.ContentId && DresserLive);
         }
     }
 
@@ -79,9 +80,9 @@ internal sealed class GlamourTracker : IDisposable, ICache
     private unsafe void Poll()
     {
         if (!Svc.ClientState.IsLoggedIn || !Svc.PlayerState.IsLoaded) return;
-        var armoireLive = ArmoireLive;
+
         var dresserLive = DresserLive;
-        if (!armoireLive && !dresserLive) return;
+        if (!dresserLive) return;
 
         var contentId = Svc.PlayerState.ContentId;
         GlamourSnapshot current;
@@ -90,15 +91,6 @@ internal sealed class GlamourTracker : IDisposable, ICache
         var next = current with { Character = Svc.PlayerState.CharacterName };
         var refreshed = false;
 
-        if (armoireLive)
-        {
-            var cabinet = &UIState.Instance()->Cabinet;
-            var ids = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Cabinet>()
-                .Where(r => r.RowId != 0 && r.Item.RowId != 0 && cabinet->IsItemInCabinet(r.RowId))
-                .Select(r => r.RowId).ToList();
-            refreshed |= !ids.SequenceEqual(current.ArmoireCabinetIds) || current.ArmoireCapturedUtc is not { } t || now - t > NewVisitGap;
-            next = next with { ArmoireCabinetIds = ids, ArmoireCapturedUtc = now };
-        }
 
         if (dresserLive)
         {
@@ -143,8 +135,6 @@ public sealed record GlamourSnapshot
 {
     public ulong ContentId { get; init; }
     public string Character { get; init; } = "";
-    public DateTime? ArmoireCapturedUtc { get; init; }
-    public List<uint> ArmoireCabinetIds { get; init; } = [];
     public DateTime? DresserCapturedUtc { get; init; }
     public int DresserCapacity { get; init; }
     public List<DresserItem> DresserItems { get; init; } = [];

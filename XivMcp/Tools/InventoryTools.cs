@@ -119,6 +119,32 @@ internal static class InventoryTools
                     }
                 }
 
+                // Saddlebag and FC chest: live when the game has them loaded, otherwise the last snapshot.
+                var storageNotes = new List<object>();
+                foreach (var (key, group) in args.StringList("containers").Count == 0 ? StorageTracker.Groups : [])
+                {
+                    if (StorageTracker.IsLoaded(key))
+                    {
+                        if (key == "saddlebag") continue; // already part of the live search above
+                        foreach (var c in group.Containers)
+                            foreach (var item in Svc.Inventory.GetInventoryItems(c))
+                            {
+                                if (item.IsEmpty || !Wanted(item.BaseItemId, out var name)) continue;
+                                hits.Add((item.BaseItemId, name, item.Quantity, new { container = c.ToString(), slot = item.InventorySlot, quantity = item.Quantity, hq = item.IsHq }));
+                            }
+                        continue;
+                    }
+                    if (StorageTracker.Instance?.Get(key) is not { } stored) continue;
+                    var found = false;
+                    foreach (var i in stored.Items)
+                    {
+                        if (!Wanted(i.ItemId, out var name)) continue;
+                        found = true;
+                        hits.Add((i.ItemId, name, i.Quantity, new { container = i.Container, slot = i.Slot, quantity = i.Quantity, hq = i.Hq, cachedAt = stored.CapturedUtc }));
+                    }
+                    if (found) storageNotes.Add(new { storage = group.Title, cache = CacheFreshness.Describe(stored.CapturedUtc, false, group.Hint) });
+                }
+
                 var retainerNotes = new List<object>();
                 if (args.Bool("include_retainers", true) && retainers.Get(Svc.PlayerState.ContentId) is { } cached)
                 {
@@ -150,6 +176,7 @@ internal static class InventoryTools
                         locations = g.Select(h => h.Location).ToList(),
                     }).ToList(),
                     retainerCaches = retainerNotes.Count > 0 ? retainerNotes : null,
+                    storageCaches = storageNotes.Count > 0 ? storageNotes : null,
                 };
             }),
         };

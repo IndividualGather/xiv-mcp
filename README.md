@@ -98,9 +98,11 @@ The game only sends some data in certain places. XIV MCP snapshots it there and 
 
 | Cache | Refreshed when |
 |---|---|
-| `submersibles` | You open the voyage control panel in the FC workshop |
-| `retainers` | You are at a summoning bell (retainer list), and per retainer while that retainer is open |
-| `glamour` | Armoire: loaded at login. Glamour dresser: when you open it or a glamour plate |
+| `submersibles` | Whenever the voyage control panel data is loaded in the FC workshop (by you or a plugin) |
+| `retainers` | Whenever the game has the data: the retainer list at a summoning bell, and each retainer's inventory as soon as that retainer is selected, also when a plugin like AutoRetainer goes through them |
+| `glamour` | Glamour dresser: whenever it, or a glamour plate, is opened. The armoire is loaded at login and read live, so it needs no cache |
+| `progress` | Achievements and titles: whenever the game has the lists loaded (Achievements window or title list opened, by you or any plugin) |
+| `storage` | Saddlebag and FC chest: whenever they are loaded (opened by you, or by a plugin such as FCCH) |
 
 Every cached result carries a `cache` block: `capturedAt`, `age`, `live`, `stale` (older than *Cache stale after* hours, default 12) and a `suggestion` that says exactly what to do in game to refresh it.
 

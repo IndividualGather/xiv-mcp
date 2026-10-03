@@ -13,11 +13,12 @@ internal static class CacheTools
         yield return new McpTool
         {
             Name = "get_cache_status",
-            Description = "Lists the plugin's snapshot caches (data the game only sends in certain places: FC workshop → submersibles, " +
-                          "summoning bell → retainer list and retainer inventories) with the age of every entry, whether it is stale, " +
+            Description = "Lists the plugin's snapshot caches (data the game only sends at certain times: submersibles, retainers, glamour dresser, " +
+                          "achievements & titles, saddlebag and FC chest). Each entry is either live (the game has it loaded right now) or a snapshot " +
+                          "with its age, a stale flag " +
                           "and exactly what the player has to do in game to refresh it. Each cache is also an MCP resource (xiv://cache/<id>) " +
                           "that clients can subscribe to for update notifications.",
-            Handler = (_, _) => Task.FromResult<object?>(new
+            Handler = (_, _) => Game.Run<object?>(() => new
             {
                 staleAfterHours = CacheFreshness.StaleAfter.TotalHours,
                 caches = caches.Status(),

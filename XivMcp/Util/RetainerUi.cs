@@ -22,6 +22,10 @@ internal static class RetainerUi
 
     private static readonly string[] InventoryAddons = ["InventoryRetainerLarge", "InventoryRetainer"];
 
+    /// <summary>Windows shown while a retainer is being talked to (by the player or an automation plugin).</summary>
+    private static readonly string[] RetainerWindows =
+        ["SelectString", "Talk", "RetainerTaskAsk", "RetainerTaskResult", "RetainerTaskList", "RetainerSellList", "RetainerSell"];
+
     private static Dalamud.Game.NativeWrapper.AtkUnitBasePtr Ptr(string name) => Svc.GameGui.GetAddonByName(name, 1);
     private static unsafe AtkUnitBase* Addon(string name) => Svc.GameGui.GetAddonByName<AtkUnitBase>(name, 1);
     public static bool Ready(string name) => Ptr(name) is { IsNull: false, IsVisible: true, IsReady: true };
@@ -41,7 +45,7 @@ internal static class RetainerUi
         get
         {
             if (RetainerListOpen) return null;
-            if (!InventoryOpen && !Ready("SelectString") && !Ready("Talk") && !Ready("RetainerTaskAsk") && !Ready("RetainerTaskResult"))
+            if (!AtBell || (!InventoryOpen && !Array.Exists(RetainerWindows, Ready)))
                 return null;
             var rm = RetainerManager.Instance();
             var r = rm == null ? null : rm->GetActiveRetainer();

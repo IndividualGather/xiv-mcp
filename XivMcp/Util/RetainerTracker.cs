@@ -50,9 +50,12 @@ internal sealed class RetainerTracker : IDisposable, ICache
     {
         foreach (var c in All())
         {
-            yield return new CacheEntryStatus(c.Label, "retainer list", c.ListCapturedUtc, ListRefreshHint);
+            var mine = Svc.PlayerState.IsLoaded && Svc.PlayerState.ContentId == c.ContentId;
+            yield return new CacheEntryStatus(c.Label, "retainer list", c.ListCapturedUtc, ListRefreshHint,
+                mine && (RetainerUi.RetainerListOpen || RetainerUi.ActiveRetainerName is not null));
             foreach (var r in c.Retainers)
-                yield return new CacheEntryStatus(c.Label, $"inventory of {r.Name}", r.InventoryCapturedUtc, InventoryRefreshHint(r.Name));
+                yield return new CacheEntryStatus(c.Label, $"inventory of {r.Name}", r.InventoryCapturedUtc, InventoryRefreshHint(r.Name),
+                    mine && RetainerUi.ActiveRetainerName == r.Name && RetainerUi.RetainerInventoryLoaded);
         }
     }
 
@@ -83,7 +86,9 @@ internal sealed class RetainerTracker : IDisposable, ICache
         if (rm == null || !rm->IsReady) return;
         // The game keeps retainer data in memory after leaving the bell; it is only refreshed by the server while at a bell.
         // (The "OccupiedSummoningBell" condition is also set at the company chest, so check the retainer windows themselves.)
-        if (!RetainerUi.RetainerListOpen && !RetainerUi.InventoryOpen) return;
+        // At the bell = retainer list shown, or a retainer is being talked to (menu, ventures, selling, inventory) — by the player or by
+        // another plugin such as AutoRetainer. The company chest sets the same "occupied" condition, so the condition alone is not enough.
+        if (!RetainerUi.RetainerListOpen && RetainerUi.ActiveRetainerName is null) return;
 
         var contentId = Svc.PlayerState.ContentId;
         CharacterRetainers current;
@@ -121,7 +126,8 @@ internal sealed class RetainerTracker : IDisposable, ICache
         // Inventory of the open retainer
         var active = rm->GetActiveRetainer();
         var inventoryRefreshed = false;
-        if (active != null && RetainerUi.InventoryOpen && RetainerUi.RetainerInventoryLoaded)
+        // The game loads a retainer's inventory as soon as it is selected, so capture it then, whether or not its window is shown.
+        if (active != null && RetainerUi.ActiveRetainerName is not null && RetainerUi.RetainerInventoryLoaded)
         {
             var index = retainers.FindIndex(x => x.RetainerId == active->RetainerId);
             if (index >= 0)
@@ -133,9 +139,11 @@ internal sealed class RetainerTracker : IDisposable, ICache
                 {
                     Items = Read(GameInventoryType.RetainerPage1, GameInventoryType.RetainerPage2, GameInventoryType.RetainerPage3, GameInventoryType.RetainerPage4,
                                  GameInventoryType.RetainerPage5, GameInventoryType.RetainerPage6, GameInventoryType.RetainerPage7),
-                    Equipped = Read(GameInventoryType.RetainerEquippedItems),
-                    Crystals = Read(GameInventoryType.RetainerCrystals),
-                    Market = Read(GameInventoryType.RetainerMarket).Select(m => m with { Price = m.Slot < prices.Length ? prices[m.Slot] : null }).ToList(),
+                    Equipped = Loaded(GameInventoryType.RetainerEquippedItems) ? Read(GameInventoryType.RetainerEquippedItems) : snap.Equipped,
+                    Crystals = Loaded(GameInventoryType.RetainerCrystals) ? Read(GameInventoryType.RetainerCrystals) : snap.Crystals,
+                    Market = Loaded(GameInventoryType.RetainerMarket)
+                        ? Read(GameInventoryType.RetainerMarket).Select(m => m with { Price = m.Slot < prices.Length ? prices[m.Slot] : null }).ToList()
+                        : snap.Market,
                     InventoryCapturedUtc = now,
                 };
                 inventoryRefreshed = openedNow || Serialize(updated with { InventoryCapturedUtc = null }) != Serialize(snap with { InventoryCapturedUtc = null });
@@ -160,6 +168,13 @@ internal sealed class RetainerTracker : IDisposable, ICache
         Save();
         Interlocked.Increment(ref version);
         Updated?.Invoke(this);
+    }
+
+    /// <summary>Whether the game currently holds data for a container (e.g. market listings are loaded separately).</summary>
+    public static unsafe bool Loaded(GameInventoryType type)
+    {
+        var c = InventoryManager.Instance()->GetInventoryContainer((InventoryType)type);
+        return c != null && c->IsLoaded;
     }
 
     private static List<RetainerItem> Read(params GameInventoryType[] containers)

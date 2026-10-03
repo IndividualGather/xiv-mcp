@@ -164,7 +164,8 @@ internal sealed class WorkshopTracker : IDisposable, ICache
     public const string RefreshHint = "go to your free company's workshop and open the voyage control panel (submersible management); the snapshot updates automatically.";
 
     public IEnumerable<CacheEntryStatus> Entries() =>
-        All().Select(s => new CacheEntryStatus($"{s.Character}{(s.World is null ? "" : " @ " + s.World)}", null, s.CapturedUtc, RefreshHint));
+        All().Select(s => new CacheEntryStatus($"{s.Character}{(s.World is null ? "" : " @ " + s.World)}", null, s.CapturedUtc, RefreshHint,
+            IsInWorkshop && Svc.PlayerState.IsLoaded && Svc.PlayerState.ContentId == s.ContentId));
 
     public object Read() => All();
 

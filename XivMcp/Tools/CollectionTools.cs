@@ -73,13 +73,13 @@ internal static class CollectionTools
                     summary.Add(new { collection = c.Title, key = c.Key, owned, total = rows.Count, percent = rows.Count == 0 ? 0 : Math.Round(100.0 * owned / rows.Count, 1) });
                 }
                 var snap = Svc.PlayerState.IsLoaded ? glamour.Get(Svc.PlayerState.ContentId) : null;
-                var (armoireLive, dresserLive) = await Game.Run(() => (GlamourTracker.ArmoireLive, GlamourTracker.DresserLive)).ConfigureAwait(false);
+                var (armoireStored, dresserLive) = await Game.Run(() => (GlamourTracker.ArmoireLive ? ArmoireStoredIds().Count : (int?)null, GlamourTracker.DresserLive)).ConfigureAwait(false);
                 return new
                 {
                     collections = summary,
-                    armoire = snap?.ArmoireCapturedUtc is { } at
-                        ? new { items = snap.ArmoireCabinetIds.Count, total = ArmoireTotal(), cache = CacheFreshness.Describe(at, armoireLive, GlamourTracker.ArmoireHint) }
-                        : (object)new { notCaptured = true, suggestion = "To capture it: " + GlamourTracker.ArmoireHint },
+                    armoire = armoireStored is { } count
+                        ? new { items = count, total = ArmoireTotal() }
+                        : (object)new { notLoaded = true, note = "The game has not sent the armoire yet (it does shortly after login)." },
                     glamourDresser = snap?.DresserCapturedUtc is { } dt
                         ? new { items = snap.DresserItems.Count, capacity = snap.DresserCapacity, cache = CacheFreshness.Describe(dt, dresserLive, GlamourTracker.DresserHint) }
                         : (object)new { notCaptured = true, suggestion = "To capture it: " + GlamourTracker.DresserHint },
@@ -90,8 +90,9 @@ internal static class CollectionTools
         yield return new McpTool
         {
             Name = "get_armoire",
-            Description = "Items stored in the armoire (seasonal and event gear, ...), grouped by armoire category, from the glamour cache — the game " +
-                          "only sends the armoire after it was opened in an inn room. Optionally list which armoire-eligible items are NOT stored.",
+            Description = "Items stored in the armoire (seasonal and event gear, dungeon gear, ...), grouped by armoire category, read live from the " +
+                          "game (it is loaded at login). Optionally list which armoire-eligible items are NOT stored.",
+
             InputSchema = """
                 {
                   "type": "object",
@@ -104,12 +105,12 @@ internal static class CollectionTools
                 """,
             Handler = (args, _) => Game.Run<object?>(() =>
             {
-                var snap = Snapshot(glamour) is { ArmoireCapturedUtc: { } captured } s ? s
-                    : throw new ToolException("No armoire data recorded yet. To capture it: " + GlamourTracker.ArmoireHint);
+                if (!Svc.ClientState.IsLoggedIn) throw new ToolException("No character is logged in.");
+                if (!GlamourTracker.ArmoireLive) throw new ToolException("The game has not sent the armoire yet (it does shortly after login). Try again in a moment.");
                 var query = args.String("query");
                 var category = args.String("category");
                 var missing = args.Bool("show_missing", false);
-                var stored = s.ArmoireCabinetIds.ToHashSet();
+                var stored = ArmoireStoredIds();
 
                 var groups = Svc.Data.GetExcelSheet<Cabinet>()
                     .Where(r => r.RowId != 0 && r.Item.RowId != 0 && stored.Contains(r.RowId) != missing)
@@ -122,11 +123,11 @@ internal static class CollectionTools
 
                 return new
                 {
-                    character = s.Character,
+                    character = Svc.PlayerState.CharacterName,
                     showing = missing ? "not stored" : "stored",
                     stored = stored.Count,
                     total = ArmoireTotal(),
-                    cache = CacheFreshness.Describe(captured, GlamourTracker.ArmoireLive, GlamourTracker.ArmoireHint),
+                    live = true,
                     categories = groups,
                 };
             }),
@@ -174,7 +175,7 @@ internal static class CollectionTools
 
                 return new
                 {
-                    character = s.Character,
+                    character = Svc.PlayerState.CharacterName,
                     stored = snap.DresserItems.Count,
                     capacity = snap.DresserCapacity,
                     cache = CacheFreshness.Describe(captured, GlamourTracker.DresserLive, GlamourTracker.DresserHint),
@@ -187,6 +188,15 @@ internal static class CollectionTools
     private static GlamourSnapshot? Snapshot(GlamourTracker glamour) =>
         Svc.ClientState.IsLoggedIn && Svc.PlayerState.IsLoaded ? glamour.Get(Svc.PlayerState.ContentId)
         : throw new ToolException("No character is logged in.");
+
+    /// <summary>Armoire contents straight from the game (call on the framework thread).</summary>
+    private static unsafe HashSet<uint> ArmoireStoredIds()
+    {
+        var cabinet = &FFXIVClientStructs.FFXIV.Client.Game.UI.UIState.Instance()->Cabinet;
+        return Svc.Data.GetExcelSheet<Cabinet>()
+            .Where(r => r.RowId != 0 && r.Item.RowId != 0 && cabinet->IsItemInCabinet(r.RowId))
+            .Select(r => r.RowId).ToHashSet();
+    }
 
     private static int ArmoireTotal() => Svc.Data.GetExcelSheet<Cabinet>().Count(r => r.RowId != 0 && r.Item.RowId != 0);
 

@@ -26,7 +26,8 @@ internal interface ICache
     object Read();
 }
 
-internal sealed record CacheEntryStatus(string Character, string? Entry, DateTime? CapturedUtc, string RefreshHint);
+/// <summary>One cache entry. Live = the game currently holds this data, so tools read it live and the age is irrelevant.</summary>
+internal sealed record CacheEntryStatus(string Character, string? Entry, DateTime? CapturedUtc, string RefreshHint, bool Live = false);
 
 internal static class CacheFreshness
 {
@@ -116,7 +117,7 @@ internal sealed class CacheRegistry
         {
             character = e.Character,
             entry = e.Entry,
-            freshness = CacheFreshness.Describe(e.CapturedUtc, false, e.RefreshHint),
+            freshness = CacheFreshness.Describe(e.CapturedUtc, e.Live, e.RefreshHint),
         }).ToList(),
     }).ToList();
 }

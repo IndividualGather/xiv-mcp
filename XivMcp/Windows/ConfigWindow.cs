@@ -31,7 +31,7 @@ internal sealed class ConfigWindow : Window
     // Snapshots refreshed once per second (they involve IPC / file data).
     private DateTime nextRefresh = DateTime.MinValue;
     private PluginCompat.Info? compat;
-    private List<(string Cache, string Character, string Entry, DateTime? Captured)> cacheRows = [];
+    private List<(string Cache, string Character, string Entry, DateTime? Captured, bool Live)> cacheRows = [];
 
     public ConfigWindow(Plugin plugin) : base("XIV MCP###XivMcpConfig")
     {
@@ -492,16 +492,17 @@ internal sealed class ConfigWindow : Window
         {
             ImGui.TableNextRow();
             ImGui.TableNextColumn();
-            IconText(row.Cache == "submersibles" ? FontAwesomeIcon.Box : FontAwesomeIcon.Bell, Muted);
+            IconText(row.Cache switch { "submersibles" => FontAwesomeIcon.Ship, "retainers" => FontAwesomeIcon.Bell, "glamour" => FontAwesomeIcon.Tshirt, "progress" => FontAwesomeIcon.Trophy, _ => FontAwesomeIcon.Archive }, Muted);
             ImGui.SameLine();
             ImGui.TextUnformatted(row.Entry);
             ImGui.TableNextColumn();
             ImGui.TextColored(Muted, row.Character);
             ImGui.TableNextColumn();
-            ImGui.TextUnformatted(row.Captured is { } t ? CacheFreshness.FormatAge(DateTime.UtcNow - t) : "—");
+            ImGui.TextUnformatted(row.Live ? "—" : row.Captured is { } t ? CacheFreshness.FormatAge(DateTime.UtcNow - t) : "—");
             ImGui.TableNextColumn();
             var stale = row.Captured is not { } c || DateTime.UtcNow - c > CacheFreshness.StaleAfter;
-            ImGui.TextColored(row.Captured is null ? Muted : stale ? Amber : Green, row.Captured is null ? "not captured" : stale ? "stale" : "fresh");
+            if (row.Live) ImGui.TextColored(Cyan, "live from game");
+            else ImGui.TextColored(row.Captured is null ? Muted : stale ? Amber : Green, row.Captured is null ? "not captured" : stale ? "stale" : "snapshot");
         }
     }
 
@@ -547,7 +548,7 @@ internal sealed class ConfigWindow : Window
         nextRefresh = DateTime.UtcNow.AddSeconds(1);
         try { compat = plugin.Compat.GetInfo(); } catch { compat = null; }
         cacheRows = plugin.Caches.All
-            .SelectMany(c => c.Entries().Select(e => (c.Id, e.Character, e.Entry ?? c.Title, e.CapturedUtc)))
+            .SelectMany(c => c.Entries().Select(e => (c.Id, e.Character, e.Entry ?? c.Title, e.CapturedUtc, e.Live)))
             .OrderBy(r => r.Character).ThenBy(r => r.Item3)
             .ToList();
     }
