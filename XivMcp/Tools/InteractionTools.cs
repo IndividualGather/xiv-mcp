@@ -7,6 +7,7 @@ using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Types;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.UI;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using Lumina.Excel.Sheets;
 using XivMcp.Mcp;
 using XivMcp.Util;
@@ -46,13 +47,13 @@ internal static class InteractionTools
             Name = "list_windows",
             Description = "Lists the game windows open_window can open (the main menu commands: Achievements, Armoury Chest, Character, " +
                           "Chocobo Saddlebag, Currency, Mount Guide, Orchestrion List, Timers, ...), with whether each is unlocked and currently open.",
-            Handler = (_, _) => Game.Run<object?>(() => Commands().Select(c => new
+            Handler = (_, _) => Game.Run<object?>(() => Commands().Select(c => (object)new
             {
                 id = c.RowId,
                 name = c.Name.ExtractText(),
                 unlocked = IsUnlocked(c.RowId),
                 open = IsOpen(c.RowId),
-            }).ToList()),
+            }).Concat(AgentWindows.Select(w => (object)new { id = (uint?)null, name = w.Key, unlocked = true, open = (bool?)AgentOpen(w.Value) })).ToList()),
         };
 
         yield return new McpTool
@@ -68,6 +69,12 @@ internal static class InteractionTools
             Handler = async (args, ct) =>
             {
                 RequireEnabled();
+                if (AgentWindow(args.String("window")) is { } agentWindow)
+                {
+                    var shown = await Game.RunLoggedIn(() => { if (AgentOpen(agentWindow.Id)) return false; AgentShow(agentWindow.Id, true); return true; }).ConfigureAwait(false);
+                    if (shown) await WaitFor(() => AgentOpen(agentWindow.Id), TimeSpan.FromSeconds(2), ct).ConfigureAwait(false);
+                    return new { window = agentWindow.Name, action = shown ? "opened" : "already open", open = await Svc.Framework.RunOnFrameworkThread(() => AgentOpen(agentWindow.Id)).ConfigureAwait(false) };
+                }
                 var cmd = ResolveCommand(args.String("window"));
                 var opened = await Game.RunLoggedIn(() =>
                 {
@@ -106,6 +113,13 @@ internal static class InteractionTools
                         if (Svc.GameGui.GetAddonByName(addon, 1) is not { IsNull: false, IsVisible: true }) return new { window = addon, action = "already closed" };
                         CloseAddon(addon);
                         return new { window = addon, action = "closed" };
+                    });
+                if (AgentWindow(window) is { } agentWindow)
+                    return Game.RunLoggedIn<object?>(() =>
+                    {
+                        if (!AgentOpen(agentWindow.Id)) return new { window = agentWindow.Name, action = "already closed" };
+                        AgentShow(agentWindow.Id, false);
+                        return new { window = agentWindow.Name, action = "closed" };
                     });
                 var cmd = ResolveCommand(window);
                 return Game.RunLoggedIn<object?>(() =>
@@ -261,11 +275,72 @@ internal static class InteractionTools
 
         yield return new McpTool
         {
+            Name = "load_game_data",
+            Description = "Asks the game to load data that is normally only sent after opening its window, without opening anything: " +
+                          "\"achievements\" (completed achievements) or \"titles\" (unlocked titles). Waits until the data arrived; the progress cache " +
+                          "then captures it. Requires 'Allow game interaction' in /xivmcp.",
+            InputSchema = """
+                { "type": "object", "properties": { "data": { "type": "string", "enum": ["achievements", "titles"] } }, "required": ["data"] }
+                """,
+            ReadOnly = false,
+            Handler = async (args, ct) =>
+            {
+                RequireEnabled();
+                var which = args.String("data")?.ToLowerInvariant();
+                Func<bool> loaded = which switch
+                {
+                    "achievements" => () => Svc.Unlocks.IsAchievementListLoaded,
+                    "titles" => () => Svc.Unlocks.IsTitleListLoaded,
+                    _ => throw new ToolException("data must be 'achievements' or 'titles'."),
+                };
+                var already = await Game.RunLoggedIn(() =>
+                {
+                    if (loaded()) return true;
+                    unsafe
+                    {
+                        var ui = FFXIVClientStructs.FFXIV.Client.Game.UI.UIState.Instance();
+                        if (which == "achievements") ui->Achievement.RequestCompletedAchievements();
+                        else ui->TitleList.RequestTitleList();
+                    }
+                    return false;
+                }).ConfigureAwait(false);
+                var ok = already || await WaitFor(loaded, TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+                return new
+                {
+                    data = which,
+                    loaded = ok,
+                    action = already ? "was already loaded" : ok ? "loaded" : "requested, but the game has not answered within 10 seconds",
+                    next = ok ? $"Use check_unlocks with category={(which == "titles" ? "title" : "achievement")}." : null,
+                };
+            },
+        };
+
+        yield return new McpTool
+        {
             Name = "get_automation_status",
             Description = "Shows how XIV MCP cooperates with automation plugins: whether AutoRetainer, YesAlready and TextAdvance are loaded, " +
                           "AutoRetainer's busy / multi mode / suppressed state, and what XIV MCP currently pauses.",
             Handler = (_, _) => Game.Run<object?>(compat.Status),
         };
+    }
+
+    /// <summary>Windows that are not in the main menu but are opened through their game agent.</summary>
+    private static readonly Dictionary<string, AgentId> AgentWindows = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Titles"] = AgentId.CharacterTitle,
+    };
+
+    private static (string Name, AgentId Id)? AgentWindow(string? name) =>
+        name is not null && AgentWindows.FirstOrDefault(w => w.Key.Equals(name, StringComparison.OrdinalIgnoreCase) ||
+                                                               (name.Length > 3 && w.Key.StartsWith(name, StringComparison.OrdinalIgnoreCase))) is { Key: not null } hit
+            ? (hit.Key, hit.Value) : null;
+
+    private static unsafe bool AgentOpen(AgentId id) => AgentModule.Instance()->GetAgentByInternalId(id)->IsAgentActive();
+
+    private static unsafe void AgentShow(AgentId id, bool show)
+    {
+        var agent = AgentModule.Instance()->GetAgentByInternalId(id);
+        if (show) agent->Show(); else agent->Hide();
     }
 
     private static IEnumerable<MainCommand> Commands() =>

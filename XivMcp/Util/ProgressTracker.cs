@@ -18,8 +18,8 @@ internal sealed class ProgressTracker : IDisposable, ICache
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan NewVisitGap = TimeSpan.FromMinutes(5);
 
-    public const string AchievementHint = "open the Achievements window once (or use open_window \"Achievements\").";
-    public const string TitleHint = "open the title list once (Character window > title).";
+    public const string AchievementHint = "use load_game_data with data=\"achievements\" (or open the Achievements window once).";
+    public const string TitleHint = "use load_game_data with data=\"titles\" (or open_window \"Titles\").";
 
     public static ProgressTracker? Instance { get; private set; }
 

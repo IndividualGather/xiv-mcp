@@ -150,9 +150,9 @@ internal static class UnlockTools
                     if (fallback is { } fb)
                         notes.Add($"The game has not loaded this list right now; showing the snapshot from {CacheFreshness.FormatAge(DateTime.UtcNow - fb.Captured)} ago. To refresh: {fb.Hint}");
                     else if (category.Name == "achievement" && !Svc.Unlocks.IsAchievementListLoaded)
-                        notes.Add("Achievement data is not loaded yet: open the in-game Achievements window once (or open_window \"Achievements\"), then retry.");
+                        notes.Add("Achievement data is not loaded yet: use load_game_data with data=\"achievements\" (or open the Achievements window), then retry.");
                     else if (category.Name == "title" && !Svc.Unlocks.IsTitleListLoaded)
-                        notes.Add("Title data is not loaded yet: open the in-game title list (Character > Titles) once, then retry.");
+                        notes.Add("Title data is not loaded yet: use load_game_data with data=\"titles\" (or open_window \"Titles\"), then retry.");
                     if (category.Name == "xbm_pet" && !Svc.Unlocks.IsXBMPetListLoaded)
                         notes.Add("This list is not loaded yet; open the matching in-game window once.");
 
