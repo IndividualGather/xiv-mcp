@@ -32,10 +32,17 @@ internal static class RetainerUi
 
     public static bool InventoryOpenFor(string retainer) => InventoryOpen && ActiveRetainerName == retainer;
 
+    /// <summary>
+    /// The retainer currently being talked to, or null. The game keeps reporting the last selected retainer as "active"
+    /// even back at the retainer list, so this only counts while the list is not shown and a retainer window is open.
+    /// </summary>
     public static unsafe string? ActiveRetainerName
     {
         get
         {
+            if (RetainerListOpen) return null;
+            if (!InventoryOpen && !Ready("SelectString") && !Ready("Talk") && !Ready("RetainerTaskAsk") && !Ready("RetainerTaskResult"))
+                return null;
             var rm = RetainerManager.Instance();
             var r = rm == null ? null : rm->GetActiveRetainer();
             return r == null ? null : r->NameString;
@@ -99,7 +106,8 @@ internal static class RetainerUi
         if (active is not null && active != name) throw new ToolException($"Retainer {active} opened instead of {name}; aborting.");
         if (state.Throttled) return false;
 
-        if (active == name && Ready("SelectString"))
+        // After selecting from the list, the retainer menu belongs to the retainer we selected.
+        if ((active == name || (active is null && state.LastAction != DateTime.MinValue && !RetainerListOpen)) && Ready("SelectString"))
         {
             if (!SelectMenuEntry(AddonEntrustOrWithdraw)) throw new ToolException("Could not find \"Entrust or withdraw items\" in the retainer menu.");
             state.Acted();
@@ -124,7 +132,10 @@ internal static class RetainerUi
     /// <summary>One framework tick of closing a retainer. Returns true once back at the retainer list (or nothing is open).</summary>
     private static unsafe bool CloseStep(StepState state)
     {
-        if (ActiveRetainerName is null && !InventoryOpen && !Ready("SelectString") && !Ready("Talk")) return true;
+        // Done once no retainer window is left AND we are either back at the retainer list or no longer at the bell.
+        // (After "Quit." the goodbye text plays and the list only reappears a moment later.)
+        if (ActiveRetainerName is null && !InventoryOpen && !Ready("SelectString") && !Ready("Talk") &&
+            (RetainerListOpen || !AtBell)) return true;
         if (state.Throttled) return false;
 
         if (InventoryOpen)
@@ -151,11 +162,14 @@ internal static class RetainerUi
     {
         var deadline = DateTime.UtcNow.AddSeconds(10);
         var lastAction = DateTime.MinValue;
-        while (await Svc.Framework.RunOnFrameworkThread(() => RetainerListOpen).ConfigureAwait(false))
+        // The bell session is over only when the game no longer considers the player at the bell; the list may still be
+        // about to reappear, so keep watching until then.
+        while (await Svc.Framework.RunOnFrameworkThread(() => RetainerListOpen || AtBell).ConfigureAwait(false))
         {
             ct.ThrowIfCancellationRequested();
-            if (DateTime.UtcNow > deadline) throw new ToolException("Timed out closing the retainer list.");
-            if (DateTime.UtcNow - lastAction > TimeSpan.FromSeconds(1))
+            if (DateTime.UtcNow > deadline)
+                throw new ToolException("Timed out closing the retainer list; the game still reports the player at the bell. Close the window in game.");
+            if (DateTime.UtcNow - lastAction > TimeSpan.FromSeconds(1) && await Svc.Framework.RunOnFrameworkThread(() => RetainerListOpen).ConfigureAwait(false))
             {
                 await Svc.Framework.RunOnFrameworkThread(FireCloseList).ConfigureAwait(false);
                 lastAction = DateTime.UtcNow;
@@ -163,6 +177,9 @@ internal static class RetainerUi
             await Task.Delay(150, ct).ConfigureAwait(false);
         }
     }
+
+    /// <summary>The game's "occupied at the summoning bell" state (also set at the company chest).</summary>
+    public static bool AtBell => Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.OccupiedSummoningBell];
 
     private static unsafe void FireCloseList() => Fire(Addon("RetainerList"), false, -1);
 
@@ -187,7 +204,9 @@ internal static class RetainerUi
 
     private static unsafe bool SelectMenuEntry(uint addonTextRow)
     {
-        var wanted = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Addon>().GetRow(addonTextRow).Text.ExtractText().Trim();
+        // The game text contains a placeholder ("Entrust or withdraw items. (Slots filled: )"); compare only the part before it.
+        var full = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Addon>().GetRow(addonTextRow).Text.ExtractText();
+        var wanted = (full.IndexOf('(') is > 0 and var cut ? full[..cut] : full).Trim();
         var menu = (AddonSelectString*)Addon("SelectString");
         if (menu == null) return false;
         var popup = &menu->PopupMenu.PopupMenu;
