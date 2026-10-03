@@ -198,6 +198,25 @@ internal sealed class ConfigWindow : Window
         if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Copy, "Copy config.toml entry"))
             ImGui.SetClipboardText(CodexToml(endpoint, token));
         Tooltip("Alternative: paste into ~/.codex/config.toml (no environment variable needed).");
+
+        // Any other client that reads an mcpServers JSON config.
+        ClientBlock("json", "Other MCP clients", "JSON configuration for clients with HTTP server support:",
+            JsonConfig(endpoint, token), JsonConfig(endpoint, token is null ? null : "••••••"), "Copy JSON");
+    }
+
+    private static string JsonConfig(string endpoint, string? token)
+    {
+        var headers = token is null ? "" : $",\n      \"headers\": {{ \"Authorization\": \"Bearer {token}\" }}";
+        return $$"""
+            {
+              "mcpServers": {
+                "ffxiv": {
+                  "type": "http",
+                  "url": "{{endpoint}}"{{headers}}
+                }
+              }
+            }
+            """;
     }
 
     private void ClientBlock(string id, string name, string hint, string command, string preview, string buttonLabel)

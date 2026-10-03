@@ -146,7 +146,7 @@ The plugin is written to `XivMcp/bin/Debug/XivMcp.dll`.
 
 ## Connecting a client
 
-The **Connect** tab in `/xivmcp` has copy buttons for both commands below, with your token already filled in.
+The **Connect** tab in `/xivmcp` has copy buttons for everything below, with your token already filled in.
 
 **Claude Code:**
 
@@ -168,6 +168,22 @@ Or add the server to `~/.codex/config.toml` directly:
 url = "http://localhost:37521/mcp"
 http_headers = { "Authorization" = "Bearer <token>" }
 ```
+
+**Other MCP clients:** clients that read an `mcpServers` JSON configuration and support HTTP servers:
+
+```json
+{
+  "mcpServers": {
+    "ffxiv": {
+      "type": "http",
+      "url": "http://localhost:37521/mcp",
+      "headers": { "Authorization": "Bearer <token>" }
+    }
+  }
+}
+```
+
+**The token** is generated once on first start and saved with the plugin settings. It stays the same across game restarts until you click **Regenerate** in `/xivmcp`.
 
 ## Notes
 

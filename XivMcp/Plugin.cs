@@ -31,7 +31,14 @@ public sealed class Plugin : IDalamudPlugin
     {
         Instance = this;
         pluginInterface.Create<Svc>();
-        Config = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        if (pluginInterface.GetPluginConfig() is Configuration saved)
+            Config = saved;
+        else
+        {
+            // First start: persist right away so the generated access token stays the same across game restarts.
+            Config = new Configuration();
+            Config.Save();
+        }
 
         workshop = new WorkshopTracker();
         retainers = new RetainerTracker();
