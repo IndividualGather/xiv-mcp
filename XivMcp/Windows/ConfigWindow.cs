@@ -93,11 +93,24 @@ internal sealed class ConfigWindow : Window
             ImGui.SameLine();
             ImGui.TextColored(color, text);
 
-            var activity = server.LastRequestUtc is { } last
-                ? $"{server.RequestCount} requests  ·  last {last.ToLocalTime():HH:mm:ss}" + (server.LastClient is { } c ? $" from {c}" : "")
-                : "No client connected yet";
-            if (server.SessionCount > 0) activity += $"  ·  {server.SessionCount} session(s)";
-            ImGui.TextColored(Muted, activity);
+            // Clients are tracked since the server (re)started — e.g. after a plugin reload clients show up again on their next request.
+            var clients = server.Clients();
+            var since = server.StartedUtc is { } s ? s.ToLocalTime().ToString("HH:mm") : "-";
+            if (clients.Count == 0)
+            {
+                ImGui.TextColored(Muted, $"No requests since the server started at {since}");
+            }
+            else
+            {
+                var recent = clients.Where(c => DateTime.UtcNow - c.LastSeenUtc < TimeSpan.FromMinutes(10)).ToList();
+                var shown = recent.Count > 0 ? recent : clients.Take(1).ToList();
+                var clientText = string.Join(", ", shown.Take(2).Select(c => $"{c.Name} ({Ago(c.LastSeenUtc)})")) + (shown.Count > 2 ? $" +{shown.Count - 2}" : "");
+                IconText(FontAwesomeIcon.Link, recent.Count > 0 ? Cyan : Muted);
+                ImGui.SameLine();
+                ImGui.TextColored(recent.Count > 0 ? Cyan : Muted, clientText);
+                Tooltip($"{server.RequestCount} requests since {since}\n\n" +
+                        string.Join("\n", clients.Select(c => $"{c.Name}: last request {c.LastSeenUtc.ToLocalTime():HH:mm:ss}" + (c.EventStream ? ", listening for notifications" : ""))));
+            }
         }
 
         // Server switch, right-aligned
@@ -206,16 +219,7 @@ internal sealed class ConfigWindow : Window
         Card("inventory", FontAwesomeIcon.Boxes, "Inventory actions", config.AllowInventoryActions, v => config.AllowInventoryActions = v,
             "Sort with the game's /itemsort, move items between bags, armory, saddlebag and retainers, open retainers and transfer stacks between them.",
             "Automating game actions is against the FFXIV ToS. Moves are sent one at a time like manual drags.",
-            () =>
-            {
-                var delay = config.MoveDelayMs;
-                ImGui.SetNextItemWidth(220 * ImGuiHelpers.GlobalScale);
-                if (ImGui.SliderInt("Pause between moves (ms)", ref delay, 200, 3000))
-                {
-                    config.MoveDelayMs = delay;
-                    config.Save();
-                }
-            });
+            DrawMoveDelay, extraLines: 2.6f);
 
         Card("plugins", FontAwesomeIcon.PuzzlePiece, "Plugin management", config.AllowPluginManagement, v => config.AllowPluginManagement = v,
             "Enable, disable and reload other Dalamud plugins, and read or change their settings. Every change is backed up to pluginConfigs/XivMcp/backups.",
@@ -232,9 +236,55 @@ internal sealed class ConfigWindow : Window
         CompatRow("TextAdvance", c.TextAdvance, c.ClickersPausedByUs ? "paused by XIV MCP" : "paused automatically while XIV MCP drives retainer windows");
     }
 
-    private void Card(string id, FontAwesomeIcon icon, string title, bool value, Action<bool> set, string description, string? warning, Action? extra = null)
+    /// <summary>Pause between item moves: random within a range (default 500-800 ms) or an exact value.</summary>
+    private void DrawMoveDelay()
     {
-        var lines = 2.6f + (warning is null ? 0 : 1.2f) + (extra is null || !value ? 0 : 1.4f);
+        var config = plugin.Config;
+        ImGui.Spacing();
+        IconText(FontAwesomeIcon.Hourglass, Muted);
+        ImGui.SameLine();
+        ImGui.TextUnformatted("Pause between moves");
+        ImGui.SameLine();
+        var random = config.MoveDelayRandom;
+        if (ImGuiComponents.ToggleButton("##delay-random", ref random))
+        {
+            config.MoveDelayRandom = random;
+            config.Save();
+        }
+        ImGui.SameLine();
+        ImGui.TextColored(Muted, random ? "random" : "fixed");
+        Tooltip("Random: every pause is picked anew between the two values, so moves don't follow a fixed rhythm.\nFixed: always exactly the same pause.");
+
+        ImGui.SetNextItemWidth(260 * ImGuiHelpers.GlobalScale);
+        if (random)
+        {
+            int min = config.MoveDelayMinMs, max = config.MoveDelayMaxMs;
+            if (ImGui.DragIntRange2("ms##delay-range", ref min, ref max, 5f, Configuration.MoveDelayLimitMin, Configuration.MoveDelayLimitMax, "min %d", "max %d"))
+            {
+                config.MoveDelayMinMs = Math.Clamp(Math.Min(min, max), Configuration.MoveDelayLimitMin, Configuration.MoveDelayLimitMax);
+                config.MoveDelayMaxMs = Math.Clamp(Math.Max(min, max), Configuration.MoveDelayLimitMin, Configuration.MoveDelayLimitMax);
+                config.Save();
+            }
+        }
+        else
+        {
+            var exact = config.MoveDelayMs;
+            if (ImGui.InputInt("ms##delay-exact", ref exact, 10, 100))
+            {
+                config.MoveDelayMs = Math.Clamp(exact, Configuration.MoveDelayLimitMin, Configuration.MoveDelayLimitMax);
+                config.Save();
+            }
+        }
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Default")) { config.MoveDelayRandom = true; config.MoveDelayMinMs = 500; config.MoveDelayMaxMs = 800; config.Save(); }
+        Tooltip("Random between 500 and 800 ms");
+        ImGui.TextColored(Muted, $"Drag or Ctrl+click to type exact values ({Configuration.MoveDelayLimitMin}-{Configuration.MoveDelayLimitMax} ms).");
+    }
+
+    private void Card(string id, FontAwesomeIcon icon, string title, bool value, Action<bool> set, string description, string? warning, Action? extra = null,
+                      float extraLines = 1.4f)
+    {
+        var lines = 2.6f + (warning is null ? 0 : 1.2f) + (extra is null || !value ? 0 : extraLines);
         using var bg = ImRaii.PushColor(ImGuiCol.ChildBg, value ? new Vector4(0.25f, 0.45f, 0.30f, 0.18f) : new Vector4(1, 1, 1, 0.04f));
         using var child = ImRaii.Child($"##card-{id}", new Vector2(-1, ImGui.GetTextLineHeightWithSpacing() * lines + 16 * ImGuiHelpers.GlobalScale), true);
 
@@ -367,6 +417,12 @@ internal sealed class ConfigWindow : Window
             .SelectMany(c => c.Entries().Select(e => (c.Id, e.Character, e.Entry ?? c.Title, e.CapturedUtc)))
             .OrderBy(r => r.Character).ThenBy(r => r.Item3)
             .ToList();
+    }
+
+    private static string Ago(DateTime utc)
+    {
+        var age = DateTime.UtcNow - utc;
+        return age.TotalSeconds < 60 ? "just now" : age.TotalMinutes < 60 ? $"{(int)age.TotalMinutes} min ago" : $"{(int)age.TotalHours} h ago";
     }
 
     private static void Section(FontAwesomeIcon icon, string title)

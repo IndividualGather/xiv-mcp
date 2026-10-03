@@ -32,6 +32,27 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Pause between two item moves, so the server can confirm each one.</summary>
     public int MoveDelayMs { get; set; } = 700;
 
+    /// <summary>When true, the pause between moves is random between <see cref="MoveDelayMinMs"/> and <see cref="MoveDelayMaxMs"/>;
+    /// otherwise it is exactly <see cref="MoveDelayMs"/>.</summary>
+    public bool MoveDelayRandom { get; set; } = true;
+
+    public int MoveDelayMinMs { get; set; } = 500;
+    public int MoveDelayMaxMs { get; set; } = 800;
+
+    public const int MoveDelayLimitMin = 200;
+    public const int MoveDelayLimitMax = 5000;
+
+    /// <summary>The pause to wait after one item move before the next one.</summary>
+    public TimeSpan NextMoveDelay()
+    {
+        if (!MoveDelayRandom) return TimeSpan.FromMilliseconds(Math.Clamp(MoveDelayMs, MoveDelayLimitMin, MoveDelayLimitMax));
+        var min = Math.Clamp(Math.Min(MoveDelayMinMs, MoveDelayMaxMs), MoveDelayLimitMin, MoveDelayLimitMax);
+        var max = Math.Clamp(Math.Max(MoveDelayMinMs, MoveDelayMaxMs), MoveDelayLimitMin, MoveDelayLimitMax);
+        return TimeSpan.FromMilliseconds(Random.Shared.Next(min, max + 1));
+    }
+
+    public string MoveDelayDescription => MoveDelayRandom ? $"random {MoveDelayMinMs}-{MoveDelayMaxMs} ms" : $"exactly {MoveDelayMs} ms";
+
     /// <summary>Cached snapshots (submersibles, retainers) older than this are reported as stale with a refresh suggestion.</summary>
     public int CacheStaleHours { get; set; } = 12;
 

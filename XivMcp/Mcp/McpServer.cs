@@ -42,6 +42,7 @@ public sealed partial class McpServer : IDisposable
     public long RequestCount => Interlocked.Read(ref requestCount);
     public DateTime? LastRequestUtc { get; private set; }
     public string? LastClient { get; private set; }
+    public DateTime? StartedUtc { get; private set; }
     private long requestCount;
 
     internal McpServer(IEnumerable<McpTool> tools, Configuration config, Util.CacheRegistry caches)
@@ -69,6 +70,7 @@ public sealed partial class McpServer : IDisposable
             cts = new CancellationTokenSource();
             _ = Task.Run(() => AcceptLoop(listener, cts.Token));
             LastError = null;
+            StartedUtc = DateTime.UtcNow;
             Svc.Log.Information($"MCP server listening on {Endpoint}");
         }
         catch (Exception ex)
@@ -179,6 +181,8 @@ public sealed partial class McpServer : IDisposable
 
         Interlocked.Increment(ref requestCount);
         LastRequestUtc = DateTime.UtcNow;
+        if (session is not null) session.LastSeenUtc = DateTime.UtcNow;
+        else lastStatelessRequestUtc = DateTime.UtcNow;
 
         string body;
         using (var reader = new StreamReader(req.InputStream, Encoding.UTF8))
@@ -263,8 +267,10 @@ public sealed partial class McpServer : IDisposable
     {
         var requested = p?["protocolVersion"]?.GetValue<string>();
         var negotiated = requested is not null && SupportedProtocolVersions.Contains(requested) ? requested : SupportedProtocolVersions[0];
-        LastClient = p?["clientInfo"]?["name"]?.GetValue<string>();
-        res.Headers["Mcp-Session-Id"] = StartSession();
+        var clientName = p?["clientInfo"]?["name"]?.GetValue<string>();
+        var clientVersion = p?["clientInfo"]?["version"]?.GetValue<string>();
+        LastClient = clientName;
+        res.Headers["Mcp-Session-Id"] = StartSession(clientName is null ? null : clientVersion is null ? clientName : $"{clientName} {clientVersion}");
 
         return new JsonObject
         {

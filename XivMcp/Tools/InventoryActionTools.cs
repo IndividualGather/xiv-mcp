@@ -144,7 +144,7 @@ internal static class InventoryActionTools
             Name = "move_items",
             Description = "Moves items between slots and containers exactly like dragging them in the inventory window: rearrange bag slots, bags <-> armory chest, " +
                           "bags <-> saddlebag, bags <-> retainer. Dropping onto an occupied slot swaps the items (or merges stacks of the same item). " +
-                          "Each move is sent separately, the plugin waits until the server confirmed it, then pauses briefly before the next one. " +
+                          "Each move is sent separately, the plugin waits until the server confirmed it, then pauses before the next one (by default a random 500-800 ms, configurable in /xivmcp). " +
                           "Give the source either as from_container+from_slot or as item_id (first matching stack, optionally limited to from_container); " +
                           "omit to_slot to use the first empty slot of to_container. Container names come from get_inventory (Inventory1-4, ArmoryHead, ..., " +
                           "SaddleBag1/2, PremiumSaddleBag1/2, RetainerPage1-7). Saddlebag/retainer windows must be open. Armory containers only accept matching gear. " +
@@ -189,13 +189,19 @@ internal static class InventoryActionTools
                 {
                     var results = new List<object>();
                     var sw = Stopwatch.StartNew();
+                    var pauses = new List<int>();
                     foreach (var request in requests)
                     {
                         ct.ThrowIfCancellationRequested();
                         var result = await ExecuteMove(request, ct).ConfigureAwait(false);
                         results.Add(result);
                         if (!result.Ok && !continueOnError) break;
-                        if (result.Ok) await Task.Delay(Math.Clamp(config.MoveDelayMs, 200, 5000), ct).ConfigureAwait(false);
+                        if (result.Ok && result.Index < requests.Count - 1)
+                        {
+                            var pause = config.NextMoveDelay();
+                            pauses.Add((int)pause.TotalMilliseconds);
+                            await Task.Delay(pause, ct).ConfigureAwait(false);
+                        }
                     }
                     var moved = results.Cast<MoveResult>().Count(r => r.Ok);
                     Svc.Log.Information($"[MCP] Moved {moved}/{requests.Count} item(s)");
@@ -206,6 +212,8 @@ internal static class InventoryActionTools
                         failed = results.Cast<MoveResult>().Count(r => !r.Ok),
                         skipped = requests.Count - results.Count,
                         seconds = Math.Round(sw.Elapsed.TotalSeconds, 1),
+                        pauseBetweenMoves = config.MoveDelayDescription,
+                        pausesMs = pauses,
                         results,
                     };
                 }

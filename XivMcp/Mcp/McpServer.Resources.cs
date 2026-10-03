@@ -26,6 +26,22 @@ public sealed partial class McpServer
         public readonly ConcurrentDictionary<string, byte> Subscriptions = new(StringComparer.OrdinalIgnoreCase);
         public readonly List<EventStream> Streams = [];
         public DateTime LastSeenUtc = DateTime.UtcNow;
+        public string? ClientName;
+    }
+
+    private DateTime? lastStatelessRequestUtc;
+
+    /// <summary>A client seen since the server started: its name (from initialize) and when it last sent a request.</summary>
+    public sealed record ClientInfo(string Name, DateTime LastSeenUtc, bool EventStream);
+
+    /// <summary>Clients seen since the server (re)started, most recent first. Requests without a session show as "unnamed client".</summary>
+    public List<ClientInfo> Clients()
+    {
+        var list = sessions.Values
+            .Select(s => new ClientInfo(s.ClientName ?? "unnamed client", s.LastSeenUtc, s.Streams.Count > 0))
+            .ToList();
+        if (lastStatelessRequestUtc is { } t) list.Add(new ClientInfo("unnamed client (no session)", t, false));
+        return list.OrderByDescending(c => c.LastSeenUtc).ToList();
     }
 
     private sealed class EventStream(HttpListenerResponse response)
@@ -61,7 +77,7 @@ public sealed partial class McpServer
     public int SessionCount => sessions.Count;
     public int SubscriptionCount => sessions.Values.Sum(s => s.Subscriptions.Count);
 
-    private string StartSession()
+    private string StartSession(string? clientName)
     {
         // Forget sessions that never came back (clients usually don't send DELETE).
         foreach (var (id, s) in sessions)
@@ -69,7 +85,7 @@ public sealed partial class McpServer
                 sessions.TryRemove(id, out _);
 
         var sessionId = Guid.NewGuid().ToString("N");
-        sessions[sessionId] = new Session();
+        sessions[sessionId] = new Session { ClientName = clientName };
         return sessionId;
     }
 

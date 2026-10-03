@@ -225,7 +225,7 @@ internal static class RetainerTools
 
         var fromPlayer = t.From.Equals(Player, StringComparison.OrdinalIgnoreCase);
         var toPlayer = t.To.Equals(Player, StringComparison.OrdinalIgnoreCase);
-        var delay = TimeSpan.FromMilliseconds(Math.Clamp(config.MoveDelayMs, 200, 5000));
+
 
         try
         {
@@ -255,7 +255,7 @@ internal static class RetainerTools
                     moves.Add(r);
                     if (!r.Ok) return Fail($"Withdrawing failed: {r.Reason}", inBags.Count, inBags.Sum(b => b.Quantity));
                     inBags.Add((target.Value.Container, target.Value.Slot, s.Quantity));
-                    await Task.Delay(delay, ct).ConfigureAwait(false);
+                    await Task.Delay(config.NextMoveDelay(), ct).ConfigureAwait(false);
                 }
                 if (toPlayer) return new TransferResult(t.Index, true, itemName, t.From, t.To, inBags.Count, inBags.Sum(b => b.Quantity), null, moves);
             }
@@ -275,7 +275,7 @@ internal static class RetainerTools
                 if (!r.Ok) return Fail($"Entrusting failed: {r.Reason}. {inBags.Count - entrusted} stack(s) are in your bags.", entrusted, quantity);
                 entrusted++;
                 quantity += b.Quantity;
-                await Task.Delay(delay, ct).ConfigureAwait(false);
+                await Task.Delay(config.NextMoveDelay(), ct).ConfigureAwait(false);
             }
             return new TransferResult(t.Index, true, itemName, t.From, t.To, entrusted, quantity, null, moves);
         }

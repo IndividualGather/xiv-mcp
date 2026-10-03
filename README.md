@@ -113,7 +113,7 @@ Disabled until you tick **Allow inventory actions** in `/xivmcp`.
 
 Safeguards:
 
-- **One move at a time.** Each move waits until the game has no inventory operation pending and the server has confirmed it. Then the tool pauses for a configurable delay (default 700 ms) before the next one.
+- **One move at a time.** Each move waits until the game has no inventory operation pending and the server has confirmed it. Then the tool pauses before the next one: by default a random 500–800 ms, picked anew for every move. In `/xivmcp` you can change the range or switch to an exact fixed delay. Results list the pauses actually used (`pausesMs`).
 - **Fail fast.** A batch stops at the first failure unless `continue_on_error` is set.
 - **Refused states.** Nothing happens in combat, while crafting or gathering, during a trade, in cutscenes, or during zone changes.
 - **Open windows required.** Saddlebag and retainer actions need the matching window open, just like by hand.
