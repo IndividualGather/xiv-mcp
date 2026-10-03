@@ -24,6 +24,18 @@ public sealed class McpTool
     /// <summary>True for tools whose changes may be hard to undo (e.g. overwriting config files).</summary>
     public bool Destructive { get; init; }
 
+    /// <summary>When set, the tool is only listed (and callable) while this returns true, e.g. while the plugin it drives is loaded.</summary>
+    public Func<bool>? Available { get; init; }
+
+    public bool IsAvailable
+    {
+        get
+        {
+            try { return Available?.Invoke() ?? true; }
+            catch { return false; }
+        }
+    }
+
     /// <summary>The input schema; a broken one is logged and replaced by an empty schema, so one tool can't break tools/list for all.</summary>
     public JsonNode ParsedSchema()
     {

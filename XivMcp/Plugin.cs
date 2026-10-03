@@ -90,6 +90,8 @@ public sealed class Plugin : IDalamudPlugin
             .Append(VentureTools.RecallTool(Config, compat))
             .Concat(CraftPlanTools.Create(Config, retainers))
             .Concat(LongRunningTools.Create(Config))
+            .Concat(DutyTools.Create(Config))
+            .Concat(GearsetTools.Create(Config))
             .Concat(MarketTools.Create(Config, retainers, sales, compat))
             .Concat(LoginTools.Create(Config, roster))
             .Concat(WindowInspectTools.Create())

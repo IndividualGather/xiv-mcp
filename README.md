@@ -14,7 +14,7 @@ A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV th
 
 | Permission | Allows |
 |---|---|
-| **Game & navigation** | Opening game windows, interacting with objects and NPCs, moving the character (vnavmesh / Lifestream), logging into other characters, world travel |
+| **Game & navigation** | Opening game windows, interacting with objects and NPCs, moving the character (vnavmesh / Lifestream), logging into other characters, world travel, switching gearsets, running dungeons (AutoDuty) |
 | **Items & retainers** | Sorting and moving items, retainer and FC chest transfers, sending retainers on ventures (recalling one always asks in game) |
 | **Market & purchases** | Buying from NPC vendors (anything not paid in gil asks in game first), putting items up for sale, undercutting listings, reading sale histories |
 | **Crafting & gathering** | Artisan crafts and lists, GatherBuddy Reborn auto-gather and lists, preparing crafting projects. Only shown when one of them is installed |
@@ -36,6 +36,7 @@ Some tools need another plugin. The settings only show compatibility rows and pl
 | `get_inventory` | Contents of bags, armory, saddlebag, crystals, key items, retainer, FC chest, housing containers |
 | `search_inventory` | Where an item is stored and how many you have in total, including cached retainers, saddlebag and FC chest |
 | `get_equipment` | Equipped gear with item level, materia, dyes, glamour; average item level |
+| `list_gearsets` | Saved gearsets: number, name, job, item level, items missing from the inventory, and the one worn |
 | `get_currencies` | Gil, MGP, seals, tomestones and weekly cap, wolf marks, currency container |
 | `list_unlock_categories` / `check_unlocks` | Unlock or completion state for every `IUnlockState` category: achievements, quests, mounts, minions, emotes, orchestrion, Triple Triad cards, titles, recipes, … |
 | `get_active_quests` / `check_quests` | Journal quests and steps, tribe quests, levequests, allowances, reputation; whether specific quests are done or accepted |
@@ -77,7 +78,7 @@ Some tools need another plugin. The settings only show compatibility rows and pl
 
 Windows that act instead of opening something (Log Out, Exit Game, Return, Ready Check, Countdown, Stance) can't be triggered through `open_window`.
 
-### Characters and worlds *(Game & navigation)*
+### Characters, worlds and jobs *(Game & navigation)*
 
 | Tool | What it does |
 |---|---|
@@ -85,6 +86,7 @@ Windows that act instead of opening something (Log Out, Exit Game, Return, Ready
 | `switch_character` | Logs out and into another character of the account, on any world, data center and service account, and waits until it is in game |
 | `refresh_character_list` | Logs out and straight back in, so XIV MCP learns this data center's character list |
 | `visit_world` | World visit or data center travel for the current character (needs Lifestream) |
+| `switch_gearset` | Changes job by equipping a gearset, by number, name or job (the highest item level set of that job) |
 
 Logging in is built in: XIV MCP goes through the game's own lobby (title screen, data center, service account, character list) and confirms only when the game's prompt names the right character. It remembers each character's service account. Accounts are told apart by what XIV MCP observes, so it never tries to reach a character of another account.
 
@@ -140,6 +142,16 @@ Undercuts follow **Penny Pincher**'s settings when it is installed (amount, roun
 
 Neither plugin has IPC for its lists, so editing one briefly unloads the plugin, updates its file (with a backup) and loads it again. Raphael preparation uses Artisan's internals and may need an update after Artisan changes.
 
+### Dungeons *(Game & navigation, only while AutoDuty is loaded)*
+
+| Tool | What it does |
+|---|---|
+| `list_duties` | Duties AutoDuty has a path for, with level and item level and the modes it can run them in (Support, Trust, Squadron, Regular, …) |
+| `run_duty` | Runs a duty with AutoDuty, `loops` times or `until` the inventory holds the items or currency you want (e.g. a drop, or tomestones: `{ item, quantity }` or `{ item, gain }`). `gearset` switches to a combat job first; on a crafter or gatherer it is required |
+| `get_duty_status` / `stop_duty` | What AutoDuty is doing (stage, duty, loop); stop it |
+
+AutoDuty does the running and the looping. For a `run_duty` call, its loop count, duty mode, unsynced setting and stop conditions are set temporarily through its IPC overrides (never saved), and its termination action is set to do nothing. They are restored afterwards. Its "stop at item quantity" list has no IPC, so it is swapped in memory while the run lasts and put back after. This may need an update when AutoDuty changes. A run takes about 20 minutes, so use `run_duty` as a job step. Pausing or cancelling the job stops AutoDuty, which may leave you inside the duty. These tools disappear from the tool list while AutoDuty isn't loaded, and clients are notified (`notifications/tools/list_changed`).
+
 ### Background jobs
 
 A job is a queue of tool calls XIV MCP runs in the game, one after another, for as long as they take. It doesn't depend on the conversation or connection.
@@ -155,6 +167,8 @@ A job is a queue of tool calls XIV MCP runs in the game, one after another, for 
 When a step fails or is stopped, the job becomes **pending** and waits for the agent to fix it. While a step runs, other changing tool calls are refused so they can't collide with the job. Jobs survive plugin reloads and come back paused. Each step still needs its own permission.
 
 Example: `prepare_craft_plan` → `gather_until` (the missing materials) → `run_crafting_list` with `{{plan.list.id}}`.
+
+Farming a drop or currency: one `run_duty` step with `"until": [{ "item": "Allagan Tomestone of Poetics", "gain": 500 }]`, which loops the dungeon until the target is reached.
 
 A scrip farming round as one job: `prepare_craft_plan` with `"quantity": "fill"` for a collectable → `gather_until` / `transfer_retainer_items` for the materials → `run_crafting_list` → `turn_in_collectables` (stops before the scrip cap) → `buy_item` with a standing `approval` → `sell_item`.
 
@@ -202,6 +216,7 @@ XIV MCP detects these automatically and only mentions the installed ones in its 
 - **FCCH** handles FC chest transfers; item moves wait while it works.
 - **WaymarkPresetPlugin** provides its preset library.
 - **vnavmesh** and **Lifestream** do walking and travel; **Artisan** and **GatherBuddy Reborn** do crafting and gathering.
+- **AutoDuty** runs and loops dungeons for the dungeon tools, which only exist while it is loaded.
 - **Item Vendor Location** finds vendors (an Install button appears under *Market & purchases* when it's missing); **Penny Pincher**'s settings drive undercuts.
 
 Automating game actions is against the FFXIV ToS. XIV MCP sends the same requests as manual input, but use it at your own risk.

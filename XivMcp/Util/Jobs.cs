@@ -387,6 +387,7 @@ internal sealed class JobManager : IDisposable, ICache
         {
             if (!tools.ContainsKey(s.Tool)) throw new ToolException($"Unknown tool '{s.Tool}' in a step.");
             if (ControlTools.Contains(s.Tool)) throw new ToolException($"'{s.Tool}' can't be a job step.");
+            if (!tools[s.Tool].IsAvailable) throw new ToolException($"'{s.Tool}' is not available right now (the plugin it needs is not loaded).");
             if (string.IsNullOrWhiteSpace(s.Id)) s.Id = $"s{++n}";
             if (!used.Add(s.Id)) throw new ToolException($"Duplicate step id '{s.Id}'.");
         }

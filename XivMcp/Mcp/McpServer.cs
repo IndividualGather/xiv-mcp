@@ -51,6 +51,8 @@ public sealed partial class McpServer : IDisposable
         this.config = config;
         this.caches = caches;
         caches.Updated += OnCacheUpdated;
+        availableTools = AvailableToolNames();
+        Svc.PluginInterface.ActivePluginsChanged += OnPluginsChanged;
         version = typeof(McpServer).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
     }
 
@@ -94,7 +96,27 @@ public sealed partial class McpServer : IDisposable
     public void Dispose()
     {
         caches.Updated -= OnCacheUpdated;
+        Svc.PluginInterface.ActivePluginsChanged -= OnPluginsChanged;
         Stop();
+    }
+
+    private string availableTools;
+
+    private string AvailableToolNames() => string.Join(",", tools.Values.Where(t => t.IsAvailable).Select(t => t.Name).Order());
+
+    /// <summary>Some tools only exist while the plugin they drive is loaded: tell clients when the tool list changes.</summary>
+    private void OnPluginsChanged(Dalamud.Plugin.IActivePluginsChangedEventArgs args)
+    {
+        var now = AvailableToolNames();
+        if (now == availableTools) return;
+        availableTools = now;
+        var frame = $"event: message\ndata: {new JsonObject { ["jsonrpc"] = "2.0", ["method"] = "notifications/tools/list_changed" }.ToJsonString(JsonOptions)}\n\n";
+        foreach (var session in sessions.Values)
+        {
+            EventStream[] streams;
+            lock (session.Streams) streams = [.. session.Streams];
+            foreach (var s in streams) _ = s.Write(frame);
+        }
     }
 
     private async Task AcceptLoop(HttpListener l, CancellationToken ct)
@@ -239,7 +261,7 @@ public sealed partial class McpServer : IDisposable
             {
                 "initialize" => Initialize(@params, res),
                 "ping" => new JsonObject(),
-                "tools/list" => new JsonObject { ["tools"] = new JsonArray(tools.Values.OrderBy(t => t.Name).Select(t => (JsonNode)t.ToListEntry()).ToArray()) },
+                "tools/list" => new JsonObject { ["tools"] = new JsonArray(tools.Values.Where(t => t.IsAvailable).OrderBy(t => t.Name).Select(t => (JsonNode)t.ToListEntry()).ToArray()) },
                 "tools/call" => await CallTool(@params, ct).ConfigureAwait(false),
                 "resources/list" => ListResources(),
                 "resources/templates/list" => new JsonObject { ["resourceTemplates"] = new JsonArray() },
@@ -280,7 +302,7 @@ public sealed partial class McpServer : IDisposable
             ["protocolVersion"] = negotiated,
             ["capabilities"] = new JsonObject
             {
-                ["tools"] = new JsonObject { ["listChanged"] = false },
+                ["tools"] = new JsonObject { ["listChanged"] = true },
                 ["resources"] = new JsonObject { ["subscribe"] = true, ["listChanged"] = false },
             },
             ["serverInfo"] = new JsonObject { ["name"] = ServerName, ["title"] = "Final Fantasy XIV (Dalamud)", ["version"] = version },
@@ -306,6 +328,12 @@ public sealed partial class McpServer : IDisposable
     {
         var name = p?["name"]?.GetValue<string>() ?? throw new RpcException(-32602, "Missing tool name");
         if (!tools.TryGetValue(name, out var tool)) throw new RpcException(-32602, $"Unknown tool: {name}");
+        if (!tool.IsAvailable)
+            return new JsonObject
+            {
+                ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = $"'{name}' is not available right now: the plugin it needs is not installed or not loaded." }),
+                ["isError"] = true,
+            };
         // A background job step owns the character: other state-changing calls would collide with it.
         if (!tool.ReadOnly && !XivMcp.Util.JobManager.ControlTools.Contains(name) && XivMcp.Util.JobManager.Instance is { StepRunning: true } jm)
             return new JsonObject
