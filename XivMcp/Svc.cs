@@ -26,4 +26,5 @@ internal sealed class Svc
     [PluginService] public static IAetheryteList Aetherytes { get; private set; } = null!;
     [PluginService] public static IGameGui GameGui { get; private set; } = null!;
     [PluginService] public static IChatGui Chat { get; private set; } = null!;
+    [PluginService] public static ITextureProvider Textures { get; private set; } = null!;
 }

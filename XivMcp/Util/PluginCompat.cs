@@ -104,6 +104,17 @@ internal sealed class PluginCompat : IDisposable
         else if (DateTime.UtcNow - bellLeftSince > TimeSpan.FromSeconds(3)) ReleaseBell("bell closed");
     }
 
+    public sealed record Info(bool AutoRetainer, bool? AutoRetainerBusy, bool? AutoRetainerSuppressed, bool SuppressedByUs,
+                              bool YesAlready, bool TextAdvance, bool ClickersPausedByUs, bool HoldingBell);
+
+    /// <summary>Snapshot for the settings window (IPC calls; don't call every frame).</summary>
+    public Info GetInfo()
+    {
+        var ar = AutoRetainerLoaded;
+        return new Info(ar, ar ? Ipc<bool>("AutoRetainer.PluginState.IsBusy") : null, ar ? Ipc<bool>("AutoRetainer.GetSuppressed") : null,
+                        suppressedAutoRetainer, IsLoaded("YesAlready"), IsLoaded("TextAdvance"), pausedClickers, holdingBell);
+    }
+
     public object Status() => new
     {
         autoRetainer = AutoRetainerLoaded

@@ -1,146 +1,394 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface;
+using Dalamud.Interface.Components;
+using Dalamud.Interface.Utility;
+using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
+using XivMcp.Util;
 
 namespace XivMcp.Windows;
 
 internal sealed class ConfigWindow : Window
 {
+    private static readonly Vector4 Gold = new(0.89f, 0.75f, 0.48f, 1);
+    private static readonly Vector4 Green = new(0.42f, 0.84f, 0.42f, 1);
+    private static readonly Vector4 Red = new(0.88f, 0.42f, 0.42f, 1);
+    private static readonly Vector4 Amber = new(0.91f, 0.70f, 0.29f, 1);
+    private static readonly Vector4 Cyan = new(0.50f, 0.91f, 1.00f, 1);
+    private static readonly Vector4 Muted = new(0.62f, 0.64f, 0.70f, 1);
+
     private readonly Plugin plugin;
+    private readonly string iconPath;
     private int portInput;
+    private bool showToken;
+    private string toolFilter = "";
+
+    // Snapshots refreshed once per second (they involve IPC / file data).
+    private DateTime nextRefresh = DateTime.MinValue;
+    private PluginCompat.Info? compat;
+    private List<(string Cache, string Character, string Entry, DateTime? Captured)> cacheRows = [];
 
     public ConfigWindow(Plugin plugin) : base("XIV MCP###XivMcpConfig")
     {
         this.plugin = plugin;
         portInput = plugin.Config.Port;
-        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(520, 360), MaximumSize = new Vector2(1400, 1200) };
+        iconPath = Path.Combine(Svc.PluginInterface.AssemblyLocation.DirectoryName ?? "", "images", "icon.png");
+        Size = new Vector2(640, 560);
+        SizeCondition = ImGuiCond.FirstUseEver;
+        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(560, 440), MaximumSize = new Vector2(1600, 1400) };
     }
 
     public override void Draw()
     {
+        Refresh();
+        DrawHeader();
+        ImGui.Spacing();
+
+        using var tabs = ImRaii.TabBar("##xivmcp-tabs");
+        if (!tabs) return;
+        Tab(FontAwesomeIcon.Plug, "Connect", DrawConnect);
+        Tab(FontAwesomeIcon.ShieldAlt, "Permissions", DrawPermissions);
+        Tab(FontAwesomeIcon.Database, "Caches", DrawCaches);
+        Tab(FontAwesomeIcon.Wrench, $"Tools ({plugin.Server.Tools.Count})", DrawTools);
+    }
+
+    private static void Tab(FontAwesomeIcon icon, string label, Action draw)
+    {
+        using var tab = ImRaii.TabItem($"{icon.ToIconString()}  {label}###{label.Split(' ')[0]}");
+        if (!tab) return;
+        ImGui.Spacing();
+        using var child = ImRaii.Child($"##{label}", new Vector2(-1, -1), false);
+        draw();
+    }
+
+    // ---------------------------------------------------------------- header
+
+    private void DrawHeader()
+    {
+        var server = plugin.Server;
+        var config = plugin.Config;
+        var iconSize = 64 * ImGuiHelpers.GlobalScale;
+
+        if (File.Exists(iconPath))
+        {
+            ImGui.Image(Svc.Textures.GetFromFile(iconPath).GetWrapOrEmpty().Handle, new Vector2(iconSize));
+            ImGui.SameLine(0, 12 * ImGuiHelpers.GlobalScale);
+        }
+
+        using (ImRaii.Group())
+        {
+            ImGui.TextColored(Gold, "XIV MCP");
+            ImGui.SameLine();
+            ImGui.TextColored(Muted, $"v{typeof(Plugin).Assembly.GetName().Version?.ToString(3)}  ·  Model Context Protocol server");
+
+            var (color, text) = server.IsRunning
+                ? (Green, $"Running  ·  {server.Endpoint}")
+                : config.ServerEnabled ? (Red, "Not running" + (server.LastError is { } e ? $": {e}" : "")) : (Muted, "Stopped");
+            IconText(FontAwesomeIcon.Circle, color);
+            ImGui.SameLine();
+            ImGui.TextColored(color, text);
+
+            var activity = server.LastRequestUtc is { } last
+                ? $"{server.RequestCount} requests  ·  last {last.ToLocalTime():HH:mm:ss}" + (server.LastClient is { } c ? $" from {c}" : "")
+                : "No client connected yet";
+            if (server.SessionCount > 0) activity += $"  ·  {server.SessionCount} session(s)";
+            ImGui.TextColored(Muted, activity);
+        }
+
+        // Server switch, right-aligned
+        var toggleWidth = ImGui.CalcTextSize("Server").X + 50 * ImGuiHelpers.GlobalScale;
+        ImGui.SameLine(ImGui.GetWindowContentRegionMax().X - toggleWidth);
+        using (ImRaii.Group())
+        {
+            ImGui.TextColored(Muted, "Server");
+            ImGui.SameLine();
+            var enabled = config.ServerEnabled;
+            if (ImGuiComponents.ToggleButton("##server", ref enabled))
+            {
+                config.ServerEnabled = enabled;
+                config.Save();
+                if (enabled) server.Start(); else server.Stop();
+            }
+        }
+        ImGui.Separator();
+    }
+
+    // ---------------------------------------------------------------- connect
+
+    private void DrawConnect()
+    {
         var config = plugin.Config;
         var server = plugin.Server;
 
-        // Status
-        if (server.IsRunning)
-            ImGui.TextColored(new Vector4(0.4f, 0.9f, 0.4f, 1), $"Running on {server.Endpoint}");
-        else
-            ImGui.TextColored(new Vector4(0.9f, 0.4f, 0.4f, 1), "Stopped");
-        if (server.LastError is { } error)
-            ImGui.TextColored(new Vector4(0.9f, 0.6f, 0.3f, 1), $"Last error: {error}");
-        ImGui.TextDisabled($"Requests: {server.RequestCount}" +
-                           (server.LastRequestUtc is { } last ? $"   last: {last.ToLocalTime():T}" : "") +
-                           (server.LastClient is { } client ? $"   client: {client}" : ""));
-
-        ImGui.Separator();
-
-        var enabled = config.ServerEnabled;
-        if (ImGui.Checkbox("Enable MCP server", ref enabled))
-        {
-            config.ServerEnabled = enabled;
-            config.Save();
-            if (enabled) server.Start(); else server.Stop();
-        }
-
-        ImGui.SetNextItemWidth(120);
+        Section(FontAwesomeIcon.Server, "Endpoint");
+        ImGui.SetNextItemWidth(120 * ImGuiHelpers.GlobalScale);
         ImGui.InputInt("Port", ref portInput);
         portInput = Math.Clamp(portInput, 1024, 65535);
         ImGui.SameLine();
-        if (ImGui.Button(portInput == config.Port ? "Restart" : "Apply & restart"))
+        if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Redo, portInput == config.Port ? "Restart server" : "Apply & restart"))
         {
             config.Port = portInput;
             config.Save();
             if (config.ServerEnabled) server.Start();
         }
+        ImGui.TextColored(Muted, "Only reachable from this PC (localhost). Browsers from other sites are rejected.");
 
+        ImGui.Spacing();
+        Section(FontAwesomeIcon.Key, "Access token");
         var requireToken = config.RequireToken;
-        if (ImGui.Checkbox("Require bearer token (recommended)", ref requireToken))
+        if (ImGuiComponents.ToggleButton("##token", ref requireToken))
         {
             config.RequireToken = requireToken;
             config.Save();
         }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Without a token, any program on this PC can read your character data from the server.");
-
-        if (config.RequireToken)
+        ImGui.SameLine();
+        ImGui.TextUnformatted("Require bearer token");
+        if (!config.RequireToken)
+            ImGui.TextColored(Amber, "Without a token, any program on this PC can use the server.");
+        else
         {
-            ImGui.TextUnformatted("Token:");
+            using (ImRaii.PushFont(UiBuilder.MonoFont))
+                ImGui.TextUnformatted(showToken ? config.Token : config.Token[..6] + new string('•', 18));
             ImGui.SameLine();
-            ImGui.TextDisabled(config.Token[..6] + new string('•', 12));
+            if (ImGuiComponents.IconButton(1, showToken ? FontAwesomeIcon.EyeSlash : FontAwesomeIcon.Eye)) showToken = !showToken;
+            Tooltip(showToken ? "Hide" : "Show");
             ImGui.SameLine();
-            if (ImGui.SmallButton("Copy##token")) ImGui.SetClipboardText(config.Token);
+            if (ImGuiComponents.IconButton(2, FontAwesomeIcon.Copy)) ImGui.SetClipboardText(config.Token);
+            Tooltip("Copy token");
             ImGui.SameLine();
-            if (ImGui.SmallButton("Regenerate"))
+            if (ImGuiComponents.IconButton(3, FontAwesomeIcon.Sync))
             {
                 config.Token = Configuration.NewToken();
                 config.Save();
             }
+            Tooltip("Generate a new token (connected clients must be updated)");
         }
 
-        var allowPlugins = config.AllowPluginManagement;
-        if (ImGui.Checkbox("Allow plugin management", ref allowPlugins))
-        {
-            config.AllowPluginManagement = allowPlugins;
-            config.Save();
-        }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Lets MCP clients enable, disable and reload other Dalamud plugins and read/change their config files.\n" +
-                             "Config edits are backed up to pluginConfigs/XivMcp/backups. Uses Dalamud internals; may break on Dalamud updates.");
-        if (config.AllowPluginManagement)
-            ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.3f, 1), "Clients can change other plugins and their settings.");
-
-        var allowInteraction = config.AllowGameInteraction;
-        if (ImGui.Checkbox("Allow game interaction", ref allowInteraction))
-        {
-            config.AllowGameInteraction = allowInteraction;
-            config.Save();
-        }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Lets MCP clients open game windows (Achievements, Saddlebag, ...) and interact with nearby objects\n" +
-                             "(summoning bell, company chest, voyage control panel). AutoRetainer, YesAlready and TextAdvance are\n" +
-                             "paused automatically while XIV MCP uses the summoning bell.");
-
-        var allowInventory = config.AllowInventoryActions;
-        if (ImGui.Checkbox("Allow inventory actions", ref allowInventory))
-        {
-            config.AllowInventoryActions = allowInventory;
-            config.Save();
-        }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Lets MCP clients run /itemsort and move items between bags, armory chest, saddlebag and retainer.\n" +
-                             "Moves are sent one at a time like manual drags. Automating game actions is against the FFXIV ToS.");
-        if (config.AllowInventoryActions)
-        {
-            var delay = config.MoveDelayMs;
-            ImGui.SetNextItemWidth(160);
-            if (ImGui.SliderInt("Delay between moves (ms)", ref delay, 200, 3000))
-            {
-                config.MoveDelayMs = delay;
-                config.Save();
-            }
-        }
-
-        ImGui.Separator();
-        ImGui.TextUnformatted("Connect a client");
-
-        var authHeader = config.RequireToken ? $" --header \"Authorization: Bearer {config.Token}\"" : "";
-        var claudeCode = $"claude mcp add --transport http ffxiv {server.Endpoint}{authHeader}";
-        if (ImGui.Button("Copy Claude Code command")) ImGui.SetClipboardText(claudeCode);
+        ImGui.Spacing();
+        Section(FontAwesomeIcon.Link, "Add to your AI client");
+        var header = config.RequireToken ? $" --header \"Authorization: Bearer {config.Token}\"" : "";
+        var masked = config.RequireToken ? " --header \"Authorization: Bearer ••••••\"" : "";
+        if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Copy, "Claude Code command"))
+            ImGui.SetClipboardText($"claude mcp add --transport http ffxiv {server.Endpoint}{header}");
         ImGui.SameLine();
-        if (ImGui.Button("Copy JSON config")) ImGui.SetClipboardText(JsonConfig(server.Endpoint, config));
-        ImGui.TextDisabled("JSON works for Claude Desktop (via mcp-remote), Cursor, VS Code and other MCP clients.");
+        if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Copy, "JSON config"))
+            ImGui.SetClipboardText(JsonConfig(server.Endpoint, config));
+        Tooltip("For Cursor, VS Code and other clients with HTTP MCP support");
 
-        ImGui.Separator();
-        if (ImGui.CollapsingHeader($"Tools ({server.Tools.Count})"))
+        using (ImRaii.PushColor(ImGuiCol.ChildBg, new Vector4(0, 0, 0, 0.25f)))
+        using (ImRaii.Child("##cmd", new Vector2(-1, ImGui.GetTextLineHeightWithSpacing() * 2.6f), true))
+        using (ImRaii.PushFont(UiBuilder.MonoFont))
         {
-            foreach (var tool in server.Tools.OrderBy(t => t.Name))
-            {
-                ImGui.BulletText(tool.Name);
-                if (ImGui.IsItemHovered()) ImGui.SetTooltip(tool.Description);
-            }
+            ImGui.PushTextWrapPos();
+            ImGui.TextColored(Cyan, $"claude mcp add --transport http ffxiv {server.Endpoint}{masked}");
+            ImGui.PopTextWrapPos();
         }
+        ImGui.TextColored(Muted, "Clients that only support stdio can use: npx mcp-remote <url> --header \"Authorization: Bearer <token>\"");
+    }
+
+    // ---------------------------------------------------------------- permissions
+
+    private void DrawPermissions()
+    {
+        var config = plugin.Config;
+        ImGui.TextColored(Muted, "Reading game data is always allowed. Everything that changes something is off until you switch it on.");
+        ImGui.Spacing();
+
+        Card("interaction", FontAwesomeIcon.HandPointer, "Game interaction", config.AllowGameInteraction, v => config.AllowGameInteraction = v,
+            "Open game windows (Achievements, Saddlebag, ...) and interact with nearby objects: summoning bell, company chest, voyage control panel, NPC menus.",
+            null);
+
+        Card("inventory", FontAwesomeIcon.Boxes, "Inventory actions", config.AllowInventoryActions, v => config.AllowInventoryActions = v,
+            "Sort with the game's /itemsort, move items between bags, armory, saddlebag and retainers, open retainers and transfer stacks between them.",
+            "Automating game actions is against the FFXIV ToS. Moves are sent one at a time like manual drags.",
+            () =>
+            {
+                var delay = config.MoveDelayMs;
+                ImGui.SetNextItemWidth(220 * ImGuiHelpers.GlobalScale);
+                if (ImGui.SliderInt("Pause between moves (ms)", ref delay, 200, 3000))
+                {
+                    config.MoveDelayMs = delay;
+                    config.Save();
+                }
+            });
+
+        Card("plugins", FontAwesomeIcon.PuzzlePiece, "Plugin management", config.AllowPluginManagement, v => config.AllowPluginManagement = v,
+            "Enable, disable and reload other Dalamud plugins, and read or change their settings. Every change is backed up to pluginConfigs/XivMcp/backups.",
+            "Uses Dalamud internals; may need an update after Dalamud updates.");
+
+        ImGui.Spacing();
+        Section(FontAwesomeIcon.Robot, "Automation plugins");
+        if (compat is not { } c) return;
+        CompatRow("AutoRetainer", c.AutoRetainer,
+            c.SuppressedByUs ? "paused by XIV MCP while it uses the summoning bell"
+            : c.AutoRetainerBusy == true ? "busy (XIV MCP waits for it)"
+            : c.AutoRetainerSuppressed == true ? "suppressed by another plugin" : "idle — paused automatically when XIV MCP uses the bell");
+        CompatRow("YesAlready", c.YesAlready, c.ClickersPausedByUs ? "paused by XIV MCP" : "paused automatically while XIV MCP drives retainer windows");
+        CompatRow("TextAdvance", c.TextAdvance, c.ClickersPausedByUs ? "paused by XIV MCP" : "paused automatically while XIV MCP drives retainer windows");
+    }
+
+    private void Card(string id, FontAwesomeIcon icon, string title, bool value, Action<bool> set, string description, string? warning, Action? extra = null)
+    {
+        var lines = 2.6f + (warning is null ? 0 : 1.2f) + (extra is null || !value ? 0 : 1.4f);
+        using var bg = ImRaii.PushColor(ImGuiCol.ChildBg, value ? new Vector4(0.25f, 0.45f, 0.30f, 0.18f) : new Vector4(1, 1, 1, 0.04f));
+        using var child = ImRaii.Child($"##card-{id}", new Vector2(-1, ImGui.GetTextLineHeightWithSpacing() * lines + 16 * ImGuiHelpers.GlobalScale), true);
+
+        var v = value;
+        if (ImGuiComponents.ToggleButton($"##{id}", ref v))
+        {
+            set(v);
+            plugin.Config.Save();
+        }
+        ImGui.SameLine();
+        IconText(icon, value ? Gold : Muted);
+        ImGui.SameLine();
+        ImGui.TextColored(value ? Gold : ImGui.GetStyle().Colors[(int)ImGuiCol.Text], title);
+        ImGui.SameLine();
+        ImGui.TextColored(value ? Green : Muted, value ? "allowed" : "off");
+
+        ImGui.PushTextWrapPos();
+        ImGui.TextColored(Muted, description);
+        if (warning is not null)
+        {
+            IconText(FontAwesomeIcon.ExclamationTriangle, Amber);
+            ImGui.SameLine();
+            ImGui.TextColored(Amber, warning);
+        }
+        ImGui.PopTextWrapPos();
+        if (value) extra?.Invoke();
+    }
+
+    private static void CompatRow(string name, bool installed, string state)
+    {
+        IconText(installed ? FontAwesomeIcon.Check : FontAwesomeIcon.Circle, installed ? Green : Muted);
+        ImGui.SameLine();
+        ImGui.TextUnformatted(name);
+        ImGui.SameLine(150 * ImGuiHelpers.GlobalScale);
+        ImGui.TextColored(Muted, installed ? state : "not installed");
+    }
+
+    // ---------------------------------------------------------------- caches
+
+    private void DrawCaches()
+    {
+        var config = plugin.Config;
+        ImGui.PushTextWrapPos();
+        ImGui.TextColored(Muted, "Some data is only sent by the game in certain places. XIV MCP remembers it so assistants can use it anywhere, " +
+                                 "and tells them how old it is and how to refresh it.");
+        ImGui.PopTextWrapPos();
+        ImGui.Spacing();
+
+        var hours = config.CacheStaleHours;
+        ImGui.SetNextItemWidth(220 * ImGuiHelpers.GlobalScale);
+        if (ImGui.SliderInt("Suggest refresh after (hours)", ref hours, 1, 168))
+        {
+            config.CacheStaleHours = hours;
+            config.Save();
+        }
+        ImGui.Spacing();
+
+        if (cacheRows.Count == 0)
+        {
+            ImGui.TextColored(Muted, "Nothing cached yet. Open the voyage control panel in your FC workshop, or a retainer at a summoning bell.");
+            return;
+        }
+
+        using var table = ImRaii.Table("##caches", 4, ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.SizingStretchProp);
+        if (!table) return;
+        ImGui.TableSetupColumn("Data", ImGuiTableColumnFlags.WidthStretch, 2.2f);
+        ImGui.TableSetupColumn("Character", ImGuiTableColumnFlags.WidthStretch, 1.6f);
+        ImGui.TableSetupColumn("Age", ImGuiTableColumnFlags.WidthStretch, 0.9f);
+        ImGui.TableSetupColumn("Status", ImGuiTableColumnFlags.WidthStretch, 0.9f);
+        ImGui.TableHeadersRow();
+        foreach (var row in cacheRows)
+        {
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+            IconText(row.Cache == "submersibles" ? FontAwesomeIcon.Box : FontAwesomeIcon.Bell, Muted);
+            ImGui.SameLine();
+            ImGui.TextUnformatted(row.Entry);
+            ImGui.TableNextColumn();
+            ImGui.TextColored(Muted, row.Character);
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(row.Captured is { } t ? CacheFreshness.FormatAge(DateTime.UtcNow - t) : "—");
+            ImGui.TableNextColumn();
+            var stale = row.Captured is not { } c || DateTime.UtcNow - c > CacheFreshness.StaleAfter;
+            ImGui.TextColored(row.Captured is null ? Muted : stale ? Amber : Green, row.Captured is null ? "not captured" : stale ? "stale" : "fresh");
+        }
+    }
+
+    // ---------------------------------------------------------------- tools
+
+    private void DrawTools()
+    {
+        ImGui.SetNextItemWidth(-1);
+        ImGui.InputTextWithHint("##filter", "Filter tools…", ref toolFilter, 64);
+        ImGui.Spacing();
+
+        using var table = ImRaii.Table("##tools", 3, ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.SizingStretchProp);
+        if (!table) return;
+        ImGui.TableSetupColumn("Tool", ImGuiTableColumnFlags.WidthStretch, 1.4f);
+        ImGui.TableSetupColumn("Access", ImGuiTableColumnFlags.WidthStretch, 0.8f);
+        ImGui.TableSetupColumn("What it does", ImGuiTableColumnFlags.WidthStretch, 3.2f);
+        ImGui.TableHeadersRow();
+
+        foreach (var tool in plugin.Server.Tools.OrderBy(t => t.ReadOnly ? 0 : 1).ThenBy(t => t.Name))
+        {
+            if (toolFilter.Length > 0 && !tool.Name.Contains(toolFilter, StringComparison.OrdinalIgnoreCase) &&
+                !tool.Description.Contains(toolFilter, StringComparison.OrdinalIgnoreCase)) continue;
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+            using (ImRaii.PushFont(UiBuilder.MonoFont)) ImGui.TextUnformatted(tool.Name);
+            ImGui.TableNextColumn();
+            if (tool.ReadOnly) ImGui.TextColored(Green, "read");
+            else ImGui.TextColored(tool.Destructive ? Red : Amber, tool.Destructive ? "writes files" : "acts in game");
+            ImGui.TableNextColumn();
+            var summary = tool.Description.Split(". ")[0].TrimEnd('.') + ".";
+            ImGui.PushTextWrapPos();
+            ImGui.TextColored(Muted, summary);
+            ImGui.PopTextWrapPos();
+            Tooltip(tool.Description);
+        }
+    }
+
+    // ---------------------------------------------------------------- helpers
+
+    private void Refresh()
+    {
+        if (DateTime.UtcNow < nextRefresh) return;
+        nextRefresh = DateTime.UtcNow.AddSeconds(1);
+        try { compat = plugin.Compat.GetInfo(); } catch { compat = null; }
+        cacheRows = plugin.Caches.All
+            .SelectMany(c => c.Entries().Select(e => (c.Id, e.Character, e.Entry ?? c.Title, e.CapturedUtc)))
+            .OrderBy(r => r.Character).ThenBy(r => r.Item3)
+            .ToList();
+    }
+
+    private static void Section(FontAwesomeIcon icon, string title)
+    {
+        IconText(icon, Gold);
+        ImGui.SameLine();
+        ImGui.TextColored(Gold, title);
+    }
+
+    private static void IconText(FontAwesomeIcon icon, Vector4 color)
+    {
+        using var font = ImRaii.PushFont(UiBuilder.IconFont);
+        ImGui.TextColored(color, icon.ToIconString());
+    }
+
+    private static void Tooltip(string text)
+    {
+        if (!ImGui.IsItemHovered()) return;
+        using var tt = ImRaii.Tooltip();
+        ImGui.PushTextWrapPos(ImGui.GetFontSize() * 32);
+        ImGui.TextUnformatted(text);
+        ImGui.PopTextWrapPos();
     }
 
     private static string JsonConfig(string endpoint, Configuration config)

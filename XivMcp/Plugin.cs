@@ -18,11 +18,14 @@ public sealed class Plugin : IDalamudPlugin
     private readonly WorkshopTracker workshop;
     private readonly RetainerTracker retainers;
     private readonly PluginCompat compat;
+    private readonly CacheRegistry caches;
 
     internal static Plugin? Instance { get; private set; }
 
     public Configuration Config { get; }
     public McpServer Server { get; }
+    internal CacheRegistry Caches => caches;
+    internal PluginCompat Compat => compat;
 
     public Plugin(IDalamudPluginInterface pluginInterface)
     {
@@ -33,7 +36,7 @@ public sealed class Plugin : IDalamudPlugin
         workshop = new WorkshopTracker();
         retainers = new RetainerTracker();
         compat = new PluginCompat();
-        var caches = new CacheRegistry();
+        caches = new CacheRegistry();
         caches.Add(workshop);
         caches.Add(retainers);
 

@@ -1,3 +1,5 @@
+<img src="XivMcp/images/icon.png" width="96" align="right" alt="XIV MCP icon: a brass mammet with an aether crystal antenna">
+
 # XIV MCP
 
 A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV that runs a local **Model Context Protocol (MCP) server** inside the game client. It gives AI assistants such as Claude Code, Claude Desktop, Cursor or VS Code read-only access to the live data of the logged-in character.
