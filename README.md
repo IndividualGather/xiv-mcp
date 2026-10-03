@@ -27,6 +27,7 @@ A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV th
 | `get_aetherytes` | Attuned aetherytes with teleport costs |
 | `get_companions` | Chocobo, pet, trusts / duty support |
 | `get_retainers` | Retainers, gil, listings, venture status |
+| `get_submersibles` | FC submersibles: rank and EXP, parts and build code (e.g. `SSUC`), stats (base + bonus), current route with sector names, return time / ready state, last voyage loot, unlocked and explored sectors per sea. Airships with rank, stats and voyage timing |
 | `list_game_sheets` / `search_game_data` / `get_game_data_row` | Generic access to any of the game's Excel sheets (items, quests, achievements, duties, recipes, …) in the client language |
 
 ### Plugin management (opt-in)
@@ -53,6 +54,8 @@ How config edits work:
 Dalamud has no public API for loading or unloading other plugins. These tools use Dalamud's internal `PluginManager` the same way the plugin installer does, so they may need adjusting after Dalamud updates. They also make the plugin unsuitable for the official Dalamud repository.
 
 The unlock and game-data tools work by reflection over Dalamud's `IUnlockState` and Lumina's sheet types. New categories and sheets therefore show up automatically when Dalamud is updated.
+
+The game only sends submersible and airship data while you are inside the FC workshop. While you're there, XIV MCP saves a snapshot every few seconds to `pluginConfigs/XivMcp/workshop.json`, one per character. `get_submersibles` then works from anywhere, including for alts (`all_characters=true`). Return times are absolute, so "voyaging / ready to collect" stays correct between visits. Rank and loot reflect your last visit (`capturedAt`).
 
 Some data is only filled in by the game after the matching window has been opened once per session. This applies to the Achievements window, the title list, the retainer list (summoning bell), the saddlebag and retainer inventories. The tools say so when this is the case.
 

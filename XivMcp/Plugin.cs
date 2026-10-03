@@ -14,6 +14,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private readonly WindowSystem windows = new("XivMcp");
     private readonly ConfigWindow configWindow;
+    private readonly Util.WorkshopTracker workshop;
 
     public Configuration Config { get; }
     public McpServer Server { get; }
@@ -22,13 +23,15 @@ public sealed class Plugin : IDalamudPlugin
     {
         pluginInterface.Create<Svc>();
         Config = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        workshop = new Util.WorkshopTracker();
 
         var tools = CharacterTools.Create()
             .Concat(InventoryTools.Create())
             .Concat(UnlockTools.Create())
             .Concat(WorldTools.Create())
             .Concat(GameDataTools.Create())
-            .Concat(PluginTools.Create(Config));
+            .Concat(PluginTools.Create(Config))
+            .Concat(VoyageTools.Create(workshop));
         Server = new McpServer(tools, Config);
 
         configWindow = new ConfigWindow(this);
@@ -53,5 +56,6 @@ public sealed class Plugin : IDalamudPlugin
         Svc.PluginInterface.UiBuilder.OpenMainUi -= configWindow.Toggle;
         windows.RemoveAllWindows();
         Server.Dispose();
+        workshop.Dispose();
     }
 }
