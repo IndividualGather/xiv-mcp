@@ -41,6 +41,9 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Allows moving the character with vnavmesh / Lifestream (navigate_to).</summary>
     public bool AllowNavigation { get; set; }
 
+    /// <summary>Allows starting crafts / lists in Artisan, editing Artisan and GatherBuddy Reborn lists and toggling auto-gather.</summary>
+    public bool AllowCraftingGathering { get; set; }
+
     /// <summary>Where navigate_to looks for a summoning bell when none is nearby: lifestream (its property priority), inn, fc, home, apartment.</summary>
     public string PreferredBellLocation { get; set; } = "lifestream";
 

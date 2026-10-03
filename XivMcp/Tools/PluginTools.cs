@@ -333,6 +333,47 @@ internal static class PluginTools
         };
     }
 
+    /// <summary>
+    /// Safely changes another plugin's JSON file (used by the Artisan / GatherBuddy integrations, which have no IPC for their lists):
+    /// unloads the plugin if loaded (it would overwrite the file from memory), re-reads the file, applies <paramref name="modify"/>,
+    /// backs up the old version, writes the new one and loads the plugin again.
+    /// </summary>
+    internal static async Task<string> ModifyPluginJson(string internalName, string? relativeFile, Func<JsonNode, JsonNode> modify)
+    {
+        var file = ResolveConfigFile(internalName, relativeFile);
+        var plugin = DalamudInternals.InstalledPlugins().FirstOrDefault(p => DalamudInternals.InternalName(p).Equals(internalName, StringComparison.OrdinalIgnoreCase));
+        var wasLoaded = plugin is not null && DalamudInternals.IsLoaded(plugin);
+
+        await Gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (wasLoaded) await DalamudInternals.Unload(plugin!).ConfigureAwait(false);
+            string backup;
+            try
+            {
+                var original = await File.ReadAllTextAsync(file.FullName).ConfigureAwait(false);
+                var updated = modify(ParseJson(original, file.Name));
+                backup = Backup(internalName, file, original);
+                await DalamudInternals.WriteConfigFile(file.FullName, updated.ToJsonString(WriteOptions), plugin is null ? Guid.Empty : DalamudInternals.WorkingId(plugin))
+                    .ConfigureAwait(false);
+                Svc.Log.Information($"[MCP] Updated {RelativeName(file)} (backup: {backup})");
+            }
+            finally
+            {
+                if (wasLoaded) await DalamudInternals.Load(plugin!).ConfigureAwait(false);
+            }
+            return backup;
+        }
+        finally { Gate.Release(); }
+    }
+
+    /// <summary>Reads another plugin's JSON file (relative to pluginConfigs).</summary>
+    internal static JsonNode ReadPluginJson(string internalName, string? relativeFile)
+    {
+        var file = ResolveConfigFile(internalName, relativeFile);
+        return ParseJson(File.ReadAllText(file.FullName), file.Name);
+    }
+
     private static List<object> ApplyChanges(JsonNode root, JsonArray changes, bool createMissing, bool allowTypeChange, out string serialized)
     {
         var applied = new List<object>();

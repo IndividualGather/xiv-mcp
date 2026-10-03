@@ -352,12 +352,22 @@ internal sealed class ConfigWindow : Window
                 "Move the character to a summoning bell, the company chest, the workshop, the inn or your house (walking and teleports).",
                 "Teleports cost gil as usual. stop_navigation stops it at any time.", DrawBellPreference, extraLines: 1.6f);
 
+        // Crafting & gathering builds on Artisan / GatherBuddy Reborn; only offered when one of them is installed and enabled.
+        if (compat is { } cg && (cg.Artisan || cg.GatherBuddy))
+            Card("craftgather", FontAwesomeIcon.Hammer, "Crafting & gathering automation", config.AllowCraftingGathering, v => config.AllowCraftingGathering = v,
+                string.Join(" ", new[]
+                {
+                    cg.Artisan ? "Start crafts and crafting lists (pause, resume, stop) and create, edit or delete crafting lists." : null,
+                    cg.GatherBuddy ? "Start and stop auto-gathering and create, edit or delete auto-gather lists." : null,
+                }.Where(s => s is not null)),
+                "Editing lists briefly reloads the plugin that owns them; their config is backed up first.");
+
         Card("plugins", FontAwesomeIcon.PuzzlePiece, "Plugin management", config.AllowPluginManagement, v => config.AllowPluginManagement = v,
             "Enable, disable and reload other Dalamud plugins, and read or change their settings. Every change is backed up to pluginConfigs/XivMcp/backups.",
             "Uses Dalamud internals; may need an update after Dalamud updates.");
 
         // Compatibility is only shown for plugins the player already has installed; otherwise the section doesn't exist.
-        if (compat is not { } c || !(c.AutoRetainer || c.YesAlready || c.TextAdvance || c.Fcch || c.WaymarkPresetPlugin || c.Vnavmesh || c.Lifestream)) return;
+        if (compat is not { } c || !(c.AutoRetainer || c.YesAlready || c.TextAdvance || c.Fcch || c.WaymarkPresetPlugin || c.Vnavmesh || c.Lifestream || c.Artisan || c.GatherBuddy)) return;
         ImGui.Spacing();
         Section(FontAwesomeIcon.Robot, "Compatibility");
         if (c.AutoRetainer)
@@ -377,6 +387,10 @@ internal sealed class ConfigWindow : Window
             CompatRow("vnavmesh", "used by Navigation to walk to objects");
         if (c.Lifestream)
             CompatRow("Lifestream", "used by Navigation for teleports, houses, inns and the workshop (its property priority is respected)");
+        if (c.Artisan)
+            CompatRow("Artisan", "crafts and crafting lists can be started and lists edited");
+        if (c.GatherBuddy)
+            CompatRow("GatherBuddy Reborn", "auto-gather can be started and its lists edited");
     }
 
     private static readonly (string Id, string Label)[] BellLocations =

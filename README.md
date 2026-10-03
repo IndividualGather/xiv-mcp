@@ -111,6 +111,22 @@ Every cached result carries a `cache` block: `capturedAt`, `age`, `live`, `stale
 - `wait_for_cache_refresh` waits up to 10 minutes for a cache to refresh. Use it after asking the user to open a retainer or enter the workshop. It works with every MCP client.
 - Each cache is also an MCP **resource** (`xiv://cache/submersibles`, `xiv://cache/retainers`) that supports `resources/subscribe`. Clients that open the Streamable-HTTP event stream (`GET /mcp` with their `Mcp-Session-Id`) receive `notifications/resources/updated` whenever the cache refreshes.
 
+### Crafting & gathering (opt-in, needs Artisan and/or GatherBuddy Reborn)
+
+Disabled until you tick **Allow crafting & gathering automation** in `/xivmcp`. The setting only appears when Artisan or GatherBuddy Reborn is installed and enabled.
+
+| Tool | What it does |
+|---|---|
+| `get_crafting_lists` | Artisan's lists (recipes, jobs, quantities) and its state |
+| `craft_item` | Crafts an item N times with Artisan, preferring the current job's recipe |
+| `crafting_control` | Start a crafting list, pause or resume it, or stop |
+| `set_crafting_list` / `delete_crafting_list` | Create, edit (replace or append recipes, rename) or delete Artisan lists |
+| `get_gather_lists` | GatherBuddy Reborn's auto-gather lists and auto-gather state |
+| `set_gather_list` / `delete_gather_list` | Create, edit or delete auto-gather lists (items, quantities, active, folder) |
+| `set_auto_gather` | Start or stop auto-gathering |
+
+Neither plugin has IPC for its lists. Editing a list briefly unloads the plugin, updates its file (with a backup) and loads it again; this is refused while the plugin is crafting or gathering.
+
 ### Navigation (opt-in, needs vnavmesh and/or Lifestream)
 
 Disabled until you tick **Allow navigation** in `/xivmcp`. The setting only appears when vnavmesh or Lifestream is installed.

@@ -71,6 +71,7 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(CollectionTools.Create(glamour))
             .Concat(FcChestTools.Create(Config))
             .Concat(NavigationTools.Create(Config))
+            .Concat(CraftGatherTools.Create(Config))
             .Concat(CacheTools.Create(caches));
         Server = new McpServer(tools, Config, caches);
 
