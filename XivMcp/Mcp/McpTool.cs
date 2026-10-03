@@ -110,6 +110,13 @@ public sealed class ToolArgs(JsonObject? args)
         return single is null ? [] : single.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
     }
 
+    /// <summary>A JSON array of strings exactly as given (no trimming, empty entries kept, no comma splitting) — e.g. macro lines.</summary>
+    public List<string> StringListRaw(string name)
+    {
+        if (args[name] is not JsonArray arr) throw new ToolException($"'{name}' must be an array of strings.");
+        return arr.Select(n => n is JsonValue v && v.TryGetValue<string>(out var s) ? s : n?.ToString() ?? "").ToList();
+    }
+
     /// <summary>Accepts either a JSON array of numbers or a comma separated string.</summary>
     public List<uint> UIntList(string name)
     {

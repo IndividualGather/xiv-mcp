@@ -333,6 +333,10 @@ internal sealed class ConfigWindow : Window
             "Open game windows (Achievements, Saddlebag, ...) and interact with nearby objects: summoning bell, company chest, voyage control panel, NPC menus.",
             null);
 
+        Card("macros", FontAwesomeIcon.Terminal, "Macro editing", config.AllowMacroEditing, v => config.AllowMacroEditing = v,
+            "Create, edit and clear your individual and shared macros. The previous version of every changed macro is backed up.",
+            null);
+
         Card("inventory", FontAwesomeIcon.Boxes, "Inventory actions", config.AllowInventoryActions, v => config.AllowInventoryActions = v,
             "Sort with the game's /itemsort, move items between bags, armory, saddlebag and retainers, open retainers and transfer stacks between them.",
             "Automating game actions is against the FFXIV ToS. Moves are sent one at a time like manual drags.",

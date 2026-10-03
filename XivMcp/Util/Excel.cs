@@ -89,6 +89,9 @@ internal static class Excel
     public static object? Ref<T>(RowRef<T> rowRef) where T : struct, IExcelRow<T> =>
         rowRef.RowId == 0 && !rowRef.IsValid ? null : new { id = rowRef.RowId, name = Name(rowRef) };
 
+    public static string? NameOf<T>(uint rowId) where T : struct, IExcelRow<T> =>
+        Svc.Data.GetExcelSheet<T>().GetRowOrDefault(rowId) is { } row ? DisplayName(row) : null;
+
     public static object Ref<T>(uint rowId) where T : struct, IExcelRow<T> =>
         new { id = rowId, name = Svc.Data.GetExcelSheet<T>().GetRowOrDefault(rowId) is { } row ? DisplayName(row) : null };
 

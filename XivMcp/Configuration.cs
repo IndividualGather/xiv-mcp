@@ -32,6 +32,9 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Allows opening game windows and interacting with nearby objects (summoning bell, company chest, ...).</summary>
     public bool AllowGameInteraction { get; set; }
 
+    /// <summary>Allows creating, editing and clearing macros.</summary>
+    public bool AllowMacroEditing { get; set; }
+
     /// <summary>Pause between two item moves, so the server can confirm each one.</summary>
     public int MoveDelayMs { get; set; } = 700;
 
