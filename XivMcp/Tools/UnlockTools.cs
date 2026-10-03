@@ -16,6 +16,20 @@ internal static class UnlockTools
 {
     private sealed record Category(string Name, Type RowType, MethodInfo Check);
 
+    /// <summary>Rows that are real, player-facing entries of a category.</summary>
+    private static bool Include(Category c, object row) => row switch
+    {
+        Emote e => e.TextCommand.RowId != 0, // internal emotes have no /command
+        _ => true,
+    };
+
+    /// <summary>
+    /// The game's unlock check, plus entries everyone has by default: emotes without an unlock (Bow, Cheer, ...) are reported as
+    /// "not unlocked" by the game's check although every character can use them.
+    /// </summary>
+    private static bool IsUnlocked(Category c, object row) =>
+        row is Emote { UnlockLink: 0 } || (bool)c.Check.Invoke(Svc.Unlocks, [row])!;
+
     /// <summary>
     /// Every IUnlockState.IsXxxUnlocked/IsXxxComplete(d)(Row) method becomes a category, so new Dalamud unlock checks show up automatically.
     /// </summary>
@@ -39,13 +53,13 @@ internal static class UnlockTools
         foreach (var row in Excel.GetSheet(category.RowType))
         {
             var name = Excel.DisplayName(row);
-            if (string.IsNullOrWhiteSpace(name) || (query is not null && !Game.Matches(name, query))) continue;
+            if (string.IsNullOrWhiteSpace(name) || (query is not null && !Game.Matches(name, query)) || !Include(category, row)) continue;
             rows.Add((row, Excel.RowId(row), name));
         }
         return await Game.RunLoggedIn(() => rows.Select(r =>
         {
             bool unlocked;
-            try { unlocked = (bool)category.Check.Invoke(Svc.Unlocks, [r.Row])!; }
+            try { unlocked = IsUnlocked(category, r.Row); }
             catch { unlocked = false; }
             return new UnlockRow(r.Id, r.Name, unlocked);
         }).ToList()).ConfigureAwait(false);
@@ -106,7 +120,7 @@ internal static class UnlockTools
                     var id = Excel.RowId(row);
                     if (ids.Count > 0 && !ids.Contains(id)) continue;
                     var name = Excel.DisplayName(row);
-                    if (ids.Count == 0 && string.IsNullOrWhiteSpace(name)) continue; // skip unused/placeholder rows
+                    if (ids.Count == 0 && (string.IsNullOrWhiteSpace(name) || !Include(category, row))) continue; // skip unused/placeholder rows
                     if (query is not null && !Game.Matches(name, query)) continue;
                     rows.Add((row, id, name));
                 }
@@ -125,7 +139,7 @@ internal static class UnlockTools
                     var unlocked = new bool[rows.Count];
                     for (var i = 0; i < rows.Count; i++)
                     {
-                        try { unlocked[i] = (bool)category.Check.Invoke(Svc.Unlocks, [rows[i].Row])!; }
+                        try { unlocked[i] = IsUnlocked(category, rows[i].Row); }
                         catch { unlocked[i] = false; }
                     }
                     return (unlocked, notes);

@@ -15,6 +15,7 @@ internal static class CollectionTools
     private static readonly (string Key, string Title, string Category)[] Collections =
     [
         ("mounts", "Mounts", "mount"),
+        ("emotes", "Emotes", "emote"),
         ("minions", "Minions", "companion"),
         ("orchestrion", "Orchestrion rolls", "orchestrion"),
         ("fashion_accessories", "Fashion accessories", "ornament"),
@@ -26,7 +27,7 @@ internal static class CollectionTools
         yield return new McpTool
         {
             Name = "get_collections",
-            Description = "Collection progress of the logged-in character: mounts, minions, orchestrion rolls, fashion accessories and facewear " +
+            Description = "Collection progress of the logged-in character: mounts, emotes, minions, orchestrion rolls, fashion accessories and facewear " +
                           "(owned / total; totals come from the game data and may include entries that can't be obtained), plus how many items are in the " +
                           "armoire and the glamour dresser. Give 'collection' to list its entries " +
                           "(filter owned / missing, name query).",
@@ -34,7 +35,7 @@ internal static class CollectionTools
                 {
                   "type": "object",
                   "properties": {
-                    "collection": { "type": "string", "enum": ["mounts", "minions", "orchestrion", "fashion_accessories", "facewear"],
+                    "collection": { "type": "string", "enum": ["mounts", "emotes", "minions", "orchestrion", "fashion_accessories", "facewear"],
                                     "description": "List the entries of one collection." },
                     "filter": { "type": "string", "enum": ["all", "owned", "missing"], "description": "Which entries to list (default all)." },
                     "query": { "type": "string", "description": "Only entries whose name contains this text." },
