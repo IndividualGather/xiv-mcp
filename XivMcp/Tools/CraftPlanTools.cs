@@ -17,12 +17,13 @@ internal static class CraftPlanTools
     private const string ItemsSchema = """
         "items": {
           "type": "array",
-          "description": "What to craft: [{ \"item\": name or id, \"quantity\": number of items wanted }].",
-          "items": { "type": "object", "properties": { "item": { "type": "string" }, "quantity": { "type": "integer" } }, "required": ["item"] }
+          "description": "What to craft: [{ \"item\": name or id, \"quantity\": number wanted, or \"fill\" = as many as fit in the bags (and, for collectables, under the scrip cap) }].",
+          "items": { "type": "object", "properties": { "item": { "type": "string" }, "quantity": { "type": ["integer", "string"] } }, "required": ["item"] }
         },
         "craft_intermediates": { "type": "boolean", "description": "Craft intermediate materials yourself instead of obtaining them (default true)." },
         "use_retainers": { "type": "boolean", "description": "Count materials on your retainers (cached inventories, default true)." },
-        "count_existing": { "type": "boolean", "description": "Subtract finished items you already have from the wanted quantity (default false: craft the full quantity)." }
+        "count_existing": { "type": "boolean", "description": "Subtract finished items you already have from the wanted quantity (default false: craft the full quantity)." },
+        "respect_scrip_cap": { "type": "boolean", "description": "For quantity \"fill\" of collectables: no more than can be turned in before the scrip cap (default true)." }
         """;
 
     public static IEnumerable<McpTool> Create(Configuration config, RetainerTracker retainers)
@@ -39,7 +40,7 @@ internal static class CraftPlanTools
             InputSchema = $$"""{ "type": "object", "properties": { {{ItemsSchema}} }, "required": ["items"] }""",
             Handler = async (args, ct) =>
             {
-                var (targets, options) = await ParseArgs(args).ConfigureAwait(false);
+                var (targets, options) = await ParseArgs(args, retainers).ConfigureAwait(false);
                 var plan = await Game.RunLoggedIn(() => CraftPlanner.Build(targets, options, retainers)).ConfigureAwait(false);
                 var sources = await MaterialSources(plan.Materials.Where(m => m.Missing > 0).Select(m => m.ItemId).ToList(), config, ct).ConfigureAwait(false);
                 return await Game.Run(() => Describe(plan, sources, raphael: CraftGatherTools.ArtisanLoaded)).ConfigureAwait(false);
@@ -75,7 +76,7 @@ internal static class CraftPlanTools
             {
                 if (!config.AllowCraftingGathering)
                     throw new ToolException("Crafting & gathering automation is disabled. Enable it in the XIV MCP settings window (/xivmcp) in game.");
-                var (targets, options) = await ParseArgs(args).ConfigureAwait(false);
+                var (targets, options) = await ParseArgs(args, retainers).ConfigureAwait(false);
                 var batchIndex = args.Int("batch", 1, 1, 50);
                 var useRaphael = args.Bool("raphael", true);
                 var deadline = DateTime.UtcNow.AddSeconds(args.Int("timeout_seconds", 240, 10, 900));
@@ -173,18 +174,53 @@ internal static class CraftPlanTools
 
     // ------------------------------------------------------------------ helpers
 
-    private static async Task<(List<CraftPlanner.Target>, CraftPlanner.Options)> ParseArgs(ToolArgs args)
+    private static async Task<(List<CraftPlanner.Target>, CraftPlanner.Options)> ParseArgs(ToolArgs args, RetainerTracker retainers)
     {
         var raw = (args.Node("items") as JsonArray ?? []).OfType<JsonObject>().ToList();
         if (raw.Count == 0) throw new ToolException("'items' needs at least one { item, quantity }.");
-        var targets = await Game.Run(() => raw.Select(r =>
-        {
-            var a = new ToolArgs(r);
-            var item = Items.Resolve(a.String("item") ?? throw new ToolException("Each entry needs 'item'."));
-            return new CraftPlanner.Target(item.RowId, a.Int("quantity", 1, 1, 99999));
-        }).GroupBy(t => t.ItemId).Select(g => new CraftPlanner.Target(g.Key, g.Sum(t => t.Quantity))).ToList()).ConfigureAwait(false);
         var options = new CraftPlanner.Options(args.Bool("craft_intermediates", true), args.Bool("use_retainers", true), args.Bool("count_existing", false));
+        var respectCap = args.Bool("respect_scrip_cap", true);
+        var targets = await Game.Run(() =>
+        {
+            var parsed = raw.Select(r =>
+            {
+                var a = new ToolArgs(r);
+                var item = Items.Resolve(a.String("item") ?? throw new ToolException("Each entry needs 'item'."));
+                var fill = string.Equals(a.String("quantity"), "fill", StringComparison.OrdinalIgnoreCase);
+                return (Item: item.RowId, Quantity: fill ? 0 : a.Int("quantity", 1, 1, 99999), Fill: fill);
+            }).ToList();
+            var fills = parsed.Where(p => p.Fill).Select(p => p.Item).Distinct().ToList();
+            if (fills.Count > 1) throw new ToolException("Only one item can use quantity \"fill\".");
+            var fixedTargets = parsed.Where(p => !p.Fill).GroupBy(p => p.Item).Select(g => new CraftPlanner.Target(g.Key, g.Sum(p => p.Quantity))).ToList();
+            if (fills.Count == 0) return fixedTargets;
+            var n = FillQuantity(fills[0], fixedTargets, options, retainers, respectCap);
+            if (n <= 0) throw new ToolException($"No {Items.Name(fills[0])} fits: no free bag space" + (respectCap ? " or no room under the scrip cap." : "."));
+            return [.. fixedTargets, new CraftPlanner.Target(fills[0], n)];
+        }).ConfigureAwait(false);
         return (targets, options);
+    }
+
+    /// <summary>
+    /// The largest quantity of an item whose whole project (materials coming in, crafts going out) fits into the free bag slots —
+    /// and, for collectables, that can still be turned in before its scrip's cap (at the top collectability tier). Framework thread.
+    /// </summary>
+    private static int FillQuantity(uint itemId, List<CraftPlanner.Target> others, CraftPlanner.Options options, RetainerTracker? retainers, bool respectCap)
+    {
+        var free = Items.FreeBagSlots();
+        var upper = Math.Max(1, free * 99);
+        if (respectCap && Collectables.RewardFor(itemId) is { HighReward: > 0 } reward)
+        {
+            var room = Collectables.CurrencyRoom(reward.CurrencyItemId).Room;
+            if (room != long.MaxValue) upper = (int)Math.Min(upper, room / reward.HighReward);
+        }
+        bool Fits(int n) => CraftPlanner.Build([.. others, new CraftPlanner.Target(itemId, n)], options with { FreeSlotsOverride = int.MaxValue }, retainers).PeakSlotsNeeded <= free;
+        int lo = 0, hi = upper;
+        while (lo < hi)
+        {
+            var mid = lo + (hi - lo + 1) / 2;
+            if (Fits(mid)) lo = mid; else hi = mid - 1;
+        }
+        return lo;
     }
 
     private static object Describe(CraftPlanner.Plan plan, Dictionary<uint, object> sources, bool raphael) => new
@@ -201,6 +237,9 @@ internal static class CraftPlanTools
             uses = s.Ingredients.Select(x => $"{x.Amount}x {Items.Name(x.ItemId)}").ToList(),
             problem = s.Problem,
             raphael = raphael ? RaphaelInfo(s) : null,
+            collectable = s.IsTarget && Collectables.RewardFor(s.ItemId) is { } reward
+                ? new { turnIn = Collectables.Describe(reward), scripForAll = (long)reward.HighReward * s.Produces, note = "Raphael solutions for collectables aim for the highest collectability tier." }
+                : null,
         }).ToList(),
         materials = plan.Materials.Select(m => new
         {

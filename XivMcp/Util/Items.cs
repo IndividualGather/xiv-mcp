@@ -92,11 +92,14 @@ internal static class Items
     public static int SlotsNeeded(uint itemId, int quantity)
     {
         if (quantity <= 0 || IsCrystal(itemId) || IsCurrency(itemId)) return 0;
+        if (Collectables.IsCollectable(itemId)) return quantity; // collectables never stack
         var rest = quantity - RoomInExistingStacks(itemId);
         return rest <= 0 ? 0 : (int)Math.Ceiling(rest / (double)StackSize(itemId));
     }
 
     /// <summary>Bag slots needed without looking at the current bags (for planning items that are not there yet).</summary>
     public static int SlotsFor(uint itemId, int quantity) =>
-        quantity <= 0 || IsCrystal(itemId) || IsCurrency(itemId) ? 0 : (int)Math.Ceiling(quantity / (double)StackSize(itemId));
+        quantity <= 0 || IsCrystal(itemId) || IsCurrency(itemId) ? 0
+        : Collectables.IsCollectable(itemId) ? quantity // collectables never stack
+        : (int)Math.Ceiling(quantity / (double)StackSize(itemId));
 }

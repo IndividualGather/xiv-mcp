@@ -133,7 +133,7 @@ Undercuts follow **Penny Pincher**'s settings when it is installed (amount, roun
 | `get_crafting_lists` / `set_crafting_list` / `delete_crafting_list` | Artisan's lists and state; create, edit or delete lists |
 | `craft_item` / `crafting_control` | Craft an item N times; start, pause, resume or stop a list |
 | `get_gather_lists` / `set_gather_list` / `delete_gather_list` / `set_auto_gather` | GatherBuddy Reborn's auto-gather lists and auto-gather on/off |
-| `plan_craft` | Plans a project: recipe tree, craft order, stock from bags and retainers, where to get missing materials, bag space and batches, and the stats Artisan will craft with *(always available)* |
+| `plan_craft` | Plans a project: recipe tree, craft order, stock from bags and retainers, where to get missing materials, bag space and batches, and the stats Artisan will craft with. `"quantity": "fill"` plans as many as fit in the bags; for collectables also no more than can be turned in before the scrip cap, with the scrip per collectability tier *(always available)* |
 | `prepare_craft_plan` | Creates the Artisan list in the right order and builds the **Raphael** solution for each recipe ahead of time, with the exact stats Artisan will use |
 | `gather_until` | Gathers until the bags hold the target quantities (your other lists are paused and restored) |
 | `run_crafting_list` | Runs an Artisan list to the end and reports what was crafted |
@@ -155,6 +155,8 @@ A job is a queue of tool calls XIV MCP runs in the game, one after another, for 
 When a step fails or is stopped, the job becomes **pending** and waits for the agent to fix it. While a step runs, other changing tool calls are refused so they can't collide with the job. Jobs survive plugin reloads and come back paused. Each step still needs its own permission.
 
 Example: `prepare_craft_plan` → `gather_until` (the missing materials) → `run_crafting_list` with `{{plan.list.id}}`.
+
+A scrip farming round as one job: `prepare_craft_plan` with `"quantity": "fill"` for a collectable → `gather_until` / `transfer_retainer_items` for the materials → `run_crafting_list` → `turn_in_collectables` (stops before the scrip cap) → `buy_item` with a standing `approval` → `sell_item`.
 
 MCP's own task mechanism (the Tasks extension) isn't used because no common client supports it yet. Jobs work with every client through ordinary tools.
 
