@@ -376,6 +376,14 @@ internal static class PluginTools
     /// <summary>Accepts an installed plugin's name/internal name, or any internal name that has config files.</summary>
     private static string ResolveInternalName(string? plugin)
     {
+        var name = ResolveInternalNameUnchecked(plugin);
+        if (name.Equals(Svc.PluginInterface.InternalName, StringComparison.OrdinalIgnoreCase))
+            throw new ToolException("XIV MCP's own configuration (which holds the access token) is not available through these tools. Use /xivmcp in game.");
+        return name;
+    }
+
+    private static string ResolveInternalNameUnchecked(string? plugin)
+    {
         if (plugin is null) throw new ToolException("'plugin' is required.");
         try { return DalamudInternals.InternalName(DalamudInternals.Find(plugin)); }
         catch (ToolException)
