@@ -117,7 +117,7 @@ internal static class WaymarkTools
             Description = "Writes one of the game's 30 waymark preset slots. Either copy from another preset (from_source + from_number/from_name: " +
                           "a game slot, a WaymarkPresetPlugin library preset, or \"current\" for the waymarks placed right now), and/or give markers " +
                           "explicitly as { \"A\": {\"x\":100,\"y\":0,\"z\":90}, \"1\": null, ... } (null removes a marker; omitted markers keep their value). " +
-                          "duty is the duty (ContentFinderCondition id or name) the preset belongs to. Returns before/after with a picture. " +
+                          "duty is the duty (ContentFinderCondition id or name) the preset belongs to. Returns before/after with a picture; clear=true empties the slot. " +
                           "Requires 'Allow waymark preset editing' in /xivmcp.",
             InputSchema = """
                 {
@@ -129,7 +129,8 @@ internal static class WaymarkTools
                     "from_name": { "type": "string" },
                     "markers": { "type": "object", "description": "Marker overrides keyed A, B, C, D, 1, 2, 3, 4; value {x,y,z} or null." },
                     "duty": { "type": "string", "description": "Duty name or ContentFinderCondition id." },
-                    "dry_run": { "type": "boolean", "description": "Show the result without writing (default false)." }
+                    "dry_run": { "type": "boolean", "description": "Show the result without writing (default false)." },
+                    "clear": { "type": "boolean", "description": "Empty the slot instead (default false)." }
                   },
                   "required": ["slot"]
                 }
@@ -147,6 +148,13 @@ internal static class WaymarkTools
                 return Game.Run<object?>(() =>
                 {
                     var before = GamePresets()[slot - 1];
+                    if (args.Bool("clear", false))
+                    {
+                        if (dryRun) return new { dryRun = true, wouldClear = Plain(before) };
+                        WriteGameSlot(slot, new Preset("game", slot, null, 0, null, before.Markers.Select(m => new Point(m.Index, 0, 0, 0, false)).ToList()), clear: true);
+                        Svc.Log.Information($"[MCP] Cleared waymark preset slot {slot}");
+                        return new { cleared = slot, before = Plain(before) };
+                    }
                     var markers = before.Markers.ToList();
                     var duty = before.Duty;
 
@@ -300,7 +308,7 @@ internal static class WaymarkTools
 
     // ------------------------------------------------------------------ writing / placing
 
-    private static unsafe void WriteGameSlot(int slot, Preset preset)
+    private static unsafe void WriteGameSlot(int slot, Preset preset, bool clear = false)
     {
         var module = FieldMarkerModule.Instance();
         ref var p = ref module->Presets[slot - 1];
@@ -311,7 +319,7 @@ internal static class WaymarkTools
             p.SetMarkerActive(m, point.Active);
         }
         p.ContentFinderConditionId = preset.Duty;
-        p.Timestamp = (int)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        p.Timestamp = clear ? 0 : (int)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         module->HasChanges = true; // the game saves the preset file like after editing in the Waymarks window
     }
 
@@ -343,9 +351,12 @@ internal static class WaymarkTools
     {
         var data = new { preset = Plain(preset), extra };
         if (!image) return data;
-        var territory = Svc.Data.GetExcelSheet<ContentFinderCondition>().GetRowOrDefault(preset.Duty)?.TerritoryType.RowId
-                        ?? (preset.Source == "current" ? Svc.ClientState.TerritoryType : 0);
+        // Row 0 of ContentFinderCondition exists, so "no duty" must be checked explicitly; the current waymarks use the current zone.
+        var territory = preset.Duty != 0
+            ? Svc.Data.GetExcelSheet<ContentFinderCondition>().GetRowOrDefault(preset.Duty)?.TerritoryType.RowId ?? 0
+            : preset.Source == "current" ? Svc.ClientState.TerritoryType : 0;
         var markers = preset.Markers.Where(m => m.Active).Select(m => new WaymarkMap.Marker(m.Index, m.X, m.Y, m.Z)).ToList();
+        if (markers.Count == 0) return new { preset = Plain(preset), extra, image = preset.Source == "current" ? "No waymarks are placed right now." : "The preset has no active waymarks." };
         var rendered = territory != 0 ? WaymarkMap.Render(territory, markers) : null;
         if (rendered is null) return new { preset = Plain(preset), extra, image = "No map available for this duty." };
         return new ToolResultWithImages(new { preset = Plain(preset), extra, map = rendered.MapName, yalmsAcrossImage = rendered.YalmsAcross },
