@@ -23,6 +23,8 @@ public sealed class Plugin : IDalamudPlugin
     private readonly StorageTracker storage;
     private readonly SalesTracker sales;
     private readonly CharacterRoster roster;
+    private JobManager? jobs;
+    internal JobManager? Jobs => jobs;
     private readonly PluginCompat compat;
     private readonly CacheRegistry caches;
 
@@ -85,10 +87,15 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(VentureTools.Create(Config, retainers, compat))
             .Append(VentureTools.RecallTool(Config, compat))
             .Concat(CraftPlanTools.Create(Config, retainers))
+            .Concat(LongRunningTools.Create(Config))
             .Concat(MarketTools.Create(Config, retainers, sales, compat))
             .Concat(LoginTools.Create(Config, roster))
             .Concat(WindowInspectTools.Create())
-            .Concat(CacheTools.Create(caches));
+            .Concat(CacheTools.Create(caches))
+            .Concat(JobTools.Create(() => jobs!, () => Server?.LastClient))
+            .ToList();
+        jobs = new JobManager(tools);
+        caches.Add(jobs);
         Server = new McpServer(tools, Config, caches);
 
         configWindow = new ConfigWindow(this);
@@ -115,6 +122,7 @@ public sealed class Plugin : IDalamudPlugin
         Svc.PluginInterface.UiBuilder.OpenMainUi -= configWindow.Toggle;
         Consent.DeclineAll();
         windows.RemoveAllWindows();
+        jobs?.Dispose();
         Server.Dispose();
         workshop.Dispose();
         retainers.Dispose();

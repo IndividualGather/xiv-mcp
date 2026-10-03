@@ -230,6 +230,8 @@ public sealed partial class McpServer : IDisposable
         if (method is null) return null; // a response to something we never sent; ignore
         var isNotification = !msg.ContainsKey("id");
         var @params = msg["params"] as JsonObject;
+        if (method == "tools/call" && (@params?["task"] is not null || @params?["_meta"]?.ToJsonString().Contains("tasks") == true))
+            Svc.Log.Information($"[MCP] Task-related tools/call params: task={@params?["task"]?.ToJsonString()} _meta={@params?["_meta"]?.ToJsonString()}");
 
         try
         {
@@ -270,6 +272,7 @@ public sealed partial class McpServer : IDisposable
         var clientName = p?["clientInfo"]?["name"]?.GetValue<string>();
         var clientVersion = p?["clientInfo"]?["version"]?.GetValue<string>();
         LastClient = clientName;
+        Svc.Log.Information($"[MCP] Client connected: {clientName} {clientVersion}, protocol {requested} (using {negotiated}), capabilities {p?["capabilities"]?.ToJsonString() ?? "{}"}");
         res.Headers["Mcp-Session-Id"] = StartSession(clientName is null ? null : clientVersion is null ? clientName : $"{clientName} {clientVersion}");
 
         return new JsonObject
@@ -303,6 +306,13 @@ public sealed partial class McpServer : IDisposable
     {
         var name = p?["name"]?.GetValue<string>() ?? throw new RpcException(-32602, "Missing tool name");
         if (!tools.TryGetValue(name, out var tool)) throw new RpcException(-32602, $"Unknown tool: {name}");
+        // A background job step owns the character: other state-changing calls would collide with it.
+        if (!tool.ReadOnly && !XivMcp.Util.JobManager.ControlTools.Contains(name) && XivMcp.Util.JobManager.Instance is { StepRunning: true } jm)
+            return new JsonObject
+            {
+                ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = $"The background job '{jm.RunningJobName}' is running a step; pause_job it first (reading tools still work)." }),
+                ["isError"] = true,
+            };
 
         string text;
         var isError = false;

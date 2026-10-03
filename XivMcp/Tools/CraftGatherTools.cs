@@ -15,9 +15,9 @@ namespace XivMcp.Tools;
 /// </summary>
 internal static class CraftGatherTools
 {
-    private const string Artisan = "Artisan";
-    private const string GatherBuddy = "GatherbuddyReborn";
-    private const string GatherListsFile = "GatherbuddyReborn/auto_gather_lists.json";
+    internal const string Artisan = "Artisan";
+    internal const string GatherBuddy = "GatherbuddyReborn";
+    internal const string GatherListsFile = "GatherbuddyReborn/auto_gather_lists.json";
 
     public static bool ArtisanLoaded => PluginCompat.IsLoaded(Artisan);
     public static bool GatherBuddyLoaded => PluginCompat.IsLoaded(GatherBuddy);
@@ -475,7 +475,7 @@ internal static class CraftGatherTools
         return new ListRef(list["ID"]!.GetValue<int>(), list["Name"]?.ToString());
     }
 
-    private static JsonObject? MatchList(JsonArray lists, string listArg) =>
+    internal static JsonObject? MatchList(JsonArray lists, string listArg) =>
         lists.OfType<JsonObject>().FirstOrDefault(l => int.TryParse(listArg, out var id) && l["ID"]?.GetValue<int>() == id)
         ?? lists.OfType<JsonObject>().FirstOrDefault(l => string.Equals(l["Name"]?.ToString(), listArg, StringComparison.OrdinalIgnoreCase))
         ?? (lists.OfType<JsonObject>().Where(l => Game.Matches(l["Name"]?.ToString(), listArg)).ToList() is { Count: 1 } one ? one[0] : null);
@@ -520,12 +520,12 @@ internal static class CraftGatherTools
 
     // ------------------------------------------------------------------ GatherBuddy helpers
 
-    private static void RequireGatherBuddy()
+    internal static void RequireGatherBuddy()
     {
         if (!GatherBuddyLoaded) throw new ToolException("GatherBuddy Reborn is not installed or not enabled.");
     }
 
-    private static object GatherState() => new
+    internal static object GatherState() => new
     {
         autoGather = Ipc("GatherBuddyReborn.IsAutoGatherEnabled"),
         waiting = Ipc("GatherBuddyReborn.IsAutoGatherWaiting"),
@@ -538,13 +538,13 @@ internal static class CraftGatherTools
             throw new ToolException("GatherBuddy's auto-gather is running; stop it first (set_auto_gather enabled=false).");
     }
 
-    private static JsonObject? MatchGatherList(JsonArray lists, string listArg) =>
+    internal static JsonObject? MatchGatherList(JsonArray lists, string listArg) =>
         (int.TryParse(listArg, out var index) && index >= 0 && index < lists.Count ? lists[index] as JsonObject : null)
         ?? lists.OfType<JsonObject>().FirstOrDefault(l => string.Equals(l["Name"]?.ToString(), listArg, StringComparison.OrdinalIgnoreCase))
         ?? (lists.OfType<JsonObject>().Where(l => Game.Matches(l["Name"]?.ToString(), listArg)).ToList() is { Count: 1 } one ? one[0] : null);
 
     /// <summary>Item id of a gatherable (or fish) by id or name — GatherBuddy's own name matching first, then the item sheet.</summary>
-    private static uint ResolveGatherable(string item)
+    internal static uint ResolveGatherable(string item)
     {
         if (uint.TryParse(item, out var id)) return id;
         try
@@ -559,13 +559,13 @@ internal static class CraftGatherTools
 
     // ------------------------------------------------------------------ IPC helpers
 
-    private static bool? Ipc(string name)
+    internal static bool? Ipc(string name)
     {
         try { return Svc.PluginInterface.GetIpcSubscriber<bool>(name).InvokeFunc(); }
         catch { return null; }
     }
 
-    private static string? SafeString(string name)
+    internal static string? SafeString(string name)
     {
         try { return Svc.PluginInterface.GetIpcSubscriber<string>(name).InvokeFunc(); }
         catch { return null; }
