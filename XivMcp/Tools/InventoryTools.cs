@@ -1,0 +1,251 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Dalamud.Game.Inventory;
+using FFXIVClientStructs.FFXIV.Client.Game;
+using Lumina.Excel.Sheets;
+using XivMcp.Mcp;
+using XivMcp.Util;
+
+namespace XivMcp.Tools;
+
+internal static class InventoryTools
+{
+    private static readonly string[] EquipSlots =
+        ["MainHand", "OffHand", "Head", "Body", "Hands", "Waist", "Legs", "Feet", "Ears", "Neck", "Wrists", "RightRing", "LeftRing", "SoulCrystal"];
+
+    /// <summary>Named groups of containers; raw GameInventoryType names are accepted as well.</summary>
+    private static readonly Dictionary<string, GameInventoryType[]> Groups = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["bags"] = [GameInventoryType.Inventory1, GameInventoryType.Inventory2, GameInventoryType.Inventory3, GameInventoryType.Inventory4],
+        ["equipped"] = [GameInventoryType.EquippedItems],
+        ["armory"] = ByPrefix("Armory"),
+        ["currency"] = [GameInventoryType.Currency],
+        ["crystals"] = [GameInventoryType.Crystals],
+        ["key_items"] = [GameInventoryType.KeyItems],
+        ["saddlebag"] = [GameInventoryType.SaddleBag1, GameInventoryType.SaddleBag2, GameInventoryType.PremiumSaddleBag1, GameInventoryType.PremiumSaddleBag2],
+        ["retainer"] = ByPrefix("Retainer"),
+        ["free_company"] = ByPrefix("FreeCompany"),
+        ["housing"] = ByPrefix("Housing"),
+    };
+
+    private static readonly string[] DefaultSearchGroups = ["bags", "equipped", "armory", "crystals", "key_items", "saddlebag", "retainer"];
+
+    private static GameInventoryType[] ByPrefix(string prefix) =>
+        Enum.GetValues<GameInventoryType>().Where(t => t.ToString().StartsWith(prefix, StringComparison.Ordinal)).ToArray();
+
+    private static readonly string ContainerHelp =
+        $"Groups: {string.Join(", ", Groups.Keys)}. Raw container names are also accepted, e.g. {string.Join(", ", Enum.GetNames<GameInventoryType>().Take(6))}, ...";
+
+    public static IEnumerable<McpTool> Create()
+    {
+        yield return new McpTool
+        {
+            Name = "get_inventory",
+            Description = "Lists the items in one or more inventory containers of the logged-in character (default: the four main bags), " +
+                          "with item names, quantities, HQ/collectable flags, spiritbond, condition, materia and dyes. Also reports free bag slots. " +
+                          "Saddlebag requires the saddlebag to have been opened once this session; retainer containers only reflect the retainer that was last opened. " +
+                          ContainerHelp,
+            InputSchema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "containers": { "type": "array", "items": { "type": "string" }, "description": "Container groups or raw container names. Default: [\"bags\"]." },
+                    "include_details": { "type": "boolean", "description": "Include materia, dyes, spiritbond and condition (default false)." }
+                  }
+                }
+                """,
+            Handler = (args, _) => Game.RunLoggedIn<object?>(() =>
+            {
+                var containers = ResolveContainers(args.StringList("containers"), ["bags"]);
+                var details = args.Bool("include_details", false);
+                var result = containers.Select(c =>
+                {
+                    var items = Svc.Inventory.GetInventoryItems(c);
+                    return new
+                    {
+                        container = c.ToString(),
+                        slots = items.Length,
+                        used = items.ToArray().Count(i => !i.IsEmpty),
+                        items = items.ToArray().Where(i => !i.IsEmpty).Select(i => DescribeItem(i, details)).ToList(),
+                    };
+                }).ToList();
+                unsafe
+                {
+                    return new { freeBagSlots = InventoryManager.Instance()->GetEmptySlotsInBag(), containers = result };
+                }
+            }),
+        };
+
+        yield return new McpTool
+        {
+            Name = "search_inventory",
+            Description = "Finds items by (partial) name or item id across the character's containers — by default bags, equipped gear, armory chest, " +
+                          "crystals, key items, saddlebag and the last opened retainer — and reports where each stack is and the total count. " + ContainerHelp,
+            InputSchema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "query": { "type": "string", "description": "Case-insensitive part of the item name." },
+                    "item_id": { "type": "integer", "description": "Exact item id (alternative to query)." },
+                    "containers": { "type": "array", "items": { "type": "string" }, "description": "Restrict to these container groups / names." }
+                  }
+                }
+                """,
+            Handler = (args, _) => Game.RunLoggedIn<object?>(() =>
+            {
+                var query = args.String("query");
+                var itemId = args.UInt("item_id");
+                if (query is null && itemId is null) throw new ToolException("Provide 'query' or 'item_id'.");
+
+                var hits = new List<(GameInventoryItem Item, string? Name)>();
+                foreach (var c in ResolveContainers(args.StringList("containers"), DefaultSearchGroups))
+                {
+                    foreach (var item in Svc.Inventory.GetInventoryItems(c))
+                    {
+                        if (item.IsEmpty) continue;
+                        if (itemId is { } id && item.BaseItemId != id && item.ItemId != id) continue;
+                        var name = ItemName(item.BaseItemId);
+                        if (query is not null && !Game.Matches(name, query)) continue;
+                        hits.Add((item, name));
+                    }
+                }
+
+                return hits.GroupBy(h => h.Item.BaseItemId).Select(g => new
+                {
+                    itemId = g.Key,
+                    name = g.First().Name,
+                    totalQuantity = g.Sum(h => h.Item.Quantity),
+                    locations = g.Select(h => new
+                    {
+                        container = h.Item.ContainerType.ToString(),
+                        slot = h.Item.InventorySlot,
+                        quantity = h.Item.Quantity,
+                        hq = h.Item.IsHq,
+                    }).ToList(),
+                }).ToList();
+            }),
+        };
+
+        yield return new McpTool
+        {
+            Name = "get_equipment",
+            Description = "The gear currently equipped by the logged-in character, per slot, with item level, equip level, materia, dyes, glamour and " +
+                          "spiritbond/condition, plus the average item level.",
+            Handler = (_, _) => Game.RunLoggedIn<object?>(() =>
+            {
+                var items = Svc.Inventory.GetInventoryItems(GameInventoryType.EquippedItems).ToArray();
+                var slots = new List<object>();
+                var ilvls = new List<uint>();
+                foreach (var item in items)
+                {
+                    var slot = item.InventorySlot < EquipSlots.Length ? EquipSlots[item.InventorySlot] : item.InventorySlot.ToString();
+                    if (item.IsEmpty) { slots.Add(new { slot, empty = true }); continue; }
+                    var row = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(item.BaseItemId);
+                    var desc = DescribeItem(item, true);
+                    desc["slot"] = slot;
+                    if (row is { } r)
+                    {
+                        desc["itemLevel"] = r.LevelItem.RowId;
+                        desc["equipLevel"] = r.LevelEquip;
+                        if (slot is not ("SoulCrystal" or "Waist")) ilvls.Add(r.LevelItem.RowId);
+                    }
+                    slots.Add(desc);
+                }
+                return new { averageItemLevel = ilvls.Count > 0 ? Math.Round(ilvls.Average(l => (double)l), 1) : 0, slots };
+            }),
+        };
+
+        yield return new McpTool
+        {
+            Name = "get_currencies",
+            Description = "All currencies of the logged-in character: gil, MGP, Wolf Marks, Allied Seals, Grand Company seals (with cap), " +
+                          "every allagan tomestone type, the weekly tomestone cap progress, retainer gil, plus the raw contents of the currency container (scrips, etc.).",
+            Handler = (_, _) => Game.RunLoggedIn<object?>(() =>
+            {
+                unsafe
+                {
+                    var im = InventoryManager.Instance();
+                    var gcSeals = Svc.Data.GetExcelSheet<GrandCompany>().Where(gc => gc.RowId != 0).Select(gc => new
+                    {
+                        grandCompany = gc.Name.ExtractText(),
+                        seals = im->GetCompanySeals((byte)gc.RowId),
+                        max = im->GetMaxCompanySeals((byte)gc.RowId),
+                    }).ToList();
+
+                    var tomestones = Svc.Data.GetExcelSheet<TomestonesItem>()
+                        .Where(t => t.Item.RowId != 0)
+                        .Select(t => new { itemId = t.Item.RowId, name = Excel.Name(t.Item), count = im->GetTomestoneCount(t.Item.RowId) })
+                        .Where(t => !string.IsNullOrEmpty(t.name))
+                        .ToList();
+
+                    var container = Svc.Inventory.GetInventoryItems(GameInventoryType.Currency).ToArray()
+                        .Where(i => !i.IsEmpty)
+                        .Select(i => new { itemId = i.BaseItemId, name = ItemName(i.BaseItemId), quantity = i.Quantity })
+                        .ToList();
+
+                    return new
+                    {
+                        gil = im->GetGil(),
+                        retainerGil = im->GetRetainerGil(),
+                        mgp = im->GetGoldSaucerCoin(),
+                        wolfMarks = im->GetWolfMarks(),
+                        alliedSeals = im->GetAlliedSeals(),
+                        grandCompanySeals = gcSeals,
+                        tomestones,
+                        weeklyTomestones = new { acquired = im->GetWeeklyAcquiredTomestoneCount(), limit = InventoryManager.GetLimitedTomestoneWeeklyLimit() },
+                        currencyContainer = container,
+                    };
+                }
+            }),
+        };
+    }
+
+    private static List<GameInventoryType> ResolveContainers(List<string> requested, string[] fallback)
+    {
+        var names = requested.Count > 0 ? requested : fallback.ToList();
+        var result = new List<GameInventoryType>();
+        foreach (var name in names)
+        {
+            if (Groups.TryGetValue(name, out var group)) result.AddRange(group);
+            else if (Enum.TryParse<GameInventoryType>(name, true, out var t)) result.Add(t);
+            else throw new ToolException($"Unknown container '{name}'. {ContainerHelp}");
+        }
+        return result.Distinct().ToList();
+    }
+
+    public static string? ItemName(uint itemId)
+    {
+        if (Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId) is { } item) return item.Name.ExtractText();
+        if (Svc.Data.GetExcelSheet<EventItem>().GetRowOrDefault(itemId) is { } ev) return ev.Name.ExtractText();
+        return null;
+    }
+
+    private static Dictionary<string, object?> DescribeItem(GameInventoryItem i, bool details)
+    {
+        var d = new Dictionary<string, object?>
+        {
+            ["slot"] = i.InventorySlot,
+            ["itemId"] = i.BaseItemId,
+            ["name"] = ItemName(i.BaseItemId),
+            ["quantity"] = i.Quantity,
+        };
+        if (i.IsHq) d["hq"] = true;
+        if (i.IsCollectable) d["collectability"] = i.SpiritbondOrCollectability;
+        if (!details) return d;
+
+        if (!i.IsCollectable) d["spiritbondPercent"] = Math.Round(i.SpiritbondOrCollectability / 100.0, 2);
+        d["conditionPercent"] = Math.Round(i.Condition / 300.0, 1);
+        var materia = i.MateriaEntries
+            .Where(m => m.Type.RowId != 0)
+            .Select(m => m.Type.ValueNullable is { } row && m.Grade.RowId < row.Item.Count
+                ? Excel.Name(row.Item[(int)m.Grade.RowId])
+                : $"materia {m.Type.RowId}/{m.Grade.RowId}")
+            .ToList();
+        if (materia.Count > 0) d["materia"] = materia;
+        var stains = i.Stains.ToArray().Where(s => s != 0).Select(s => Excel.Ref<Stain>(s)).ToList();
+        if (stains.Count > 0) d["dyes"] = stains;
+        if (i.GlamourId != 0) d["glamour"] = new { itemId = i.GlamourId, name = ItemName(i.GlamourId) };
+        return d;
+    }
+}

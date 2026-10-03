@@ -1,0 +1,329 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace XivMcp.Mcp;
+
+/// <summary>
+/// Minimal MCP server implementing the Streamable HTTP transport (JSON responses only, no server-initiated SSE).
+/// Dalamud does not ship ASP.NET Core, so this sits directly on <see cref="HttpListener"/>.
+/// </summary>
+public sealed class McpServer : IDisposable
+{
+    public const string ServerName = "xiv-mcp";
+    private static readonly string[] SupportedProtocolVersions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
+
+    public static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Converters = { new JsonStringEnumConverter() },
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
+    };
+
+    private readonly Dictionary<string, McpTool> tools;
+    private readonly Configuration config;
+    private readonly string version;
+    private HttpListener? listener;
+    private CancellationTokenSource? cts;
+
+    public bool IsRunning => listener?.IsListening == true;
+    public string? LastError { get; private set; }
+    public long RequestCount => Interlocked.Read(ref requestCount);
+    public DateTime? LastRequestUtc { get; private set; }
+    public string? LastClient { get; private set; }
+    private long requestCount;
+
+    public McpServer(IEnumerable<McpTool> tools, Configuration config)
+    {
+        this.tools = tools.ToDictionary(t => t.Name);
+        this.config = config;
+        version = typeof(McpServer).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+    }
+
+    public IReadOnlyCollection<McpTool> Tools => tools.Values;
+
+    public string Endpoint => $"http://localhost:{config.Port}/mcp";
+
+    public void Start()
+    {
+        Stop();
+        try
+        {
+            listener = new HttpListener();
+            // "localhost" prefixes do not require a URL ACL / admin rights and never bind external interfaces.
+            listener.Prefixes.Add($"http://localhost:{config.Port}/");
+            listener.Start();
+            cts = new CancellationTokenSource();
+            _ = Task.Run(() => AcceptLoop(listener, cts.Token));
+            LastError = null;
+            Svc.Log.Information($"MCP server listening on {Endpoint}");
+        }
+        catch (Exception ex)
+        {
+            LastError = ex.Message;
+            Svc.Log.Error(ex, "Failed to start MCP server");
+            listener = null;
+        }
+    }
+
+    public void Stop()
+    {
+        cts?.Cancel();
+        try { listener?.Close(); } catch { /* already closed */ }
+        listener = null;
+        cts?.Dispose();
+        cts = null;
+    }
+
+    public void Dispose() => Stop();
+
+    private async Task AcceptLoop(HttpListener l, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested && l.IsListening)
+        {
+            HttpListenerContext ctx;
+            try { ctx = await l.GetContextAsync().ConfigureAwait(false); }
+            catch when (ct.IsCancellationRequested || !l.IsListening) { break; }
+            catch (Exception ex) { Svc.Log.Warning(ex, "MCP accept failed"); continue; }
+
+            _ = Task.Run(async () =>
+            {
+                try { await HandleHttp(ctx, ct).ConfigureAwait(false); }
+                catch (Exception ex)
+                {
+                    Svc.Log.Error(ex, "Unhandled MCP request error");
+                    try { ctx.Response.StatusCode = 500; ctx.Response.Close(); } catch { /* ignored */ }
+                }
+            }, ct);
+        }
+    }
+
+    private async Task HandleHttp(HttpListenerContext ctx, CancellationToken ct)
+    {
+        var req = ctx.Request;
+        var res = ctx.Response;
+        res.Headers["Cache-Control"] = "no-store";
+
+        var path = req.Url?.AbsolutePath.TrimEnd('/') ?? "";
+        if (path is not ("/mcp" or ""))
+        {
+            await WriteText(res, 404, "Not found. The MCP endpoint is /mcp").ConfigureAwait(false);
+            return;
+        }
+
+        // DNS rebinding protection: browsers always send Origin; only allow local origins.
+        var origin = req.Headers["Origin"];
+        if (!string.IsNullOrEmpty(origin) && !IsLocalOrigin(origin))
+        {
+            await WriteText(res, 403, "Forbidden origin").ConfigureAwait(false);
+            return;
+        }
+
+        if (config.RequireToken)
+        {
+            var auth = req.Headers["Authorization"] ?? "";
+            if (!auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ||
+                !CryptoEquals(auth["Bearer ".Length..].Trim(), config.Token))
+            {
+                res.Headers["WWW-Authenticate"] = "Bearer";
+                await WriteText(res, 401, "Missing or invalid bearer token. See the XIV MCP settings window (/xivmcp).").ConfigureAwait(false);
+                return;
+            }
+        }
+
+        switch (req.HttpMethod)
+        {
+            case "POST":
+                break;
+            case "DELETE": // session termination; sessions are stateless here
+                res.StatusCode = 200;
+                res.Close();
+                return;
+            default: // GET (server->client SSE stream) is optional and not offered
+                res.Headers["Allow"] = "POST, DELETE";
+                await WriteText(res, 405, "Method not allowed").ConfigureAwait(false);
+                return;
+        }
+
+        Interlocked.Increment(ref requestCount);
+        LastRequestUtc = DateTime.UtcNow;
+
+        string body;
+        using (var reader = new StreamReader(req.InputStream, Encoding.UTF8))
+            body = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
+
+        JsonNode? message;
+        try { message = JsonNode.Parse(body); }
+        catch (JsonException ex)
+        {
+            await WriteJson(res, 400, Error(null, -32700, "Parse error: " + ex.Message)).ConfigureAwait(false);
+            return;
+        }
+
+        JsonNode? reply;
+        if (message is JsonArray batch)
+        {
+            var replies = new JsonArray();
+            foreach (var item in batch)
+                if (await HandleMessage(item as JsonObject, res, ct).ConfigureAwait(false) is { } r)
+                    replies.Add(r);
+            reply = replies.Count > 0 ? replies : null;
+        }
+        else
+        {
+            reply = await HandleMessage(message as JsonObject, res, ct).ConfigureAwait(false);
+        }
+
+        if (reply is null)
+        {
+            res.StatusCode = 202; // only notifications / responses were received
+            res.Close();
+            return;
+        }
+
+        await WriteJson(res, 200, reply).ConfigureAwait(false);
+    }
+
+    /// <summary>Handles one JSON-RPC message. Returns null for notifications.</summary>
+    private async Task<JsonNode?> HandleMessage(JsonObject? msg, HttpListenerResponse res, CancellationToken ct)
+    {
+        if (msg is null) return Error(null, -32600, "Invalid request");
+
+        var id = msg["id"]?.DeepClone();
+        var method = msg["method"]?.GetValue<string>();
+        if (method is null) return null; // a response to something we never sent; ignore
+        var isNotification = !msg.ContainsKey("id");
+        var @params = msg["params"] as JsonObject;
+
+        try
+        {
+            JsonNode? result = method switch
+            {
+                "initialize" => Initialize(@params, res),
+                "ping" => new JsonObject(),
+                "tools/list" => new JsonObject { ["tools"] = new JsonArray(tools.Values.OrderBy(t => t.Name).Select(t => (JsonNode)t.ToListEntry()).ToArray()) },
+                "tools/call" => await CallTool(@params, ct).ConfigureAwait(false),
+                "resources/list" => new JsonObject { ["resources"] = new JsonArray() },
+                "resources/templates/list" => new JsonObject { ["resourceTemplates"] = new JsonArray() },
+                "prompts/list" => new JsonObject { ["prompts"] = new JsonArray() },
+                _ when method.StartsWith("notifications/", StringComparison.Ordinal) => null,
+                _ => throw new RpcException(-32601, $"Method not found: {method}"),
+            };
+
+            if (isNotification) return null;
+            return new JsonObject { ["jsonrpc"] = "2.0", ["id"] = id, ["result"] = result ?? new JsonObject() };
+        }
+        catch (RpcException ex)
+        {
+            return isNotification ? null : Error(id, ex.Code, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Error(ex, $"MCP method {method} failed");
+            return isNotification ? null : Error(id, -32603, ex.Message);
+        }
+    }
+
+    private JsonObject Initialize(JsonObject? p, HttpListenerResponse res)
+    {
+        var requested = p?["protocolVersion"]?.GetValue<string>();
+        var negotiated = requested is not null && SupportedProtocolVersions.Contains(requested) ? requested : SupportedProtocolVersions[0];
+        LastClient = p?["clientInfo"]?["name"]?.GetValue<string>();
+        res.Headers["Mcp-Session-Id"] = Guid.NewGuid().ToString("N");
+
+        return new JsonObject
+        {
+            ["protocolVersion"] = negotiated,
+            ["capabilities"] = new JsonObject { ["tools"] = new JsonObject { ["listChanged"] = false } },
+            ["serverInfo"] = new JsonObject { ["name"] = ServerName, ["title"] = "Final Fantasy XIV (Dalamud)", ["version"] = version },
+            ["instructions"] =
+                "Live, read-only access to the Final Fantasy XIV character that is currently logged in, via a Dalamud plugin. " +
+                "Start with get_game_status to see whether a character is logged in. Use the typed tools (character, jobs, inventory, " +
+                "gear, currencies, quests, unlocks, party, objects, fates, retainers) for live state, and search_game_data / get_game_data_row " +
+                "to look up static game data (items, quests, achievements, ...) from the client's Excel sheets. " +
+                "Some data is only available after the matching in-game window was opened once this session " +
+                "(achievements, titles, retainers, saddlebag, retainer inventories); tools report this when it applies.",
+        };
+    }
+
+    private async Task<JsonNode> CallTool(JsonObject? p, CancellationToken ct)
+    {
+        var name = p?["name"]?.GetValue<string>() ?? throw new RpcException(-32602, "Missing tool name");
+        if (!tools.TryGetValue(name, out var tool)) throw new RpcException(-32602, $"Unknown tool: {name}");
+
+        string text;
+        var isError = false;
+        try
+        {
+            var result = await tool.Handler(new ToolArgs(p?["arguments"] as JsonObject), ct).ConfigureAwait(false);
+            text = result as string ?? JsonSerializer.Serialize(result, JsonOptions);
+        }
+        catch (ToolException ex)
+        {
+            text = ex.Message;
+            isError = true;
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Error(ex, $"Tool {name} failed");
+            text = $"Tool '{name}' failed: {ex.GetType().Name}: {ex.Message}";
+            isError = true;
+        }
+
+        return new JsonObject
+        {
+            ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = text }),
+            ["isError"] = isError,
+        };
+    }
+
+    private static JsonObject Error(JsonNode? id, int code, string message) => new()
+    {
+        ["jsonrpc"] = "2.0",
+        ["id"] = id,
+        ["error"] = new JsonObject { ["code"] = code, ["message"] = message },
+    };
+
+    private static bool IsLocalOrigin(string origin) =>
+        Uri.TryCreate(origin, UriKind.Absolute, out var uri) &&
+        (uri.IsLoopback || uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase));
+
+    private static bool CryptoEquals(string a, string b) =>
+        System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(a), Encoding.UTF8.GetBytes(b));
+
+    private static async Task WriteJson(HttpListenerResponse res, int status, JsonNode node)
+    {
+        var bytes = Encoding.UTF8.GetBytes(node.ToJsonString(JsonOptions));
+        res.StatusCode = status;
+        res.ContentType = "application/json; charset=utf-8";
+        res.ContentLength64 = bytes.Length;
+        await res.OutputStream.WriteAsync(bytes).ConfigureAwait(false);
+        res.Close();
+    }
+
+    private static async Task WriteText(HttpListenerResponse res, int status, string text)
+    {
+        var bytes = Encoding.UTF8.GetBytes(text);
+        res.StatusCode = status;
+        res.ContentType = "text/plain; charset=utf-8";
+        res.ContentLength64 = bytes.Length;
+        await res.OutputStream.WriteAsync(bytes).ConfigureAwait(false);
+        res.Close();
+    }
+
+    private sealed class RpcException(int code, string message) : Exception(message)
+    {
+        public int Code { get; } = code;
+    }
+}

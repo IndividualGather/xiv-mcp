@@ -1,0 +1,8 @@
+{
+  "Author": "IndividualGather",
+  "Name": "XIV MCP",
+  "Punchline": "Let AI assistants read your live character data via the Model Context Protocol.",
+  "Description": "Runs a local MCP server (Streamable HTTP, localhost only) that exposes live data of your logged-in character: stats, jobs, inventory, gear, currencies, quests, achievements, unlocks (mounts, minions, orchestrion, cards, ...), party, nearby objects, FATEs, retainers and the full game data sheets.\n\nConnect any MCP client (Claude Code, Claude Desktop, ...) to http://localhost:<port>/mcp with the bearer token shown in the settings window.",
+  "ApplicableVersion": "any",
+  "Tags": ["mcp", "ai", "api", "data"]
+}
