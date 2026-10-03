@@ -60,6 +60,8 @@ Dalamud has no public API for loading or unloading other plugins. These tools us
 |---|---|
 | `get_collections` | Owned / total for mounts, minions, orchestrion rolls, fashion accessories and facewear, plus armoire and dresser counts. Can list the owned or missing entries of one collection |
 | `get_armoire` | Items stored in the armoire by category, or the eligible items that aren't stored yet |
+| `get_fc_chest` | Free company chest contents (tabs, crystals, gil) while it is loaded |
+| `fc_chest_transfer` | Deposit or withdraw items or gil through **FCCH** (if installed): item lists, all, duplicates, your FCCH custom list, workshop materials, "withdraw missing up to N". Needs **Allow inventory actions** |
 | `get_glamour_dresser` | Items in the glamour dresser with dyes, filterable by name or equipment category. The game only sends the dresser after it, or a glamour plate, has been opened; it's cached like the retainers |
 
 ### Actions, hotbars and macros

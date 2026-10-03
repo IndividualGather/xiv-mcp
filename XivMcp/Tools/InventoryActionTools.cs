@@ -414,6 +414,7 @@ internal static class InventoryActionTools
         foreach (var name in BusyFlags)
             if (Enum.TryParse<ConditionFlag>(name, out var flag) && Svc.Condition[flag])
                 throw new ToolException($"Can't change the inventory right now (character state: {name}).");
+        PluginCompat.EnsureFcchIdle();
     }
 
     /// <summary>Armory chest sections only accept gear for that slot.</summary>

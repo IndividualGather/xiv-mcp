@@ -178,6 +178,9 @@ internal static class InteractionTools
                     distance = MathF.Round(target.Distance, 2),
                     openedWindows = VisibleAddons().Except(target.Before).ToList(),
                     conditions = Svc.Condition.AsReadOnlySet().Select(f => f.ToString()).Where(f => f != "NormalConditions").ToList(),
+                    fcChest = target.Name.Contains("Chest", StringComparison.OrdinalIgnoreCase) && PluginCompat.FcchLoaded
+                        ? "FCCH is installed: it may run its own on-open actions (as configured in FCCH). Use fc_chest_transfer to deposit or withdraw through it."
+                        : null,
                     summoningBell = target.IsBell
                         ? new
                         {

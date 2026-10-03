@@ -40,6 +40,19 @@ internal sealed class PluginCompat : IDisposable
 
     public bool AutoRetainerLoaded => IsLoaded(AutoRetainer);
 
+    public const string FcchName = "FCCH";
+    public static bool FcchLoaded => IsLoaded(FcchName);
+
+    /// <summary>True while FCCH (FC chest automation) is running a deposit/withdraw or otherwise can't take a command.</summary>
+    public static bool FcchBusy => FcchLoaded && Ipc<bool>("FCCH.IsBusy") == true;
+
+    /// <summary>Call before XIV MCP moves items: two plugins sending item moves at the same time confuse the server and each other.</summary>
+    public static void EnsureFcchIdle()
+    {
+        if (FcchBusy)
+            throw new ToolException("FCCH is currently moving items (free company chest). Wait until it is done, or stop it, then retry.");
+    }
+
     /// <summary>Call before XIV MCP touches the summoning bell or retainer windows. Throws if AutoRetainer is working.</summary>
     public void AcquireBell()
     {
@@ -105,14 +118,16 @@ internal sealed class PluginCompat : IDisposable
     }
 
     public sealed record Info(bool AutoRetainer, bool? AutoRetainerBusy, bool? AutoRetainerSuppressed, bool SuppressedByUs,
-                              bool YesAlready, bool TextAdvance, bool ClickersPausedByUs, bool HoldingBell);
+                              bool YesAlready, bool TextAdvance, bool ClickersPausedByUs, bool HoldingBell,
+                              bool Fcch, bool? FcchBusy, bool WaymarkPresetPlugin);
 
     /// <summary>Snapshot for the settings window (IPC calls; don't call every frame).</summary>
     public Info GetInfo()
     {
         var ar = AutoRetainerLoaded;
         return new Info(ar, ar ? Ipc<bool>("AutoRetainer.PluginState.IsBusy") : null, ar ? Ipc<bool>("AutoRetainer.GetSuppressed") : null,
-                        suppressedAutoRetainer, IsLoaded("YesAlready"), IsLoaded("TextAdvance"), pausedClickers, holdingBell);
+                        suppressedAutoRetainer, IsLoaded("YesAlready"), IsLoaded("TextAdvance"), pausedClickers, holdingBell,
+                        FcchLoaded, FcchLoaded ? Ipc<bool>("FCCH.IsBusy") : null, IsLoaded("WaymarkPresetPlugin"));
     }
 
     public object Status() => new
@@ -129,10 +144,12 @@ internal sealed class PluginCompat : IDisposable
             : (object)new { loaded = false },
         yesAlready = new { loaded = IsLoaded("YesAlready"), pausedByXivMcp = pausedClickers && IsLoaded("YesAlready") },
         textAdvance = new { loaded = IsLoaded("TextAdvance"), pausedByXivMcp = pausedClickers && IsLoaded("TextAdvance") },
+        fcch = FcchLoaded ? new { loaded = true, busy = Ipc<bool>("FCCH.IsBusy") } : (object)new { loaded = false },
+        waymarkPresetPlugin = new { loaded = IsLoaded("WaymarkPresetPlugin") },
         holdingBell,
     };
 
-    private static T? Ipc<T>(string name) where T : struct
+    internal static T? Ipc<T>(string name) where T : struct
     {
         try { return Svc.PluginInterface.GetIpcSubscriber<T>(name).InvokeFunc(); }
         catch (Exception ex) { Svc.Log.Debug($"IPC {name} unavailable: {ex.Message}"); return null; }

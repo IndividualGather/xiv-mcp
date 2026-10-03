@@ -63,6 +63,7 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(ActionMacroTools.Create(Config))
             .Concat(WaymarkTools.Create(Config))
             .Concat(CollectionTools.Create(glamour))
+            .Concat(FcChestTools.Create(Config))
             .Concat(CacheTools.Create(caches));
         Server = new McpServer(tools, Config, caches);
 

@@ -351,7 +351,7 @@ internal sealed class ConfigWindow : Window
             "Uses Dalamud internals; may need an update after Dalamud updates.");
 
         // Compatibility is only shown for plugins the player already has installed; otherwise the section doesn't exist.
-        if (compat is not { } c || !(c.AutoRetainer || c.YesAlready || c.TextAdvance)) return;
+        if (compat is not { } c || !(c.AutoRetainer || c.YesAlready || c.TextAdvance || c.Fcch || c.WaymarkPresetPlugin)) return;
         ImGui.Spacing();
         Section(FontAwesomeIcon.Robot, "Compatibility");
         if (c.AutoRetainer)
@@ -363,6 +363,10 @@ internal sealed class ConfigWindow : Window
             CompatRow("YesAlready", c.ClickersPausedByUs ? "paused by XIV MCP right now" : "paused automatically while XIV MCP uses retainer windows");
         if (c.TextAdvance)
             CompatRow("TextAdvance", c.ClickersPausedByUs ? "paused by XIV MCP right now" : "paused automatically while XIV MCP uses retainer windows");
+        if (c.Fcch)
+            CompatRow("FCCH", c.FcchBusy == true ? "busy, XIV MCP waits with item moves" : "used for free company chest transfers; item moves wait while it works");
+        if (c.WaymarkPresetPlugin)
+            CompatRow("WaymarkPresetPlugin", "its preset library is available, library presets are placed through it");
     }
 
     /// <summary>Pause between item moves: random within a range (default 500-800 ms) or an exact value.</summary>
