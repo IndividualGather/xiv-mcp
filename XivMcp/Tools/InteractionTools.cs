@@ -215,7 +215,7 @@ internal static class InteractionTools
                           "\"Submersible management\" / \"Airship management\", or an NPC's options), and whether a dialogue text box is waiting for a click.",
             Handler = (_, _) => Game.RunLoggedIn<object?>(() => new
             {
-                menu = RetainerUi.MenuEntries()?.Select((text, index) => new { index, text }).ToList(),
+                menu = ShopTools.MenuEntries(out _)?.Select((text, index) => new { index, text }).ToList(),
                 dialogueWaiting = RetainerUi.Ready("Talk"),
                 openWindows = VisibleAddons(),
             }),
@@ -255,12 +255,12 @@ internal static class InteractionTools
                 var before = await Svc.Framework.RunOnFrameworkThread(VisibleAddons).ConfigureAwait(false);
                 var selected = await Game.RunLoggedIn(() =>
                 {
-                    var entries = RetainerUi.MenuEntries() ?? throw new ToolException("No menu is open. Use interact_with_object first.");
+                    var entries = ShopTools.MenuEntries(out var menuAddon) ?? throw new ToolException("No menu is open. Use interact_with_object first.");
                     var index = int.TryParse(option, out var i) ? i
                         : entries.FindIndex(e => e.Equals(option, StringComparison.OrdinalIgnoreCase)) is >= 0 and var exact ? exact
                         : entries.FindIndex(e => e.StartsWith(option, StringComparison.OrdinalIgnoreCase));
                     if (index < 0) throw new ToolException($"No menu entry matches '{option}'. Entries: {string.Join(" | ", entries)}");
-                    RetainerUi.SelectMenuIndex(index);
+                    ShopTools.FireMenu(menuAddon, index);
                     return entries[index];
                 }).ConfigureAwait(false);
                 await WaitFor(() => !VisibleAddons().SequenceEqual(before), TimeSpan.FromSeconds(3), ct).ConfigureAwait(false);
@@ -269,7 +269,7 @@ internal static class InteractionTools
                 {
                     selected,
                     openWindows = VisibleAddons(),
-                    menu = RetainerUi.MenuEntries(),
+                    menu = ShopTools.MenuEntries(out _),
                 }).ConfigureAwait(false);
             },
         };

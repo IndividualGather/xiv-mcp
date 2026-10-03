@@ -567,6 +567,22 @@ internal sealed class ConfigWindow : Window
         var active = all.Where(j => !j.Finished).ToList();
         if (active.Count == 0) ImGui.TextColored(Muted, "No active jobs.");
         foreach (var job in active) DrawJob(manager, job);
+        var approvals = XivMcp.Util.Approvals.All().Where(a => a.Active).ToList();
+        if (approvals.Count > 0)
+        {
+            ImGui.Spacing();
+            Section(FontAwesomeIcon.CheckCircle, "Standing spending approvals");
+            foreach (var a in approvals)
+            {
+                using var aid = ImRaii.PushId(a.Id);
+                ImGui.TextColored(Gold, $"{a.Remaining:N0} / {a.MaxAmount:N0} {XivMcp.Util.Items.Name(a.CurrencyId)}");
+                ImGui.SameLine();
+                ImGui.TextColored(Muted, $"{a.Purpose} — until {a.ExpiresUtc.ToLocalTime():g}");
+                ImGui.SameLine();
+                if (ImGui.SmallButton("Revoke")) XivMcp.Util.Approvals.Revoke(a.Id);
+            }
+            ImGui.Spacing();
+        }
         var finished = all.Where(j => j.Finished).ToList();
         if (finished.Count > 0 && ImGui.CollapsingHeader($"Finished ({finished.Count})##finished-jobs"))
             foreach (var job in finished) DrawJob(manager, job);

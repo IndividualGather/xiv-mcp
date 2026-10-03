@@ -27,7 +27,7 @@ internal static class ShopTools
 
     private const int MaxBatch = 99;
     private static readonly TimeSpan ConsentTimeout = TimeSpan.FromMinutes(2);
-    private static readonly string[] ShopAddons = ["Shop", "ShopExchangeItem", "ShopExchangeCurrency"];
+    private static readonly string[] ShopAddons = ["Shop", "ShopExchangeItem", "ShopExchangeCurrency", "InclusionShop"];
     private static readonly string[] ConfirmAddons = ["ShopExchangeItemDialog", "ShopExchangeCurrencyDialog"];
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
@@ -83,7 +83,8 @@ internal static class ShopTools
                     "item": { "type": "string", "description": "Item name or id." },
                     "quantity": { "type": "integer", "description": "How many to buy." },
                     "npc": { "type": "string", "description": "Vendor NPC name or id (from find_vendors); default: a gil vendor, current zone first." },
-                    "menu_option": { "type": "string", "description": "Text of the NPC menu entry that opens the right shop, if it can't be found automatically." }
+                    "menu_option": { "type": "string", "description": "Text of the NPC menu entry that opens the right shop, if it can't be found automatically." },
+                    "approval": { "type": "string", "description": "Id of a standing approval (request_spending_approval) to use instead of asking per purchase; it caps what can be spent." }
                   },
                   "required": ["item", "quantity"]
                 }
@@ -130,7 +131,15 @@ internal static class ShopTools
 
                         // Spending anything but gil is the player's decision; the shop window with the price is open right now.
                         var isGil = window == "Shop";
-                        if (!isGil || (config.AskAboveGil > 0 && (long)(offer.GilPrice ?? 0) * quantity > config.AskAboveGil))
+                        // A standing approval (request_spending_approval) replaces the popup for non-gil purchases; it is checked again per batch.
+                        Approvals.Approval? approval = null;
+                        if (!isGil && args.String("approval") is { } approvalId)
+                        {
+                            try { approval = Approvals.Get(approvalId, item.RowId); }
+                            catch { await CloseShop(ct).ConfigureAwait(false); throw; }
+                            steps.Add($"Using standing approval {approval.Id} ({approval.Remaining:N0} {Items.Name(approval.CurrencyId)} left).");
+                        }
+                        if (approval is null && (!isGil || (config.AskAboveGil > 0 && (long)(offer.GilPrice ?? 0) * quantity > config.AskAboveGil)))
                         {
                             var details = new List<string>
                             {
@@ -152,7 +161,8 @@ internal static class ShopTools
                         }
 
                         var gilBefore = await Game.Run(Gil).ConfigureAwait(false);
-                        var bought = await Purchase(item.RowId, quantity, offer, check.Before, steps, ct).ConfigureAwait(false);
+                        if (window == "InclusionShop") await ShowInInclusionShop(item.RowId, steps, ct).ConfigureAwait(false);
+                        var bought = await Purchase(item.RowId, quantity, offer, check.Before, steps, ct, approval).ConfigureAwait(false);
                         await CloseShop(ct).ConfigureAwait(false);
                         var after = await Game.Run(() => (Count: Items.CountInBags(item.RowId), Gil: Gil())).ConfigureAwait(false);
                         return new
@@ -178,6 +188,82 @@ internal static class ShopTools
                 }
             },
         };
+    }
+
+    /// <summary>Tools for standing approvals (asking once in game for a budget of one currency).</summary>
+    public static IEnumerable<McpTool> ApprovalTools(Configuration config)
+    {
+        yield return new McpTool
+        {
+            Name = "request_spending_approval",
+            Description = "Asks the player once, in game, to approve spending up to an amount of a currency (e.g. 4,000 Orange Crafters' Scrip), " +
+                          "optionally only on given items, for a while (default 24 h) — a standing approval for a job that buys repeatedly. Waits " +
+                          "for the answer (up to 2 minutes). Pass the returned id as 'approval' to buy_item: purchases then don't ask again but " +
+                          "never spend more than approved (each purchase's real cost is counted). The player can revoke it in /xivmcp → Jobs. " +
+                          "Requires 'Market & purchases'.",
+            InputSchema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "currency": { "type": "string", "description": "Currency name or item id, e.g. \"Orange Crafters' Scrip\"." },
+                    "max_amount": { "type": "integer", "description": "Most that may be spent in total." },
+                    "items": { "type": "array", "items": { "type": "string" }, "description": "Only these items may be bought (optional)." },
+                    "purpose": { "type": "string", "description": "Shown to the player, e.g. \"Tacos scrip farm: buy materia\"." },
+                    "valid_hours": { "type": "integer", "description": "Default 24." }
+                  },
+                  "required": ["currency", "max_amount"]
+                }
+                """,
+            ReadOnly = false,
+            Handler = async (args, ct) =>
+            {
+                if (!config.AllowMarketPurchases)
+                    throw new ToolException("Buying is disabled. Enable \"Market & purchases\" in the XIV MCP settings window (/xivmcp) in game.");
+                var max = args.Int("max_amount", 0, 0, int.MaxValue);
+                if (max <= 0) throw new ToolException("'max_amount' must be positive.");
+                var hours = args.Int("valid_hours", 24, 1, 24 * 14);
+                var (currency, items) = await Game.Run(() => (Items.Resolve(args.String("currency") ?? throw new ToolException("'currency' is required.")).RowId,
+                                                               args.StringList("items").Select(i => Items.Resolve(i).RowId).ToList())).ConfigureAwait(false);
+                var purpose = args.String("purpose") ?? "Purchases by your assistant";
+                var details = new List<string>
+                {
+                    purpose,
+                    $"Spend up to {max:N0} {Items.Name(currency)} in total (you have {await Game.Run(() => CurrencyCount(currency)).ConfigureAwait(false):N0})",
+                    items.Count == 0 ? "On any item" : "Only on: " + string.Join(", ", items.Select(Items.Name)),
+                    $"Valid for {hours} hours; you can revoke it any time in /xivmcp → Jobs.",
+                };
+                await Consent.Require($"Approve spending {Items.Name(currency)}?", details, ConsentTimeout, ct).ConfigureAwait(false);
+                var approval = Approvals.Add(purpose, currency, max, items, TimeSpan.FromHours(hours));
+                return Approvals.Describe(approval);
+            },
+        };
+
+        yield return new McpTool
+        {
+            Name = "list_approvals",
+            Description = "Standing spending approvals: currency, approved and spent amount, items, expiry and state (active, used up, expired, revoked).",
+            Handler = (_, _) => Task.FromResult<object?>(Approvals.All().Select(Approvals.Describe).ToList()),
+        };
+
+        yield return new McpTool
+        {
+            Name = "revoke_approval",
+            Description = "Revokes a standing spending approval right away.",
+            InputSchema = """{ "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] }""",
+            ReadOnly = false,
+            Handler = (args, _) =>
+            {
+                var id = args.String("id") ?? throw new ToolException("'id' is required.");
+                Approvals.Revoke(id);
+                return Task.FromResult<object?>(new { revoked = id });
+            },
+        };
+    }
+
+    private static unsafe long CurrencyCount(uint id)
+    {
+        var im = InventoryManager.Instance();
+        return im == null ? 0 : id == 1 ? im->GetGil() : im->GetInventoryItemCount(id);
     }
 
     // ------------------------------------------------------------------ vendors (Item Vendor Location)
@@ -349,10 +435,17 @@ internal static class ShopTools
         return buying.Count == 1 ? buying[0].i : -1;
     }
 
-    private static async Task<int> Purchase(uint itemId, int quantity, Offer offer, int before, List<string> steps, CancellationToken ct)
+    /// <summary>
+    /// Buys in batches until the bags hold the wanted quantity. Under a standing approval it first buys one, learns the real unit cost
+    /// from the approved currency's drop, and then never buys more than the remaining approved amount covers.
+    /// </summary>
+    private static async Task<int> Purchase(uint itemId, int quantity, Offer offer, int before, List<string> steps, CancellationToken ct,
+                                            Approvals.Approval? approval = null)
     {
         var target = before + quantity;
         var failures = 0;
+        long? unitCost = null;
+        var budget = approval?.Remaining ?? 0;
         while (true)
         {
             ct.ThrowIfCancellationRequested();
@@ -360,6 +453,16 @@ internal static class ShopTools
             if (have >= target) return have - before;
             var remainingUnits = (int)Math.Ceiling((target - have) / (double)offer.UnitsPerTrade);
             var batch = Math.Min(MaxBatch, remainingUnits);
+            if (approval is not null)
+            {
+                batch = unitCost is { } cost ? (int)Math.Min(batch, budget / Math.Max(1, cost)) : 1;
+                if (batch <= 0)
+                {
+                    steps.Add($"Approval {approval.Id} has {budget:N0} {Items.Name(approval.CurrencyId)} left, not enough for another one.");
+                    return have - before;
+                }
+            }
+            var currencyBefore = approval is null ? 0 : await Game.Run(() => CurrencyCount(approval.CurrencyId)).ConfigureAwait(false);
 
             var fired = await Game.Run(() => BuyBatch(itemId, batch)).ConfigureAwait(false);
             if (fired is not null) throw new ToolException(fired);
@@ -372,7 +475,23 @@ internal static class ShopTools
             {
                 await Task.Delay(250, ct).ConfigureAwait(false);
                 var now = await Game.Run(() => { ConfirmDialogs(); return Items.CountInBags(itemId); }).ConfigureAwait(false);
-                if (now > have) { arrived = true; break; }
+                if (now > have)
+                {
+                    arrived = true;
+                    if (approval is not null)
+                    {
+                        await Task.Delay(500, ct).ConfigureAwait(false); // the currency update can trail the item
+                        var spent = currencyBefore - await Game.Run(() => CurrencyCount(approval.CurrencyId)).ConfigureAwait(false);
+                        if (spent <= 0)
+                            throw new ToolException($"That purchase was not paid with {Items.Name(approval.CurrencyId)}, so approval {approval.Id} doesn't cover it; stopped.");
+                        Approvals.Spend(approval.Id, spent);
+                        budget -= spent;
+                        var got = await Game.Run(() => Items.CountInBags(itemId)).ConfigureAwait(false) - have;
+                        unitCost = Math.Max(1, spent / Math.Max(1, got));
+                        steps.Add($"Paid {spent:N0} {Items.Name(approval.CurrencyId)} ({budget:N0} approved left).");
+                    }
+                    break;
+                }
             }
             if (!arrived && ++failures >= 2)
                 throw new ToolException($"The purchase didn't go through (bought {have - before} of {quantity}). The shop may have refused (stock, rank or currency).");
@@ -393,6 +512,13 @@ internal static class ShopTools
                     return null;
                 }
             return "The item is not in this gil shop's list (wrong vendor or the item isn't unlocked for you yet).";
+        }
+        if (Addon("InclusionShop") is var inclusion && inclusion != null && inclusion->IsVisible)
+        {
+            var index = InclusionIndex(inclusion, itemId);
+            if (index < 0) return "The item is not on the exchange page that is shown.";
+            FireMixed(inclusion, 14, (uint)index, (uint)quantity);
+            return null;
         }
         foreach (var name in new[] { "ShopExchangeItem", "ShopExchangeCurrency" })
         {
@@ -459,6 +585,86 @@ internal static class ShopTools
         }).ConfigureAwait(false);
     }
 
+    // ------------------------------------------------------------------ multi-page exchanges (scrip exchange: InclusionShop)
+
+    /// <summary>
+    /// Pages (categories) and sub-pages where an item is offered in multi-page exchanges: InclusionShop → Category[page] → its series'
+    /// sub-rows (sub-page = index + 1) → the SpecialShop that lists the item.
+    /// </summary>
+    private static List<(int Page, int SubPage)> InclusionRoutes(uint itemId)
+    {
+        var specials = Svc.Data.GetExcelSheet<SpecialShop>()
+            .Where(s => s.Item.Any(i => i.ReceiveItems.Any(r => r.Item.RowId == itemId))).Select(s => s.RowId).ToHashSet();
+        var series = Svc.Data.GetSubrowExcelSheet<InclusionShopSeries>();
+        var routes = new List<(int, int)>();
+        foreach (var shop in Svc.Data.GetExcelSheet<InclusionShop>())
+            for (var page = 0; page < shop.Category.Count; page++)
+            {
+                if (shop.Category[page].ValueNullable is not { } category || category.InclusionShopSeries.RowId == 0) continue;
+                if (!series.TryGetRow(category.InclusionShopSeries.RowId, out var subs)) continue;
+                for (var j = 0; j < subs.Count; j++)
+                    if (specials.Contains(subs[j].SpecialShop.RowId)) routes.Add((page, j + 1));
+            }
+        return routes.Distinct().ToList();
+    }
+
+    /// <summary>Selects the page and sub-page of the open exchange that show the item.</summary>
+    private static async Task ShowInInclusionShop(uint itemId, List<string> steps, CancellationToken ct)
+    {
+        bool Visible() { unsafe { var a = Addon("InclusionShop"); return a != null && InclusionIndex(a, itemId) >= 0; } }
+        if (await Game.Run(Visible).ConfigureAwait(false)) return;
+        var routes = await Game.Run(() => InclusionRoutes(itemId)).ConfigureAwait(false);
+        foreach (var (page, sub) in routes)
+        {
+            await Game.Run(() =>
+            {
+                unsafe
+                {
+                    var a = Addon("InclusionShop");
+                    if (a == null) throw new ToolException("The exchange window closed.");
+                    // Keep the page dropdown in step with the selection, like a click on it.
+                    for (var i = 0; i < a->UldManager.NodeListCount; i++)
+                    {
+                        var node = a->UldManager.NodeList[i];
+                        if (node != null && (int)node->Type == 1015 && node->NodeId == 7 && node->GetAsAtkComponentNode()->Component != null)
+                            ((AtkComponentDropDownList*)node->GetAsAtkComponentNode()->Component)->SelectItem(page);
+                    }
+                    FireMixed(a, 12, (uint)page);
+                }
+                return true;
+            }).ConfigureAwait(false);
+            await Task.Delay(700, ct).ConfigureAwait(false);
+            await Game.Run(() => { unsafe { FireMixed(Addon("InclusionShop"), 13, (uint)sub); } return true; }).ConfigureAwait(false);
+            await Task.Delay(700, ct).ConfigureAwait(false);
+            if (await Game.Run(Visible).ConfigureAwait(false))
+            {
+                steps.Add($"Exchange page {page + 1}, sub-page {sub}.");
+                return;
+            }
+        }
+        throw new ToolException($"{Items.Name(itemId)} is not offered on any page of this exchange.");
+    }
+
+    /// <summary>Row of an item among the exchange's visible items (AtkValues: count at 298, item ids from 300 in steps of 18).</summary>
+    private static unsafe int InclusionIndex(AtkUnitBase* addon, uint itemId)
+    {
+        if (addon == null) return -1;
+        var count = (int)Value(addon, 298);
+        for (var i = 0; i < count; i++)
+            if (Value(addon, 300 + i * 18) == itemId) return i;
+        return -1;
+    }
+
+    /// <summary>Fires a callback with an int command followed by uint arguments (the form these exchange windows use).</summary>
+    private static unsafe void FireMixed(AtkUnitBase* addon, int command, params uint[] values)
+    {
+        if (addon == null) throw new ToolException("Window disappeared.");
+        var atk = stackalloc AtkValue[values.Length + 1];
+        atk[0] = default; atk[0].Type = AtkValueType.Int; atk[0].Int = command;
+        for (var i = 0; i < values.Length; i++) { atk[i + 1] = default; atk[i + 1].Type = AtkValueType.UInt; atk[i + 1].UInt = values[i]; }
+        addon->FireCallback((uint)values.Length + 1, atk, false);
+    }
+
     // ------------------------------------------------------------------ low-level helpers
 
     private static unsafe AtkUnitBase* Addon(string name) => Svc.GameGui.GetAddonByName<AtkUnitBase>(name, 1);
@@ -476,7 +682,7 @@ internal static class ShopTools
     }
 
     /// <summary>Entries of an open SelectString or SelectIconString menu.</summary>
-    private static unsafe List<string>? MenuEntries(out nint addon)
+    internal static unsafe List<string>? MenuEntries(out nint addon)
     {
         addon = 0;
         foreach (var name in new[] { "SelectIconString", "SelectString" })
@@ -493,7 +699,7 @@ internal static class ShopTools
         return null;
     }
 
-    private static unsafe void FireMenu(nint addon, int index) => Fire((AtkUnitBase*)addon, true, index);
+    internal static unsafe void FireMenu(nint addon, int index) => Fire((AtkUnitBase*)addon, true, index);
 
     private static unsafe void Fire(AtkUnitBase* addon, bool updateState, params int[] values)
     {

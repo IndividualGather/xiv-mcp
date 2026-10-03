@@ -102,6 +102,7 @@ Logging in is built in: XIV MCP goes through the game's own lobby (title screen,
 | `find_ventures` | Which venture brings an item, which retainer can take it, and every retainer's current venture |
 | `assign_venture` | Sends a retainer (or a free one that can take it) on a venture. If all are busy it suggests which to recall: quick ventures first, then the long ones |
 | `recall_venture` | Recalls a retainer from a running venture, **only after you approve it in game** |
+| `turn_in_collectables` | Turns in collectables at a Collectable Appraiser for scrips (travels there if needed). Stops before the scrip cap: when the game warns that a trade would overcap, it answers No and stops |
 
 Every move waits until the game and server confirmed the previous one, then pauses (random 500–800 ms by default, adjustable in `/xivmcp`). Nothing happens in combat, while crafting or gathering, in trades, cutscenes or zone changes. Equipped gear, currency, crystals and key items can't be moved.
 
@@ -113,7 +114,9 @@ Every move waits until the game and server confirmed the previous one, then paus
 |---|---|
 | `get_item_sources` | Where an item comes from: crafting, vendors, currency exchanges, gathering nodes, drops, duties, FATEs, ventures, voyages, desynthesis, … from FFXIV Teamcraft's data, optionally with the wiki page *(Online lookups)* |
 | `find_vendors` | NPCs that sell an item, with zone and map position, from the **Item Vendor Location** plugin |
-| `buy_item` | Travels to a vendor, opens its shop and buys in batches of up to 99. Gil shops buy directly; any other currency shows an approval popup in game while the shop is open *(Market & purchases)* |
+| `buy_item` | Travels to a vendor, opens its shop (gil shops, exchanges and the multi-page scrip exchanges) and buys in batches of up to 99. Gil shops buy directly; any other currency shows an approval popup in game while the shop is open, unless a standing approval is given *(Market & purchases)* |
+| `request_spending_approval` | Asks you once in game to approve spending up to an amount of one currency (optionally only on given items, for a while), e.g. for a farming job. `buy_item` with that `approval` then doesn't ask again but never spends more than approved *(Market & purchases)* |
+| `list_approvals` / `revoke_approval` | Standing approvals with what is spent and left; revoke one (also in `/xivmcp` → Jobs) |
 | `get_market_prices` | Current listings, recent sales, averages and sales per day from universalis.app for your world, data center or region *(Online lookups)* |
 | `get_market_listings` | Your retainers' listings from the cache, optionally flagged when undercut (Universalis) |
 | `get_sales` | Sale notices the game showed while XIV MCP was running (item, quantity, gil, time) |
@@ -168,6 +171,8 @@ Plugins keep their settings in memory and often save on shutdown, so `set_plugin
 ## Approvals in game
 
 Some actions are never decided by the assistant alone: buying with anything but gil, and recalling a running venture. They open an approval window in game, and nothing happens until you click **Approve**. Unanswered requests are declined after two minutes.
+
+For jobs that buy repeatedly, a **standing approval** asks once: "spend up to N of this currency (on these items, for this long)". Every purchase under it counts its real cost (measured from the currency balance), stops when the approved amount is used up, and stops if a purchase turns out to be paid with another currency. Active approvals are listed in `/xivmcp` → Jobs with a Revoke button.
 
 ## Caches, freshness and watching
 

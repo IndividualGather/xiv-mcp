@@ -43,7 +43,20 @@ internal static class Items
     {
         var im = InventoryManager.Instance();
         if (im == null) return 0;
-        var count = im->GetInventoryItemCount(itemId, false, false, false) + im->GetInventoryItemCount(itemId, true, false, false);
+        // Crystals live in their own container; everything else is counted slot by slot, because the game's item count
+        // leaves collectables out.
+        if (IsCrystal(itemId)) return im->GetInventoryItemCount(itemId, false, false, false);
+        var count = 0;
+        foreach (var bag in Bags)
+        {
+            var c = im->GetInventoryContainer(bag);
+            if (c == null) continue;
+            for (var i = 0; i < c->Size; i++)
+            {
+                var slot = c->GetInventorySlot(i);
+                if (slot != null && slot->ItemId == itemId) count += slot->Quantity;
+            }
+        }
         return count;
     }
 
