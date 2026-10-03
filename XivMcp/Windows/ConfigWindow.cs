@@ -133,76 +133,178 @@ internal sealed class ConfigWindow : Window
 
     // ---------------------------------------------------------------- connect
 
+    private static readonly (string Id, string Label)[] ClientChoices = [("claude", "Claude Code"), ("codex", "Codex"), ("other", "Other MCP client")];
+
     private void DrawConnect()
     {
         var config = plugin.Config;
         var server = plugin.Server;
-
-        Section(FontAwesomeIcon.Server, "Endpoint");
-        ImGui.SetNextItemWidth(120 * ImGuiHelpers.GlobalScale);
-        ImGui.InputInt("Port", ref portInput);
-        portInput = Math.Clamp(portInput, 1024, 65535);
-        ImGui.SameLine();
-        if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Redo, portInput == config.Port ? "Restart server" : "Apply & restart"))
-        {
-            config.Port = portInput;
-            config.Save();
-            if (config.ServerEnabled) server.Start();
-        }
-        ImGui.TextColored(Muted, "Only reachable from this PC (localhost). Browsers from other sites are rejected.");
-
-        ImGui.Spacing();
-        Section(FontAwesomeIcon.Key, "Access token");
-        var requireToken = config.RequireToken;
-        if (ImGuiComponents.ToggleButton("##token", ref requireToken))
-        {
-            config.RequireToken = requireToken;
-            config.Save();
-        }
-        ImGui.SameLine();
-        ImGui.TextUnformatted("Require bearer token");
-        if (!config.RequireToken)
-            ImGui.TextColored(Amber, "Without a token, any program on this PC can use the server.");
-        else
-        {
-            using (ImRaii.PushFont(UiBuilder.MonoFont))
-                ImGui.TextUnformatted(showToken ? config.Token : config.Token[..6] + new string('•', 18));
-            ImGui.SameLine();
-            if (ImGuiComponents.IconButton(1, showToken ? FontAwesomeIcon.EyeSlash : FontAwesomeIcon.Eye)) showToken = !showToken;
-            Tooltip(showToken ? "Hide" : "Show");
-            ImGui.SameLine();
-            if (ImGuiComponents.IconButton(2, FontAwesomeIcon.Copy)) ImGui.SetClipboardText(config.Token);
-            Tooltip("Copy token");
-            ImGui.SameLine();
-            if (ImGuiComponents.IconButton(3, FontAwesomeIcon.Sync))
-            {
-                config.Token = Configuration.NewToken();
-                config.Save();
-            }
-            Tooltip("Generate a new token (connected clients must be updated)");
-        }
-
-        ImGui.Spacing();
-        Section(FontAwesomeIcon.Link, "Add to your AI client");
         var endpoint = server.Endpoint;
         var token = config.RequireToken ? config.Token : null;
+        var masked = token is null ? null : "••••••";
 
-        // Claude Code
-        ClientBlock("claude", "Claude Code", "Run in a terminal:",
-            ClaudeCommand(endpoint, token), ClaudeCommand(endpoint, token is null ? null : "••••••"), "Copy command");
+        // 1. Which assistant?
+        ImGui.TextColored(Muted, "Which AI assistant do you want to connect?");
+        ImGui.Spacing();
+        foreach (var (id, label) in ClientChoices)
+        {
+            if (Segment(label, config.ConnectClient == id))
+            {
+                config.ConnectClient = id;
+                config.Save();
+            }
+            ImGui.SameLine();
+        }
+        ImGui.NewLine();
+        ImGui.Spacing();
 
-        // Codex: the CLI reads the token from an environment variable; config.toml can hold it directly.
-        ClientBlock("codex", "Codex", token is null ? "Run in a terminal:" : "Run in a terminal (sets the token variable, then adds the server; open a new terminal before starting Codex):",
-            CodexCommand(endpoint, token), CodexCommand(endpoint, token is null ? null : "••••••"), "Copy command");
-        ImGui.SameLine();
-        if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Copy, "Copy config.toml entry"))
-            ImGui.SetClipboardText(CodexToml(endpoint, token));
-        Tooltip("Alternative: paste into ~/.codex/config.toml (no environment variable needed).");
+        // 2. Only the steps for that assistant.
+        switch (config.ConnectClient)
+        {
+            case "codex":
+                Steps(token is null
+                    ? ["Copy the command below.", "Run it in a terminal.", "Start Codex."]
+                    : ["Copy the commands below.", "Run them in a terminal (the first line stores your access token).", "Open a new terminal and start Codex."]);
+                CommandBox("codex", CodexCommand(endpoint, masked), CodexCommand(endpoint, token), "Copy commands");
+                ImGui.TextColored(Muted, "Prefer editing ~/.codex/config.toml?");
+                ImGui.SameLine();
+                if (ImGui.SmallButton("Copy config.toml entry")) ImGui.SetClipboardText(CodexToml(endpoint, token));
+                break;
+            case "other":
+                Steps(["Copy the JSON below.", "Add it to your client's MCP server configuration (it needs HTTP server support).", "Restart the client."]);
+                CommandBox("json", JsonConfig(endpoint, masked), JsonConfig(endpoint, token), "Copy JSON");
+                break;
+            default:
+                Steps(["Copy the command below.", "Run it in a terminal.", "Start a new Claude Code session."]);
+                CommandBox("claude", ClaudeCommand(endpoint, masked), ClaudeCommand(endpoint, token), "Copy command");
+                break;
+        }
 
-        // Any other client that reads an mcpServers JSON config.
-        ClientBlock("json", "Other MCP clients", "JSON configuration for clients with HTTP server support:",
-            JsonConfig(endpoint, token), JsonConfig(endpoint, token is null ? null : "••••••"), "Copy JSON");
+        // 3. Did it work?
+        ImGui.Spacing();
+        var client = MatchingClient(config.ConnectClient);
+        if (!server.IsRunning)
+        {
+            IconText(FontAwesomeIcon.ExclamationTriangle, Amber);
+            ImGui.SameLine();
+            ImGui.TextColored(Amber, "The server is switched off (top right), so the assistant can't connect.");
+        }
+        else if (client is { } c)
+        {
+            IconText(FontAwesomeIcon.Check, Green);
+            ImGui.SameLine();
+            ImGui.TextColored(Green, $"Connected: {c.Name}, last request {Ago(c.LastSeenUtc)}");
+        }
+        else
+        {
+            IconText(FontAwesomeIcon.Hourglass, Muted);
+            ImGui.SameLine();
+            ImGui.TextColored(Muted, "Waiting for the first connection… ask your assistant something about your character.");
+        }
+
+        // 4. Rarely needed details.
+        ImGui.Spacing();
+        ImGui.Separator();
+        if (ImGui.CollapsingHeader($"{FontAwesomeIcon.Key.ToIconString()}  Server & access token"))
+        {
+            ImGui.Indent();
+            ImGui.SetNextItemWidth(120 * ImGuiHelpers.GlobalScale);
+            ImGui.InputInt("Port", ref portInput);
+            portInput = Math.Clamp(portInput, 1024, 65535);
+            ImGui.SameLine();
+            if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Redo, portInput == config.Port ? "Restart server" : "Apply & restart"))
+            {
+                config.Port = portInput;
+                config.Save();
+                if (config.ServerEnabled) server.Start();
+            }
+            ImGui.TextColored(Muted, $"Address: {endpoint}  ·  only reachable from this PC.");
+
+            ImGui.Spacing();
+            var requireToken = config.RequireToken;
+            if (ImGuiComponents.ToggleButton("##token", ref requireToken))
+            {
+                config.RequireToken = requireToken;
+                config.Save();
+            }
+            ImGui.SameLine();
+            ImGui.TextUnformatted("Require access token");
+            if (!config.RequireToken)
+                ImGui.TextColored(Amber, "Without a token, any program on this PC can use the server.");
+            else
+            {
+                using (ImRaii.PushFont(UiBuilder.MonoFont))
+                    ImGui.TextUnformatted(showToken ? config.Token : config.Token[..6] + new string('•', 18));
+                ImGui.SameLine();
+                if (ImGuiComponents.IconButton(1, showToken ? FontAwesomeIcon.EyeSlash : FontAwesomeIcon.Eye)) showToken = !showToken;
+                Tooltip(showToken ? "Hide" : "Show");
+                ImGui.SameLine();
+                if (ImGuiComponents.IconButton(2, FontAwesomeIcon.Copy)) ImGui.SetClipboardText(config.Token);
+                Tooltip("Copy token");
+                ImGui.SameLine();
+                if (ImGuiComponents.IconButton(3, FontAwesomeIcon.Sync))
+                {
+                    config.Token = Configuration.NewToken();
+                    config.Save();
+                }
+                Tooltip("Generate a new token. Connected assistants must then be set up again.");
+                ImGui.TextColored(Muted, "The token stays the same across game restarts until you generate a new one.");
+            }
+            ImGui.Unindent();
+        }
     }
+
+    /// <summary>The most recent client that looks like the chosen assistant.</summary>
+    private Mcp.McpServer.ClientInfo? MatchingClient(string choice) => plugin.Server.Clients().FirstOrDefault(c => choice switch
+    {
+        "claude" => c.Name.Contains("claude", StringComparison.OrdinalIgnoreCase),
+        "codex" => c.Name.Contains("codex", StringComparison.OrdinalIgnoreCase),
+        _ => !c.Name.Contains("claude", StringComparison.OrdinalIgnoreCase) && !c.Name.Contains("codex", StringComparison.OrdinalIgnoreCase),
+    });
+
+    private static bool Segment(string label, bool selected)
+    {
+        using var color = ImRaii.PushColor(ImGuiCol.Button, ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive], selected)
+            .Push(ImGuiCol.Text, Gold, selected);
+        return ImGui.Button($"  {label}  ");
+    }
+
+    private static void Steps(string[] steps)
+    {
+        for (var i = 0; i < steps.Length; i++)
+        {
+            ImGui.TextColored(Gold, $"{i + 1}.");
+            ImGui.SameLine();
+            ImGui.TextUnformatted(steps[i]);
+        }
+        ImGui.Spacing();
+    }
+
+    private static void CommandBox(string id, string preview, string copy, string buttonLabel)
+    {
+        using (ImRaii.PushColor(ImGuiCol.ChildBg, new Vector4(0, 0, 0, 0.25f)))
+        using (ImRaii.Child($"##cmd-{id}", new Vector2(-1, ImGui.GetTextLineHeightWithSpacing() * (preview.Count(ch => ch == '\n') + 2.4f)), true))
+        using (ImRaii.PushFont(UiBuilder.MonoFont))
+        {
+            ImGui.PushTextWrapPos();
+            ImGui.TextColored(Cyan, preview);
+            ImGui.PopTextWrapPos();
+        }
+        if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Copy, $"{buttonLabel}##{id}"))
+            ImGui.SetClipboardText(copy);
+        ImGui.SameLine();
+        ImGui.TextColored(Muted, "Your token is filled in when copying.");
+    }
+
+    private static string ClaudeCommand(string endpoint, string? token) =>
+        $"claude mcp add --transport http ffxiv {endpoint}" + (token is null ? "" : $" --header \"Authorization: Bearer {token}\"");
+
+    private static string CodexCommand(string endpoint, string? token) => token is null
+        ? $"codex mcp add ffxiv --url {endpoint}"
+        : $"setx XIVMCP_TOKEN \"{token}\"\ncodex mcp add ffxiv --url {endpoint} --bearer-token-env-var XIVMCP_TOKEN";
+
+    private static string CodexToml(string endpoint, string? token) =>
+        $"[mcp_servers.ffxiv]\nurl = \"{endpoint}\"" + (token is null ? "" : $"\nhttp_headers = {{ \"Authorization\" = \"Bearer {token}\" }}");
 
     private static string JsonConfig(string endpoint, string? token)
     {
@@ -218,34 +320,6 @@ internal sealed class ConfigWindow : Window
             }
             """;
     }
-
-    private void ClientBlock(string id, string name, string hint, string command, string preview, string buttonLabel)
-    {
-        ImGui.Spacing();
-        ImGui.TextUnformatted(name);
-        ImGui.SameLine();
-        ImGui.TextColored(Muted, hint);
-        using (ImRaii.PushColor(ImGuiCol.ChildBg, new Vector4(0, 0, 0, 0.25f)))
-        using (ImRaii.Child($"##cmd-{id}", new Vector2(-1, ImGui.GetTextLineHeightWithSpacing() * (preview.Count(ch => ch == '\n') + 2.4f)), true))
-        using (ImRaii.PushFont(UiBuilder.MonoFont))
-        {
-            ImGui.PushTextWrapPos();
-            ImGui.TextColored(Cyan, preview);
-            ImGui.PopTextWrapPos();
-        }
-        if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Copy, $"{buttonLabel}##{id}"))
-            ImGui.SetClipboardText(command);
-    }
-
-    private static string ClaudeCommand(string endpoint, string? token) =>
-        $"claude mcp add --transport http ffxiv {endpoint}" + (token is null ? "" : $" --header \"Authorization: Bearer {token}\"");
-
-    private static string CodexCommand(string endpoint, string? token) => token is null
-        ? $"codex mcp add ffxiv --url {endpoint}"
-        : $"setx XIVMCP_TOKEN \"{token}\"\ncodex mcp add ffxiv --url {endpoint} --bearer-token-env-var XIVMCP_TOKEN";
-
-    private static string CodexToml(string endpoint, string? token) =>
-        $"[mcp_servers.ffxiv]\nurl = \"{endpoint}\"" + (token is null ? "" : $"\nhttp_headers = {{ \"Authorization\" = \"Bearer {token}\" }}");
 
     // ---------------------------------------------------------------- permissions
 

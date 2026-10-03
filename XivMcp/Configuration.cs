@@ -20,6 +20,9 @@ public sealed class Configuration : IPluginConfiguration
 
     public string Token { get; set; } = NewToken();
 
+    /// <summary>The assistant chosen in the Connect tab: "claude", "codex" or "other".</summary>
+    public string ConnectClient { get; set; } = "claude";
+
     /// <summary>Allows the plugin tools: enable/disable/reload other plugins and read/write their config files.</summary>
     public bool AllowPluginManagement { get; set; }
 
