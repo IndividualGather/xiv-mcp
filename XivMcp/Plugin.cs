@@ -17,6 +17,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ConfigWindow configWindow;
     private readonly WorkshopTracker workshop;
     private readonly RetainerTracker retainers;
+    private readonly PluginCompat compat;
 
     internal static Plugin? Instance { get; private set; }
 
@@ -31,6 +32,7 @@ public sealed class Plugin : IDalamudPlugin
 
         workshop = new WorkshopTracker();
         retainers = new RetainerTracker();
+        compat = new PluginCompat();
         var caches = new CacheRegistry();
         caches.Add(workshop);
         caches.Add(retainers);
@@ -43,7 +45,8 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(PluginTools.Create(Config))
             .Concat(VoyageTools.Create(workshop))
             .Concat(InventoryActionTools.Create(Config))
-            .Concat(RetainerTools.Create(Config, retainers))
+            .Concat(RetainerTools.Create(Config, retainers, compat))
+            .Concat(InteractionTools.Create(Config, compat))
             .Concat(CacheTools.Create(caches));
         Server = new McpServer(tools, Config, caches);
 
@@ -71,6 +74,7 @@ public sealed class Plugin : IDalamudPlugin
         Server.Dispose();
         workshop.Dispose();
         retainers.Dispose();
+        compat.Dispose();
         Instance = null;
     }
 }

@@ -78,6 +78,24 @@ Every cached result carries a `cache` block: `capturedAt`, `age`, `live`, `stale
 - `wait_for_cache_refresh` waits up to 10 minutes for a cache to refresh. Use it after asking the user to open a retainer or enter the workshop. It works with every MCP client.
 - Each cache is also an MCP **resource** (`xiv://cache/submersibles`, `xiv://cache/retainers`) that supports `resources/subscribe`. Clients that open the Streamable-HTTP event stream (`GET /mcp` with their `Mcp-Session-Id`) receive `notifications/resources/updated` whenever the cache refreshes.
 
+### Game interaction (opt-in)
+
+Disabled until you tick **Allow game interaction** in `/xivmcp`.
+
+| Tool | What it does |
+|---|---|
+| `list_windows` | Game windows that can be opened (the main menu commands), whether each is unlocked and open |
+| `open_window` / `close_window` | Opens or closes one, e.g. Achievements (loads achievement progress), Chocobo Saddlebag, Armoury Chest, Currency |
+| `interact_with_object` | Targets and interacts with a nearby object by name or id, like clicking it: summoning bell, company chest, voyage control panel, NPCs. Your character doesn't move, so the object must be within about 8 yalms. |
+| `get_automation_status` | What XIV MCP detected about AutoRetainer, YesAlready and TextAdvance, and what it is currently pausing |
+
+Windows that act instead of opening something (Log Out, Exit Game, Return, Ready Check, Countdown, Stance) can't be triggered.
+
+**Compatibility with automation plugins** is detected automatically:
+
+- **AutoRetainer.** By default it starts processing ventures as soon as a summoning bell opens. When XIV MCP opens the bell or drives retainer windows, it first suppresses AutoRetainer through AutoRetainer's public IPC (`AutoRetainer.SetSuppressed`). It releases AutoRetainer again a few seconds after the bell is closed, or when XIV MCP unloads. If AutoRetainer is already busy, or its multi mode is on, XIV MCP refuses to touch the bell instead of interfering.
+- **YesAlready and TextAdvance** auto-click dialogs and menus. While XIV MCP holds the bell, it pauses them through their shared `StopRequests` sets, the same mechanism AutoRetainer uses.
+
 ### Inventory actions (opt-in)
 
 Disabled until you tick **Allow inventory actions** in `/xivmcp`.

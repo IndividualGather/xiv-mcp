@@ -23,7 +23,7 @@ internal static class RetainerTools
         [GameInventoryType.RetainerPage1, GameInventoryType.RetainerPage2, GameInventoryType.RetainerPage3, GameInventoryType.RetainerPage4,
          GameInventoryType.RetainerPage5, GameInventoryType.RetainerPage6, GameInventoryType.RetainerPage7];
 
-    public static IEnumerable<McpTool> Create(Configuration config, RetainerTracker tracker)
+    public static IEnumerable<McpTool> Create(Configuration config, RetainerTracker tracker, PluginCompat compat)
     {
         void RequireEnabled()
         {
@@ -98,7 +98,7 @@ internal static class RetainerTools
                 await InventoryActionTools.Gate.WaitAsync(ct).ConfigureAwait(false);
                 try
                 {
-                    await Game.RunLoggedIn(() => { InventoryActionTools.EnsureNotBusy(); return true; }).ConfigureAwait(false);
+                    await Game.RunLoggedIn(() => { InventoryActionTools.EnsureNotBusy(); compat.AcquireBell(); return true; }).ConfigureAwait(false);
                     await RetainerUi.Open(name, ct).ConfigureAwait(false);
                     await Task.Delay(1200, ct).ConfigureAwait(false); // give the tracker a poll to capture the inventory
                     return new { opened = await Svc.Framework.RunOnFrameworkThread(() => RetainerUi.ActiveRetainerName).ConfigureAwait(false) };
@@ -111,9 +111,13 @@ internal static class RetainerTools
         {
             Name = "close_retainer",
             Description = "Closes the currently open retainer (inventory window, then \"Quit\" in the retainer menu) and returns to the retainer list. " +
-                          "Requires 'Allow inventory actions' in /xivmcp.",
+                          "With close_list=true the retainer list is closed as well, ending the summoning bell session (AutoRetainer, if installed, " +
+                          "resumes then). Requires 'Allow inventory actions' in /xivmcp.",
+            InputSchema = """
+                { "type": "object", "properties": { "close_list": { "type": "boolean", "description": "Also close the retainer list / leave the bell (default false)." } } }
+                """,
             ReadOnly = false,
-            Handler = async (_, ct) =>
+            Handler = async (args, ct) =>
             {
                 RequireEnabled();
                 await InventoryActionTools.Gate.WaitAsync(ct).ConfigureAwait(false);
@@ -121,7 +125,9 @@ internal static class RetainerTools
                 {
                     var name = await Svc.Framework.RunOnFrameworkThread(() => RetainerUi.ActiveRetainerName).ConfigureAwait(false);
                     await RetainerUi.Close(ct).ConfigureAwait(false);
-                    return new { closed = name };
+                    var closeList = args.Bool("close_list", false);
+                    if (closeList) await RetainerUi.CloseList(ct).ConfigureAwait(false);
+                    return new { closed = name, retainerListClosed = closeList };
                 }
                 finally { InventoryActionTools.Gate.Release(); }
             },
@@ -174,6 +180,7 @@ internal static class RetainerTools
                     await Game.RunLoggedIn(() =>
                     {
                         InventoryActionTools.EnsureNotBusy();
+                        compat.AcquireBell();
                         if (!RetainerUi.RetainerListOpen && RetainerUi.ActiveRetainerName is null)
                             throw new ToolException("Open the retainer list at a summoning bell first.");
                         return true;

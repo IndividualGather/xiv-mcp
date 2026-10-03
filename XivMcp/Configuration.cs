@@ -26,6 +26,9 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Allows the inventory action tools: /itemsort and moving items between slots and containers.</summary>
     public bool AllowInventoryActions { get; set; }
 
+    /// <summary>Allows opening game windows and interacting with nearby objects (summoning bell, company chest, ...).</summary>
+    public bool AllowGameInteraction { get; set; }
+
     /// <summary>Pause between two item moves, so the server can confirm each one.</summary>
     public int MoveDelayMs { get; set; } = 700;
 

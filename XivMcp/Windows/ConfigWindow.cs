@@ -91,6 +91,17 @@ internal sealed class ConfigWindow : Window
         if (config.AllowPluginManagement)
             ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.3f, 1), "Clients can change other plugins and their settings.");
 
+        var allowInteraction = config.AllowGameInteraction;
+        if (ImGui.Checkbox("Allow game interaction", ref allowInteraction))
+        {
+            config.AllowGameInteraction = allowInteraction;
+            config.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Lets MCP clients open game windows (Achievements, Saddlebag, ...) and interact with nearby objects\n" +
+                             "(summoning bell, company chest, voyage control panel). AutoRetainer, YesAlready and TextAdvance are\n" +
+                             "paused automatically while XIV MCP uses the summoning bell.");
+
         var allowInventory = config.AllowInventoryActions;
         if (ImGui.Checkbox("Allow inventory actions", ref allowInventory))
         {

@@ -145,6 +145,26 @@ internal static class RetainerUi
         return false;
     }
 
+    /// <summary>Closes the retainer list (leaves the summoning bell). Call after <see cref="Close"/>.</summary>
+    public static async Task CloseList(CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        var lastAction = DateTime.MinValue;
+        while (await Svc.Framework.RunOnFrameworkThread(() => RetainerListOpen).ConfigureAwait(false))
+        {
+            ct.ThrowIfCancellationRequested();
+            if (DateTime.UtcNow > deadline) throw new ToolException("Timed out closing the retainer list.");
+            if (DateTime.UtcNow - lastAction > TimeSpan.FromSeconds(1))
+            {
+                await Svc.Framework.RunOnFrameworkThread(FireCloseList).ConfigureAwait(false);
+                lastAction = DateTime.UtcNow;
+            }
+            await Task.Delay(150, ct).ConfigureAwait(false);
+        }
+    }
+
+    private static unsafe void FireCloseList() => Fire(Addon("RetainerList"), false, -1);
+
     /// <summary>Position of a retainer in the retainer list (the list uses the player's display order).</summary>
     private static unsafe (int Index, string Name) ResolveSortedIndex(string name)
     {
