@@ -147,7 +147,8 @@ internal static class InventoryActionTools
                           "Each move is sent separately, the plugin waits until the server confirmed it, then pauses before the next one (by default a random 500-800 ms, configurable in /xivmcp). " +
                           "Give the source either as from_container+from_slot or as item_id (first matching stack, optionally limited to from_container); " +
                           "omit to_slot to use the first empty slot of to_container. Container names come from get_inventory (Inventory1-4, ArmoryHead, ..., " +
-                          "SaddleBag1/2, PremiumSaddleBag1/2, RetainerPage1-7). Saddlebag/retainer windows must be open. Armory containers only accept matching gear. " +
+                          "SaddleBag1/2, PremiumSaddleBag1/2, RetainerPage1-7, FreeCompanyPage1-5). Saddlebag/retainer/company chest windows must be open. " +
+                          "Armory containers only accept matching gear. " +
                           "Stops at the first failed move unless continue_on_error=true. Requires 'Allow inventory actions' in /xivmcp.",
             InputSchema = """
                 {
@@ -380,7 +381,7 @@ internal static class InventoryActionTools
         var n = t.ToString();
         return n.StartsWith("Inventory", StringComparison.Ordinal) || n.StartsWith("Armory", StringComparison.Ordinal) ||
                n.StartsWith("SaddleBag", StringComparison.Ordinal) || n.StartsWith("PremiumSaddleBag", StringComparison.Ordinal) ||
-               n.StartsWith("RetainerPage", StringComparison.Ordinal);
+               n.StartsWith("RetainerPage", StringComparison.Ordinal) || n.StartsWith("FreeCompanyPage", StringComparison.Ordinal);
     });
 
     private static bool IsContainerUsable(GameInventoryType t)
@@ -394,6 +395,7 @@ internal static class InventoryActionTools
         var n = t.ToString();
         if (n.Contains("SaddleBag", StringComparison.Ordinal)) EnsureWindowOpen(SaddlebagAddons, "saddlebag");
         else if (n.StartsWith("Retainer", StringComparison.Ordinal)) EnsureRetainerOpen();
+        else if (n.StartsWith("FreeCompanyPage", StringComparison.Ordinal)) EnsureWindowOpen(["FreeCompanyChest"], "company chest");
     }
 
     private static void EnsureWindowOpen(string[] addons, string what)

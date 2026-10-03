@@ -134,6 +134,7 @@ internal static class FcChestTools
                 await InventoryActionTools.Gate.WaitAsync(ct).ConfigureAwait(false);
                 try
                 {
+                    var before = await Game.RunLoggedIn(() => Measure(items)).ConfigureAwait(false);
                     var accepted = await Game.RunLoggedIn(() =>
                     {
                         if (PluginCompat.FcchBusy) throw new ToolException("FCCH is already busy with another chest operation.");
@@ -152,18 +153,79 @@ internal static class FcChestTools
                         if (!await Game.Run(() => PluginCompat.FcchBusy).ConfigureAwait(false)) { finished = true; break; }
                         await Task.Delay(500, ct).ConfigureAwait(false);
                     }
+                    // FCCH accepting a command doesn't mean anything moved (its own rules may skip items), so measure the effect.
+                    await Task.Delay(500, ct).ConfigureAwait(false);
+                    var after = await Game.RunLoggedIn(() => Measure(items)).ConfigureAwait(false);
+                    var itemChanges = after.Items.Where(kv => kv.Value != before.Items.GetValueOrDefault(kv.Key))
+                        .Select(kv => new { itemId = kv.Key, name = InventoryTools.ItemName(kv.Key), inBagsBefore = before.Items.GetValueOrDefault(kv.Key), inBagsAfter = kv.Value })
+                        .ToList();
+                    var bagDelta = after.BagTotal - before.BagTotal;
+                    var gilDelta = (long)after.PlayerGil - before.PlayerGil;
+                    var nothingMoved = items is not null ? itemChanges.Count == 0 : gil is not null ? gilDelta == 0 : bagDelta == 0;
+
                     return new
                     {
                         accepted = true,
                         via = ipc,
                         finished,
                         seconds = Math.Round((DateTime.UtcNow - started).TotalSeconds, 1),
-                        note = finished ? "Done. Use get_fc_chest / get_inventory to see the result." : "FCCH is still working; check again later or use action=stop.",
+                        moved = nothingMoved ? "nothing" : null,
+                        items = itemChanges.Count > 0 ? itemChanges : null,
+                        itemsInBagsChange = items is null && gil is null ? bagDelta : (long?)null,
+                        gilChange = gil is not null ? gilDelta : (long?)null,
+                        note = !finished ? "FCCH is still working; check again later or use action=stop."
+                             : nothingMoved ? NothingMovedReason(action) : null,
                     };
                 }
                 finally { InventoryActionTools.Gate.Release(); }
             },
         };
+    }
+
+    private sealed record Measurement(Dictionary<uint, long> Items, long BagTotal, uint PlayerGil);
+
+    private static readonly GameInventoryType[] Bags =
+        [GameInventoryType.Inventory1, GameInventoryType.Inventory2, GameInventoryType.Inventory3, GameInventoryType.Inventory4];
+
+    /// <summary>Counts in the player's bags (given items, or everything), plus gil. Call on the framework thread.</summary>
+    private static unsafe Measurement Measure(Dictionary<uint, int>? items)
+    {
+        var counts = new Dictionary<uint, long>();
+        long total = 0;
+        foreach (var bag in Bags)
+            foreach (var item in Svc.Inventory.GetInventoryItems(bag))
+            {
+                if (item.IsEmpty) continue;
+                total += item.Quantity;
+                if (items is not null && items.ContainsKey(item.BaseItemId))
+                    counts[item.BaseItemId] = counts.GetValueOrDefault(item.BaseItemId) + item.Quantity;
+            }
+        if (items is not null)
+            foreach (var id in items.Keys) counts.TryAdd(id, 0);
+        return new Measurement(counts, total, FFXIVClientStructs.FFXIV.Client.Game.InventoryManager.Instance()->GetGil());
+    }
+
+    /// <summary>Why FCCH may have accepted a command without moving anything — including its own settings that commonly cause it.</summary>
+    private static string NothingMovedReason(string action)
+    {
+        var reasons = new List<string>();
+        if (action.StartsWith("withdraw", StringComparison.Ordinal) && FcchSetting("LeaveOneItemPerStack") == true)
+            reasons.Add("FCCH's \"Leave one item per stack\" setting is on, so it keeps one item in every chest stack (a stack of 1 can't be withdrawn)");
+        reasons.Add("the item may not be in the chest / your bags in that quality");
+        reasons.Add("you may lack access to that chest tab, or your bags / the chest are full");
+        return "FCCH accepted the command but nothing moved. Possible reasons: " + string.Join("; ", reasons) +
+               ". Without FCCH's rules, move_items can move single stacks between FreeCompanyPage1-5 and your bags while the chest is open.";
+    }
+
+    /// <summary>Reads a boolean from FCCH's own settings file (to explain its behaviour; never changed).</summary>
+    private static bool? FcchSetting(string key)
+    {
+        try
+        {
+            var file = System.IO.Path.Combine(Svc.PluginInterface.ConfigFile.Directory?.FullName ?? "", "FCCH.json");
+            return System.IO.File.Exists(file) && JsonNode.Parse(System.IO.File.ReadAllText(file))?[key] is JsonValue v && v.TryGetValue<bool>(out var b) ? b : null;
+        }
+        catch { return null; }
     }
 
     private static Func<bool> Call(string name) => () => Svc.PluginInterface.GetIpcSubscriber<bool>(name).InvokeFunc();
