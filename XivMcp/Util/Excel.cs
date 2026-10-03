@@ -51,6 +51,10 @@ internal static class Excel
     public static uint RowId(object row) => row.GetType().GetProperty("RowId")?.GetValue(row) is uint id ? id : 0;
 
     /// <summary>A best-effort human readable name for a row (Name, Singular, ... or a well known reference).</summary>
+    /// <summary>Sheets whose (English) names are stored in lowercase and capitalized by the game when displayed.</summary>
+    private static readonly HashSet<string> LowercaseNamedSheets =
+        ["ClassJob", "Mount", "Companion", "Ornament", "Glasses", "Pet", "BuddyEquip", "DawnGrowMember"];
+
     public static string? DisplayName(object? row, int depth = 0)
     {
         if (row is null || depth > 2) return null;
@@ -61,7 +65,7 @@ internal static class Excel
             if (prop?.PropertyType == typeof(ReadOnlySeString))
             {
                 var text = SafeGet(prop, row) is ReadOnlySeString s ? s.ExtractText() : null;
-                if (!string.IsNullOrWhiteSpace(text)) return text;
+                if (!string.IsNullOrWhiteSpace(text)) return LowercaseNamedSheets.Contains(type.Name) ? Game.TitleCase(text) : text;
             }
         }
 

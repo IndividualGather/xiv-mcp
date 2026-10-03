@@ -100,7 +100,22 @@ internal static class Game
     public static string? Clean(string? s) => s is null ? null : new string(s.Where(c => c is < '' or > '').ToArray()).Trim();
 
     /// <summary>"paladin" → "Paladin" (English class/job names are lowercase in the game data).</summary>
-    public static string TitleCase(string s) => System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(s);
+    public static string TitleCase(string s)
+    {
+        // Capitalize words like the game does ("company chocobo" → "Company Chocobo"), but keep small words lowercase
+        // ("wind-up of the ..." → "Wind-up of the ...") and never lowercase anything that is already capitalized.
+        var words = s.Split(' ');
+        for (var i = 0; i < words.Length; i++)
+        {
+            var w = words[i];
+            if (w.Length == 0 || char.IsUpper(w[0])) continue;
+            if (i > 0 && SmallWords.Contains(w)) continue;
+            words[i] = char.ToUpperInvariant(w[0]) + w[1..];
+        }
+        return string.Join(' ', words);
+    }
+
+    private static readonly HashSet<string> SmallWords = ["of", "the", "a", "an", "and", "in", "on", "to", "for", "with", "de", "du", "la", "le", "der", "die", "das", "von"];
 
     public static bool Matches(string? haystack, string? needle) =>
         needle is null || (haystack?.Contains(needle, StringComparison.OrdinalIgnoreCase) ?? false);
