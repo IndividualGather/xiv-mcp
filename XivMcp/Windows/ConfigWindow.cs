@@ -346,12 +346,18 @@ internal sealed class ConfigWindow : Window
             "Automating game actions is against the FFXIV ToS. Moves are sent one at a time like manual drags.",
             DrawMoveDelay, extraLines: 2.6f);
 
+        // Navigation builds on vnavmesh / Lifestream; only offered when at least one of them is installed.
+        if (compat is { } nav && (nav.Vnavmesh || nav.Lifestream))
+            Card("navigation", FontAwesomeIcon.Route, "Navigation", config.AllowNavigation, v => config.AllowNavigation = v,
+                "Move the character to a summoning bell, the company chest, the workshop, the inn or your house (walking and teleports).",
+                "Teleports cost gil as usual. stop_navigation stops it at any time.", DrawBellPreference, extraLines: 1.6f);
+
         Card("plugins", FontAwesomeIcon.PuzzlePiece, "Plugin management", config.AllowPluginManagement, v => config.AllowPluginManagement = v,
             "Enable, disable and reload other Dalamud plugins, and read or change their settings. Every change is backed up to pluginConfigs/XivMcp/backups.",
             "Uses Dalamud internals; may need an update after Dalamud updates.");
 
         // Compatibility is only shown for plugins the player already has installed; otherwise the section doesn't exist.
-        if (compat is not { } c || !(c.AutoRetainer || c.YesAlready || c.TextAdvance || c.Fcch || c.WaymarkPresetPlugin)) return;
+        if (compat is not { } c || !(c.AutoRetainer || c.YesAlready || c.TextAdvance || c.Fcch || c.WaymarkPresetPlugin || c.Vnavmesh || c.Lifestream)) return;
         ImGui.Spacing();
         Section(FontAwesomeIcon.Robot, "Compatibility");
         if (c.AutoRetainer)
@@ -367,6 +373,36 @@ internal sealed class ConfigWindow : Window
             CompatRow("FCCH", c.FcchBusy == true ? "busy, XIV MCP waits with item moves" : "used for free company chest transfers; item moves wait while it works");
         if (c.WaymarkPresetPlugin)
             CompatRow("WaymarkPresetPlugin", "its preset library is available, library presets are placed through it");
+        if (c.Vnavmesh)
+            CompatRow("vnavmesh", "used by Navigation to walk to objects");
+        if (c.Lifestream)
+            CompatRow("Lifestream", "used by Navigation for teleports, houses, inns and the workshop (its property priority is respected)");
+    }
+
+    private static readonly (string Id, string Label)[] BellLocations =
+    [
+        ("lifestream", "Lifestream's preferred property"), ("inn", "Inn room"), ("fc", "Free company house"), ("home", "Private house"), ("apartment", "Apartment"),
+    ];
+
+    /// <summary>Where navigate_to goes for a summoning bell when none is nearby.</summary>
+    private void DrawBellPreference()
+    {
+        var config = plugin.Config;
+        ImGui.Spacing();
+        IconText(FontAwesomeIcon.Bell, Muted);
+        ImGui.SameLine();
+        ImGui.TextUnformatted("Summoning bell location");
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(230 * ImGuiHelpers.GlobalScale);
+        var current = BellLocations.FirstOrDefault(b => b.Id == config.PreferredBellLocation).Label ?? BellLocations[0].Label;
+        using var combo = ImRaii.Combo("##bell-location", current);
+        if (!combo) return;
+        foreach (var (id, label) in BellLocations)
+            if (ImGui.Selectable(label, id == config.PreferredBellLocation))
+            {
+                config.PreferredBellLocation = id;
+                config.Save();
+            }
     }
 
     /// <summary>Pause between item moves: random within a range (default 500-800 ms) or an exact value.</summary>

@@ -111,6 +111,15 @@ Every cached result carries a `cache` block: `capturedAt`, `age`, `live`, `stale
 - `wait_for_cache_refresh` waits up to 10 minutes for a cache to refresh. Use it after asking the user to open a retainer or enter the workshop. It works with every MCP client.
 - Each cache is also an MCP **resource** (`xiv://cache/submersibles`, `xiv://cache/retainers`) that supports `resources/subscribe`. Clients that open the Streamable-HTTP event stream (`GET /mcp` with their `Mcp-Session-Id`) receive `notifications/resources/updated` whenever the cache refreshes.
 
+### Navigation (opt-in, needs vnavmesh and/or Lifestream)
+
+Disabled until you tick **Allow navigation** in `/xivmcp`. The setting only appears when vnavmesh or Lifestream is installed.
+
+| Tool | What it does |
+|---|---|
+| `navigate_to` | Moves the character to `summoning_bell`, `company_chest`, `workshop` (voyage control panel), `inn`, `home`, `fc_house`, `apartment`, or a named `object` in the current zone. It walks with vnavmesh, and travels and enters houses, inns and the workshop with Lifestream. With no bell nearby, it uses the preferred bell location from the settings (default: Lifestream's own property priority), then falls back to the inn |
+| `get_navigation_status` / `stop_navigation` | What is installed and moving right now, and an immediate stop |
+
 ### Game interaction (opt-in)
 
 Disabled until you tick **Allow game interaction** in `/xivmcp`.

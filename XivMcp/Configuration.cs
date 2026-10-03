@@ -38,6 +38,12 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Allows writing the game's waymark preset slots.</summary>
     public bool AllowWaymarkEditing { get; set; }
 
+    /// <summary>Allows moving the character with vnavmesh / Lifestream (navigate_to).</summary>
+    public bool AllowNavigation { get; set; }
+
+    /// <summary>Where navigate_to looks for a summoning bell when none is nearby: lifestream (its property priority), inn, fc, home, apartment.</summary>
+    public string PreferredBellLocation { get; set; } = "lifestream";
+
     /// <summary>Pause between two item moves, so the server can confirm each one.</summary>
     public int MoveDelayMs { get; set; } = 700;
 
