@@ -96,6 +96,12 @@ internal static class Game
         return d;
     }
 
+    /// <summary>Removes the game's private-use icon glyphs (e.g. the quest type icon) from a name.</summary>
+    public static string? Clean(string? s) => s is null ? null : new string(s.Where(c => c is < '' or > '').ToArray()).Trim();
+
+    /// <summary>"paladin" → "Paladin" (English class/job names are lowercase in the game data).</summary>
+    public static string TitleCase(string s) => System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(s);
+
     public static bool Matches(string? haystack, string? needle) =>
         needle is null || (haystack?.Contains(needle, StringComparison.OrdinalIgnoreCase) ?? false);
 }

@@ -153,8 +153,9 @@ internal static class UnlockTools
                         normal.Add(new
                         {
                             questId = q.QuestId + 65536u,
-                            name = row?.Name.ExtractText(),
+                            name = Game.Clean(row?.Name.ExtractText()),
                             sequence = q.Sequence,
+                            readyToTurnIn = q.Sequence == 255,
                             journalGenre = row is { } r ? Excel.Name(r.JournalGenre) : null,
                             classJobLevel = row?.ClassJobLevel[0],
                             hidden = q.IsHidden,
@@ -246,7 +247,7 @@ internal static class UnlockTools
                             return new
                             {
                                 questId = q.RowId,
-                                name = q.Name.ExtractText(),
+                                name = Game.Clean(q.Name.ExtractText()),
                                 journalGenre = Excel.Name(q.JournalGenre),
                                 level = q.ClassJobLevel[0],
                                 place = Excel.Name(q.PlaceName),

@@ -108,7 +108,7 @@ internal static class CharacterTools
                     grandCompany = Excel.Ref(ps.GrandCompany),
                     grandCompanyRanks = gcRanks,
                     homeAetheryte = Excel.Ref(ps.HomeAetheryte),
-                    favoriteAetherytes = ps.FavoriteAetherytes.Select(a => Excel.Ref(a)).ToList(),
+                    favoriteAetherytes = ps.FavoriteAetherytes.Where(a => a.RowId != 0).Select(a => Excel.Ref(a)).ToList(),
                     freeAetheryte = Excel.Ref(ps.FreeAetheryte),
                     restedExperience = ps.BaseRestedExperience,
                     playerCommendations = ps.PlayerCommendations,
@@ -165,7 +165,7 @@ internal static class CharacterTools
                     result.Add(new
                     {
                         id = cj.RowId,
-                        name = cj.Name.ExtractText(),
+                        name = Game.TitleCase(cj.Name.ExtractText()),
                         abbreviation = cj.Abbreviation.ExtractText(),
                         role = cj.Role,
                         isJob = cj.JobIndex > 0,
