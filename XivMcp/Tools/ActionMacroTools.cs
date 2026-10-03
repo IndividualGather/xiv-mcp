@@ -226,6 +226,7 @@ internal static class ActionMacroTools
                         Lines = lines ?? before.Lines,
                         IconId = iconId ?? (before.Empty && before.IconId == 0 ? DefaultMacroIcon : before.IconId),
                     };
+                    after = after with { Empty = after.Name.Length == 0 && after.Lines.All(l => l.Length == 0) };
                     if (dryRun) return new { dryRun = true, set = Sets[set], number, before = Describe(before), after = Describe(after) };
 
                     var backup = Backup(set, number, before);
