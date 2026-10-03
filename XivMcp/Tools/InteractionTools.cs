@@ -192,6 +192,72 @@ internal static class InteractionTools
 
         yield return new McpTool
         {
+            Name = "get_menu",
+            Description = "Shows the choice menu the game currently displays after an interaction (e.g. the voyage control panel's " +
+                          "\"Submersible management\" / \"Airship management\", or an NPC's options), and whether a dialogue text box is waiting for a click.",
+            Handler = (_, _) => Game.RunLoggedIn<object?>(() => new
+            {
+                menu = RetainerUi.MenuEntries()?.Select((text, index) => new { index, text }).ToList(),
+                dialogueWaiting = RetainerUi.Ready("Talk"),
+                openWindows = VisibleAddons(),
+            }),
+        };
+
+        yield return new McpTool
+        {
+            Name = "select_menu_option",
+            Description = "Selects an entry of the currently open choice menu (see get_menu) by its text or index, like clicking it, " +
+                          "or advances a waiting dialogue text box (advance_dialogue=true). Requires 'Allow game interaction' in /xivmcp.",
+            InputSchema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "option": { "type": "string", "description": "Entry text (case-insensitive, prefix match) or index from get_menu." },
+                    "advance_dialogue": { "type": "boolean", "description": "Instead of a menu entry, click through the waiting dialogue text box." }
+                  }
+                }
+                """,
+            ReadOnly = false,
+            Handler = async (args, ct) =>
+            {
+                RequireEnabled();
+                if (args.Bool("advance_dialogue", false))
+                {
+                    await Game.RunLoggedIn(() =>
+                    {
+                        if (!RetainerUi.Ready("Talk")) throw new ToolException("No dialogue is waiting.");
+                        RetainerUi.ClickTalk();
+                        return true;
+                    }).ConfigureAwait(false);
+                    await Task.Delay(500, ct).ConfigureAwait(false);
+                    return await Svc.Framework.RunOnFrameworkThread(() => (object?)new { advanced = true, openWindows = VisibleAddons() }).ConfigureAwait(false);
+                }
+
+                var option = args.String("option") ?? throw new ToolException("Give 'option' (text or index) or advance_dialogue=true.");
+                var before = await Svc.Framework.RunOnFrameworkThread(VisibleAddons).ConfigureAwait(false);
+                var selected = await Game.RunLoggedIn(() =>
+                {
+                    var entries = RetainerUi.MenuEntries() ?? throw new ToolException("No menu is open. Use interact_with_object first.");
+                    var index = int.TryParse(option, out var i) ? i
+                        : entries.FindIndex(e => e.Equals(option, StringComparison.OrdinalIgnoreCase)) is >= 0 and var exact ? exact
+                        : entries.FindIndex(e => e.StartsWith(option, StringComparison.OrdinalIgnoreCase));
+                    if (index < 0) throw new ToolException($"No menu entry matches '{option}'. Entries: {string.Join(" | ", entries)}");
+                    RetainerUi.SelectMenuIndex(index);
+                    return entries[index];
+                }).ConfigureAwait(false);
+                await WaitFor(() => !VisibleAddons().SequenceEqual(before), TimeSpan.FromSeconds(3), ct).ConfigureAwait(false);
+                await Task.Delay(300, ct).ConfigureAwait(false);
+                return await Svc.Framework.RunOnFrameworkThread(() => (object?)new
+                {
+                    selected,
+                    openWindows = VisibleAddons(),
+                    menu = RetainerUi.MenuEntries(),
+                }).ConfigureAwait(false);
+            },
+        };
+
+        yield return new McpTool
+        {
             Name = "get_automation_status",
             Description = "Shows how XIV MCP cooperates with automation plugins: whether AutoRetainer, YesAlready and TextAdvance are loaded, " +
                           "AutoRetainer's busy / multi mode / suppressed state, and what XIV MCP currently pauses.",

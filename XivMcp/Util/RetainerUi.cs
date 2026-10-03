@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Memory;
@@ -23,7 +24,7 @@ internal static class RetainerUi
 
     private static Dalamud.Game.NativeWrapper.AtkUnitBasePtr Ptr(string name) => Svc.GameGui.GetAddonByName(name, 1);
     private static unsafe AtkUnitBase* Addon(string name) => Svc.GameGui.GetAddonByName<AtkUnitBase>(name, 1);
-    private static bool Ready(string name) => Ptr(name) is { IsNull: false, IsVisible: true, IsReady: true };
+    public static bool Ready(string name) => Ptr(name) is { IsNull: false, IsVisible: true, IsReady: true };
 
     public static bool RetainerListOpen => Ready("RetainerList");
 
@@ -202,8 +203,28 @@ internal static class RetainerUi
         return false;
     }
 
+    /// <summary>Entries of the currently open SelectString menu, or null if none is open.</summary>
+    public static unsafe List<string>? MenuEntries()
+    {
+        if (!Ready("SelectString")) return null;
+        var menu = (AddonSelectString*)Addon("SelectString");
+        var popup = &menu->PopupMenu.PopupMenu;
+        var list = new List<string>();
+        for (var i = 0; i < popup->EntryCount; i++)
+            list.Add(MemoryHelper.ReadSeStringNullTerminated((nint)popup->EntryNames[i].Value).TextValue.Trim());
+        return list;
+    }
+
+    /// <summary>Selects an entry of the open SelectString menu by index.</summary>
+    public static unsafe void SelectMenuIndex(int index)
+    {
+        var entries = MenuEntries() ?? throw new ToolException("No menu is open.");
+        if (index < 0 || index >= entries.Count) throw new ToolException($"The menu has entries 0-{entries.Count - 1}.");
+        Fire(Addon("SelectString"), true, index);
+    }
+
     /// <summary>Advances a "Talk" dialogue box like a click does.</summary>
-    private static unsafe void ClickTalk()
+    public static unsafe void ClickTalk()
     {
         var talk = Addon("Talk");
         if (talk == null) return;
