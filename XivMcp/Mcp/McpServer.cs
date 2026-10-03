@@ -249,6 +249,8 @@ public sealed class McpServer : IDisposable
             ["serverInfo"] = new JsonObject { ["name"] = ServerName, ["title"] = "Final Fantasy XIV (Dalamud)", ["version"] = version },
             ["instructions"] =
                 "Live, read-only access to the Final Fantasy XIV character that is currently logged in, via a Dalamud plugin. " +
+                "In addition, the plugin tools (list_plugins, set_plugin_enabled, reload_plugin, get/set_plugin_config) manage other Dalamud plugins " +
+                "when the user has allowed it in the settings; always read a config before changing it and tell the user what you changed. " +
                 "Start with get_game_status to see whether a character is logged in. Use the typed tools (character, jobs, inventory, " +
                 "gear, currencies, quests, unlocks, party, objects, fates, retainers) for live state, and search_game_data / get_game_data_row " +
                 "to look up static game data (items, quests, achievements, ...) from the client's Excel sheets. " +

@@ -4,7 +4,7 @@ A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV th
 
 - **Transport:** MCP Streamable HTTP (JSON responses) at `http://localhost:37521/mcp`, bound to localhost only
 - **Auth:** bearer token, generated on first start (can be turned off)
-- **Read-only:** no tool changes game state, sends packets or performs actions
+- **Read-only game access:** no tool changes game state, sends packets or performs actions. The only tools that write anything are the optional plugin-management tools (see below).
 
 ## Tools
 
@@ -28,6 +28,29 @@ A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV th
 | `get_companions` | Chocobo, pet, trusts / duty support |
 | `get_retainers` | Retainers, gil, listings, venture status |
 | `list_game_sheets` / `search_game_data` / `get_game_data_row` | Generic access to any of the game's Excel sheets (items, quests, achievements, duties, recipes, …) in the client language |
+
+### Plugin management (opt-in)
+
+These tools are disabled until you tick **Allow plugin management** in `/xivmcp`. `list_plugins` always works.
+
+| Tool | What it does |
+|---|---|
+| `list_plugins` | Installed plugins with internal name, version, load state and flags |
+| `set_plugin_enabled` | Enables (loads) or disables (unloads) a plugin, like the installer toggle; the state is saved in the default collection |
+| `reload_plugin` | Unloads and loads a plugin again |
+| `list_plugin_config_files` | The plugin's `<InternalName>.json` and the files in its config folder |
+| `get_plugin_config` | Reads a config file, optionally a sub-tree (`path`, e.g. `Profiles[0].Name`) or a collapsed overview (`depth`) |
+| `set_plugin_config` | Sets values by path (`[{ "path": "...", "value": ... }]`), with `dry_run`, type checks and `create_missing` |
+
+How config edits work:
+
+- Plugins keep their config in memory and often save it when they shut down. So `set_plugin_config` unloads a loaded plugin first, re-reads the file, writes the changes, and loads the plugin again.
+- The write goes through Dalamud's reliable file storage, so its backup copy stays in sync.
+- The previous file is saved to `pluginConfigs/XivMcp/backups/<plugin>/` (the last 10 versions per file are kept).
+- Only files inside the target plugin's own config area can be read or written.
+- XIV MCP refuses to disable, reload or reconfigure itself.
+
+Dalamud has no public API for loading or unloading other plugins. These tools use Dalamud's internal `PluginManager` the same way the plugin installer does, so they may need adjusting after Dalamud updates. They also make the plugin unsuitable for the official Dalamud repository.
 
 The unlock and game-data tools work by reflection over Dalamud's `IUnlockState` and Lumina's sheet types. New categories and sheets therefore show up automatically when Dalamud is updated.
 

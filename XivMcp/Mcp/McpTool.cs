@@ -18,12 +18,23 @@ public sealed class McpTool
 
     public required Func<ToolArgs, CancellationToken, Task<object?>> Handler { get; init; }
 
+    /// <summary>False for tools that change state (plugin management).</summary>
+    public bool ReadOnly { get; init; } = true;
+
+    /// <summary>True for tools whose changes may be hard to undo (e.g. overwriting config files).</summary>
+    public bool Destructive { get; init; }
+
     public JsonObject ToListEntry() => new()
     {
         ["name"] = Name,
         ["description"] = Description,
         ["inputSchema"] = JsonNode.Parse(InputSchema),
-        ["annotations"] = new JsonObject { ["readOnlyHint"] = true, ["openWorldHint"] = false },
+        ["annotations"] = new JsonObject
+        {
+            ["readOnlyHint"] = ReadOnly,
+            ["destructiveHint"] = Destructive,
+            ["openWorldHint"] = false,
+        },
     };
 }
 
@@ -34,6 +45,8 @@ public sealed class ToolException(string message) : Exception(message);
 public sealed class ToolArgs(JsonObject? args)
 {
     private readonly JsonObject args = args ?? [];
+
+    public JsonNode? Node(string name) => args[name];
 
     public string? String(string name)
     {

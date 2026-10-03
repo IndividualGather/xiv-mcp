@@ -79,6 +79,18 @@ internal sealed class ConfigWindow : Window
             }
         }
 
+        var allowPlugins = config.AllowPluginManagement;
+        if (ImGui.Checkbox("Allow plugin management", ref allowPlugins))
+        {
+            config.AllowPluginManagement = allowPlugins;
+            config.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Lets MCP clients enable, disable and reload other Dalamud plugins and read/change their config files.\n" +
+                             "Config edits are backed up to pluginConfigs/XivMcp/backups. Uses Dalamud internals; may break on Dalamud updates.");
+        if (config.AllowPluginManagement)
+            ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.3f, 1), "Clients can change other plugins and their settings.");
+
         ImGui.Separator();
         ImGui.TextUnformatted("Connect a client");
 

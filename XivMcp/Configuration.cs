@@ -20,6 +20,9 @@ public sealed class Configuration : IPluginConfiguration
 
     public string Token { get; set; } = NewToken();
 
+    /// <summary>Allows the plugin tools: enable/disable/reload other plugins and read/write their config files.</summary>
+    public bool AllowPluginManagement { get; set; }
+
     public static string NewToken() => Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
 
     public void Save() => Svc.PluginInterface.SavePluginConfig(this);

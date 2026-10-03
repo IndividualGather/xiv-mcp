@@ -27,7 +27,8 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(InventoryTools.Create())
             .Concat(UnlockTools.Create())
             .Concat(WorldTools.Create())
-            .Concat(GameDataTools.Create());
+            .Concat(GameDataTools.Create())
+            .Concat(PluginTools.Create(Config));
         Server = new McpServer(tools, Config);
 
         configWindow = new ConfigWindow(this);
