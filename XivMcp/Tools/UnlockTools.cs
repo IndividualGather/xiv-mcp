@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using Lumina.Excel.Sheets;
@@ -27,6 +28,28 @@ internal static class UnlockTools
             .Select(x => new Category(Excel.SnakeCase(x.Params[0].ParameterType.Name), x.Params[0].ParameterType, x.Method))
             .GroupBy(c => c.Name)
             .ToDictionary(g => g.Key, g => g.First()));
+
+    internal sealed record UnlockRow(uint Id, string? Name, bool Unlocked);
+
+    /// <summary>Unlock state of every named row of a category (e.g. "mount"), optionally filtered by name.</summary>
+    internal static async Task<List<UnlockRow>> Evaluate(string categoryName, string? query = null)
+    {
+        if (!Categories.Value.TryGetValue(categoryName, out var category)) throw new ToolException($"Unknown category '{categoryName}'.");
+        var rows = new List<(object Row, uint Id, string? Name)>();
+        foreach (var row in Excel.GetSheet(category.RowType))
+        {
+            var name = Excel.DisplayName(row);
+            if (string.IsNullOrWhiteSpace(name) || (query is not null && !Game.Matches(name, query))) continue;
+            rows.Add((row, Excel.RowId(row), name));
+        }
+        return await Game.RunLoggedIn(() => rows.Select(r =>
+        {
+            bool unlocked;
+            try { unlocked = (bool)category.Check.Invoke(Svc.Unlocks, [r.Row])!; }
+            catch { unlocked = false; }
+            return new UnlockRow(r.Id, r.Name, unlocked);
+        }).ToList()).ConfigureAwait(false);
+    }
 
     public static IEnumerable<McpTool> Create()
     {

@@ -54,6 +54,31 @@ How config edits work:
 
 Dalamud has no public API for loading or unloading other plugins. These tools use Dalamud's internal `PluginManager` the same way the plugin installer does, so they may need adjusting after Dalamud updates. They also make the plugin unsuitable for the official Dalamud repository.
 
+### Collections, armoire and glamour dresser
+
+| Tool | What it does |
+|---|---|
+| `get_collections` | Owned / total for mounts, minions, orchestrion rolls, fashion accessories and facewear, plus armoire and dresser counts. Can list the owned or missing entries of one collection |
+| `get_armoire` | Items stored in the armoire by category, or the eligible items that aren't stored yet |
+| `get_glamour_dresser` | Items in the glamour dresser with dyes, filterable by name or equipment category. The game only sends the dresser after it, or a glamour plate, has been opened; it's cached like the retainers |
+
+### Actions, hotbars and macros
+
+| Tool | What it does |
+|---|---|
+| `get_job_actions` | A job's actions with level, unlock state (by level or by job quest), type, GCD/oGCD, cast/recast, range, charges; live cooldowns for the current job |
+| `get_hotbars` | Contents of every hotbar and cross hotbar slot |
+| `get_macros` / `set_macro` / `clear_macro` | Read, create, edit and clear individual and shared macros, with dry run and backups. Writing needs **Allow macro editing** |
+
+### Waymark presets
+
+| Tool | What it does |
+|---|---|
+| `list_waymark_presets` | The game's 30 preset slots and, if WaymarkPresetPlugin is installed, its preset library |
+| `get_waymark_preset` | Coordinates of a preset (or of the waymarks placed right now) plus **a picture of the arena** with the waymarks drawn on the duty's map |
+| `set_waymark_preset` | Writes a game preset slot: copy from another preset or the current waymarks, and/or set marker positions. Needs **Allow waymark preset editing** |
+| `place_waymark_preset` | Places a preset inside a duty, out of combat. Library presets go through WaymarkPresetPlugin. Needs **Allow game interaction** |
+
 ### Retainers
 
 | Tool | What it does |
@@ -73,6 +98,7 @@ The game only sends some data in certain places. XIV MCP snapshots it there and 
 |---|---|
 | `submersibles` | You open the voyage control panel in the FC workshop |
 | `retainers` | You are at a summoning bell (retainer list), and per retainer while that retainer is open |
+| `glamour` | Armoire: loaded at login. Glamour dresser: when you open it or a glamour plate |
 
 Every cached result carries a `cache` block: `capturedAt`, `age`, `live`, `stale` (older than *Cache stale after* hours, default 12) and a `suggestion` that says exactly what to do in game to refresh it.
 

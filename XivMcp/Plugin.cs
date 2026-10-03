@@ -17,6 +17,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ConfigWindow configWindow;
     private readonly WorkshopTracker workshop;
     private readonly RetainerTracker retainers;
+    private readonly GlamourTracker glamour;
     private readonly PluginCompat compat;
     private readonly CacheRegistry caches;
 
@@ -42,10 +43,12 @@ public sealed class Plugin : IDalamudPlugin
 
         workshop = new WorkshopTracker();
         retainers = new RetainerTracker();
+        glamour = new GlamourTracker();
         compat = new PluginCompat();
         caches = new CacheRegistry();
         caches.Add(workshop);
         caches.Add(retainers);
+        caches.Add(glamour);
 
         var tools = CharacterTools.Create()
             .Concat(InventoryTools.Create(retainers))
@@ -59,6 +62,7 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(InteractionTools.Create(Config, compat))
             .Concat(ActionMacroTools.Create(Config))
             .Concat(WaymarkTools.Create(Config))
+            .Concat(CollectionTools.Create(glamour))
             .Concat(CacheTools.Create(caches));
         Server = new McpServer(tools, Config, caches);
 
@@ -86,6 +90,7 @@ public sealed class Plugin : IDalamudPlugin
         Server.Dispose();
         workshop.Dispose();
         retainers.Dispose();
+        glamour.Dispose();
         compat.Dispose();
         Instance = null;
     }
