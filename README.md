@@ -88,6 +88,7 @@ Dalamud has no public API for loading or unloading other plugins. These tools us
 | `get_retainers` | Retainer list: job, level, gil, venture and when it completes |
 | `get_retainer_inventories` | Every retainer's items, market listings (with prices), gear and crystals, from the cache |
 | `open_retainer` / `close_retainer` | Opens a retainer's inventory from the summoning bell's retainer list (greeting and menu handled automatically), or closes it again *(inventory actions)* |
+| `refresh_retainer_inventories` | Opens every (or every stale) retainer's inventory once at a summoning bell to refresh the cache, opening the bell itself if needed. Only opens and closes windows *(game interaction)* |
 | `transfer_retainer_items` | Moves whole stacks retainer → retainer, retainer → bags or bags → retainer. Retainer-to-retainer goes through your bags; every move is confirmed *(inventory actions)* |
 
 `search_inventory` also searches all cached retainer inventories.

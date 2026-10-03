@@ -199,6 +199,124 @@ internal static class RetainerTools
                 finally { InventoryActionTools.Gate.Release(); }
             },
         };
+
+        yield return new McpTool
+        {
+            Name = "refresh_retainer_inventories",
+            Description = "Refreshes the cached inventories of the character's retainers by opening each retainer's inventory once at a summoning bell " +
+                          "(the game only sends a retainer's inventory when it is opened — automation plugins usually don't). Opens the nearest bell " +
+                          "itself if the retainer list isn't open (stand within ~8 yalms). Only opens and closes windows, never moves items. " +
+                          "Choose retainers by name, or only those whose snapshot is older than older_than_hours. AutoRetainer, YesAlready and " +
+                          "TextAdvance are paused while it runs. Requires 'Allow game interaction' in /xivmcp.",
+            InputSchema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "retainers": { "type": "array", "items": { "type": "string" }, "description": "Retainer names (default: all)." },
+                    "older_than_hours": { "type": "number", "description": "Only retainers whose snapshot is older than this (or missing)." },
+                    "close_bell": { "type": "boolean", "description": "Close the retainer list at the end (default true)." }
+                  }
+                }
+                """,
+            ReadOnly = false,
+            Handler = async (args, ct) =>
+            {
+                if (!config.AllowGameInteraction)
+                    throw new ToolException("Refreshing retainers needs \"Allow game interaction\" in the XIV MCP settings window (/xivmcp) in game.");
+                var wanted = args.StringList("retainers");
+                var olderThan = args.Float("older_than_hours");
+                var closeBell = args.Bool("close_bell", true);
+
+                await InventoryActionTools.Gate.WaitAsync(ct).ConfigureAwait(false);
+                try
+                {
+                    // At the bell: open it ourselves if needed (with AutoRetainer etc. paused first).
+                    var openedBell = await Game.RunLoggedIn(() =>
+                    {
+                        InventoryActionTools.EnsureNotBusy();
+                        compat.AcquireBell();
+                        if (RetainerUi.RetainerListOpen || RetainerUi.ActiveRetainerName is not null) return false;
+                        InteractWithNearestBell();
+                        return true;
+                    }).ConfigureAwait(false);
+                    if (openedBell && !await WaitFor(() => RetainerUi.RetainerListOpen, TimeSpan.FromSeconds(8), ct).ConfigureAwait(false))
+                        throw new ToolException("The summoning bell did not open the retainer list.");
+                    await Task.Delay(1500, ct).ConfigureAwait(false); // the retainer list data arrives right after opening
+
+                    var character = await Game.RunLoggedIn(() => tracker.Get(Svc.PlayerState.ContentId)).ConfigureAwait(false)
+                                    ?? throw new ToolException("Retainer list not captured yet; try again in a moment.");
+                    var now = DateTime.UtcNow;
+                    var targets = character.Retainers.OrderBy(r => r.SortIndex)
+                        .Where(r => wanted.Count == 0 || wanted.Any(w => r.Name.Equals(w, StringComparison.OrdinalIgnoreCase)))
+                        .Where(r => olderThan is not { } h || r.InventoryCapturedUtc is not { } t || (now - t).TotalHours > h)
+                        .Select(r => r.Name).ToList();
+                    foreach (var w in wanted.Where(w => !character.Retainers.Any(r => r.Name.Equals(w, StringComparison.OrdinalIgnoreCase))))
+                        throw new ToolException($"No retainer named '{w}'.");
+
+                    var results = new List<RefreshResult>();
+                    foreach (var name in targets)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        var started = DateTime.UtcNow;
+                        try
+                        {
+                            await RetainerUi.Open(name, ct).ConfigureAwait(false);
+                            var captured = await WaitFor(() => tracker.Get(Svc.PlayerState.ContentId)?.Retainers
+                                .FirstOrDefault(r => r.Name == name)?.InventoryCapturedUtc > started, TimeSpan.FromSeconds(6), ct).ConfigureAwait(false);
+                            var snap = tracker.Get(Svc.PlayerState.ContentId)?.Retainers.FirstOrDefault(r => r.Name == name);
+                            results.Add(new RefreshResult(name, captured, snap?.Items.Count, snap?.Market.Count, null));
+                            await RetainerUi.Close(ct).ConfigureAwait(false);
+                        }
+                        catch (ToolException ex)
+                        {
+                            results.Add(new RefreshResult(name, false, null, null, ex.Message));
+                            try { await RetainerUi.Close(ct).ConfigureAwait(false); } catch (ToolException) { /* report the original problem */ }
+                            break;
+                        }
+                        await Task.Delay(config.NextMoveDelay(), ct).ConfigureAwait(false);
+                    }
+                    if (closeBell) await RetainerUi.CloseList(ct).ConfigureAwait(false);
+
+                    return new
+                    {
+                        refreshed = results.Count(r => r.Refreshed),
+                        selected = targets.Count,
+                        skipped = character.Retainers.Count - targets.Count,
+                        results,
+                        bellClosed = closeBell,
+                    };
+                }
+                finally { InventoryActionTools.Gate.Release(); }
+            },
+        };
+    }
+
+    private sealed record RefreshResult(string Retainer, bool Refreshed, int? Items, int? Market, string? Error);
+
+    /// <summary>Targets and interacts with the nearest summoning bell within reach. Framework thread.</summary>
+    private static unsafe void InteractWithNearestBell()
+    {
+        var self = Svc.Objects.LocalPlayer!;
+        var bell = Svc.Objects
+            .Where(o => o.IsTargetable && InteractionTools.IsSummoningBell(o))
+            .OrderBy(o => System.Numerics.Vector3.Distance(o.Position, self.Position))
+            .FirstOrDefault() ?? throw new ToolException("No summoning bell nearby.");
+        var distance = System.Numerics.Vector3.Distance(bell.Position, self.Position);
+        if (distance > 8) throw new ToolException($"The nearest summoning bell is {distance:0.#} yalms away; walk within ~8 yalms (3 is safe).");
+        var native = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)bell.Address;
+        FFXIVClientStructs.FFXIV.Client.Game.Control.TargetSystem.Instance()->SetHardTarget(native, false, false, 0);
+        FFXIVClientStructs.FFXIV.Client.Game.Control.TargetSystem.Instance()->InteractWithObject(native, true);
+    }
+
+    private static async Task<bool> WaitFor(Func<bool> condition, TimeSpan timeout, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (await Svc.Framework.RunOnFrameworkThread(condition).ConfigureAwait(false)) return true;
+            await Task.Delay(150, ct).ConfigureAwait(false);
+        }
+        return false;
     }
 
     private sealed record Transfer(int Index, uint ItemId, string From, string To, int? Stacks, bool? Hq)
