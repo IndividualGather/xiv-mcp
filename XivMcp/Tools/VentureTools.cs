@@ -110,7 +110,7 @@ internal static class VentureTools
                     "retainer": { "type": "string", "description": "Retainer name; omit to use a free retainer that can take the venture." },
                     "item": { "type": "string", "description": "Item the venture should bring (picks the venture matching the retainer's class)." },
                     "venture_id": { "type": "integer", "description": "Exact venture id (alternative to item)." }
-                  },
+                  }
                 }
                 """,
             ReadOnly = false,

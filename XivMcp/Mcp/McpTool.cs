@@ -24,11 +24,22 @@ public sealed class McpTool
     /// <summary>True for tools whose changes may be hard to undo (e.g. overwriting config files).</summary>
     public bool Destructive { get; init; }
 
+    /// <summary>The input schema; a broken one is logged and replaced by an empty schema, so one tool can't break tools/list for all.</summary>
+    public JsonNode ParsedSchema()
+    {
+        try { return JsonNode.Parse(InputSchema) ?? new JsonObject { ["type"] = "object" }; }
+        catch (System.Text.Json.JsonException ex)
+        {
+            XivMcp.Svc.Log.Error($"[MCP] Tool {Name} has an invalid input schema: {ex.Message}");
+            return new JsonObject { ["type"] = "object" };
+        }
+    }
+
     public JsonObject ToListEntry() => new()
     {
         ["name"] = Name,
         ["description"] = Description,
-        ["inputSchema"] = JsonNode.Parse(InputSchema),
+        ["inputSchema"] = ParsedSchema(),
         ["annotations"] = new JsonObject
         {
             ["readOnlyHint"] = ReadOnly,

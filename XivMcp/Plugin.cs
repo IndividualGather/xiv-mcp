@@ -96,6 +96,7 @@ public sealed class Plugin : IDalamudPlugin
             .ToList();
         jobs = new JobManager(tools);
         caches.Add(jobs);
+        foreach (var t in tools) t.ParsedSchema(); // logs any tool whose input schema is not valid JSON, right at startup
         Server = new McpServer(tools, Config, caches);
 
         configWindow = new ConfigWindow(this);

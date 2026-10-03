@@ -2,13 +2,31 @@
 
 # XIV MCP
 
-A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV that runs a local **Model Context Protocol (MCP) server** inside the game client. It gives AI assistants such as Claude Code or Codex access to the live data of the logged-in character, read-only by default.
+A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV that runs a local **Model Context Protocol (MCP) server** inside the game client. It gives AI assistants such as Claude Code or Codex access to the live data of the logged-in character. Reading is always allowed; everything that changes something is opt-in.
 
 - **Transport:** MCP Streamable HTTP (JSON responses) at `http://localhost:37521/mcp`, bound to localhost only
 - **Auth:** bearer token, generated on first start (can be turned off)
-- **Read-only game access:** no tool changes game state, sends packets or performs actions. The only tools that change anything are the optional plugin-management and inventory-action tools (see below).
+- **Permissions:** every tool that acts in game, edits something or goes online is off until you switch its permission on in `/xivmcp`
+
+## Permissions
+
+`/xivmcp` → **Permissions** has seven switches. All start off.
+
+| Permission | Allows |
+|---|---|
+| **Game & navigation** | Opening game windows, interacting with objects and NPCs, moving the character (vnavmesh / Lifestream), logging into other characters, world travel |
+| **Items & retainers** | Sorting and moving items, retainer and FC chest transfers, sending retainers on ventures (recalling one always asks in game) |
+| **Market & purchases** | Buying from NPC vendors (anything not paid in gil asks in game first), putting items up for sale, undercutting listings, reading sale histories |
+| **Crafting & gathering** | Artisan crafts and lists, GatherBuddy Reborn auto-gather and lists, preparing crafting projects. Only shown when one of them is installed |
+| **UI editing** | Macros and the waymark preset slots |
+| **Online lookups** | Item sources (FFXIV Teamcraft, ffxiv.consolegameswiki.com) and market prices (universalis.app) |
+| **Plugin management** | Enabling, disabling and reloading plugins, and editing their settings |
+
+Some tools need another plugin. The settings only show compatibility rows and plugin-specific options for plugins that are installed.
 
 ## Tools
+
+### Character and world (always available)
 
 | Tool | What it returns |
 |---|---|
@@ -16,173 +34,170 @@ A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV th
 | `get_character` | Name, worlds, race/clan, nameday, guardian, GC and ranks, job/level, HP/MP/GP/CP, position, statuses, aetherytes, mentor flags, all attributes (stats and substats) |
 | `get_class_jobs` | Level, EXP and EXP to next level for every class/job |
 | `get_inventory` | Contents of bags, armory, saddlebag, crystals, key items, retainer, FC chest, housing containers |
-| `search_inventory` | Where an item is stored and how many you have in total |
+| `search_inventory` | Where an item is stored and how many you have in total, including cached retainers, saddlebag and FC chest |
 | `get_equipment` | Equipped gear with item level, materia, dyes, glamour; average item level |
 | `get_currencies` | Gil, MGP, seals, tomestones and weekly cap, wolf marks, currency container |
-| `list_unlock_categories` / `check_unlocks` | Unlock or completion state for every `IUnlockState` category: achievements, quests, mounts, minions, emotes, orchestrion, Triple Triad cards, titles, recipes, fashion accessories, glasses, aether currents, duties, … Summary counts, or a filtered list of what's missing or owned |
-| `get_active_quests` | Journal quests and their current step, daily (beast tribe) quests, levequests, allowances, tribe reputation |
-| `check_quests` | Whether specific quests are completed or accepted, by name or id |
-| `get_party` | Party/alliance members with job, HP/MP, zone, distance, statuses |
-| `get_targets` | Target, focus, soft and mouse-over target, target of target, cast bars |
-| `get_nearby_objects` | Objects around you (players, enemies, NPCs, gathering points, …), filterable by kind, name, distance |
-| `get_fates` | Active FATEs in the zone |
-| `get_aetherytes` | Attuned aetherytes with teleport costs |
-| `get_companions` | Chocobo, pet, trusts / duty support |
-| `get_submersibles` | FC submersibles: rank and EXP, parts and build code (e.g. `SSUC`), stats (base + bonus), current route with sector names, return time / ready state, last voyage loot, unlocked and explored sectors per sea. Airships with rank, stats and voyage timing |
-| `list_game_sheets` / `search_game_data` / `get_game_data_row` | Generic access to any of the game's Excel sheets (items, quests, achievements, duties, recipes, …) in the client language |
+| `list_unlock_categories` / `check_unlocks` | Unlock or completion state for every `IUnlockState` category: achievements, quests, mounts, minions, emotes, orchestrion, Triple Triad cards, titles, recipes, … |
+| `get_active_quests` / `check_quests` | Journal quests and steps, tribe quests, levequests, allowances, reputation; whether specific quests are done or accepted |
+| `get_party` / `get_targets` / `get_nearby_objects` | Party and alliance, targets and cast bars, objects around you |
+| `get_fates` / `get_aetherytes` / `get_companions` | FATEs in the zone, attuned aetherytes with costs, chocobo, pet and trusts |
+| `get_submersibles` | FC submersibles and airships: rank, parts and build code, stats, route, return time, last loot, explored sectors |
+| `list_game_sheets` / `search_game_data` / `get_game_data_row` | Generic access to any of the game's Excel sheets in the client language |
+| `inspect_window` | Which game windows are open, or the values and texts one of them shows |
 
-### Plugin management (opt-in)
-
-These tools are disabled until you tick **Allow plugin management** in `/xivmcp`. `list_plugins` always works.
+### Collections, actions and macros
 
 | Tool | What it does |
 |---|---|
-| `list_plugins` | Installed plugins with internal name, version, load state and flags |
-| `set_plugin_enabled` | Enables (loads) or disables (unloads) a plugin, like the installer toggle; the state is saved in the default collection |
-| `reload_plugin` | Unloads and loads a plugin again |
-| `list_plugin_config_files` | The plugin's `<InternalName>.json` and the files in its config folder |
-| `get_plugin_config` | Reads a config file, optionally a sub-tree (`path`, e.g. `Profiles[0].Name`) or a collapsed overview (`depth`) |
-| `set_plugin_config` | Sets values by path (`[{ "path": "...", "value": ... }]`), with `dry_run`, type checks and `create_missing` |
-
-How config edits work:
-
-- Plugins keep their config in memory and often save it when they shut down. So `set_plugin_config` unloads a loaded plugin first, re-reads the file, writes the changes, and loads the plugin again.
-- The write goes through Dalamud's reliable file storage, so its backup copy stays in sync.
-- The previous file is saved to `pluginConfigs/XivMcp/backups/<plugin>/` (the last 10 versions per file are kept).
-- Only files inside the target plugin's own config area can be read or written.
-- XIV MCP refuses to disable, reload or reconfigure itself.
-
-Dalamud has no public API for loading or unloading other plugins. These tools use Dalamud's internal `PluginManager` the same way the plugin installer does, so they may need adjusting after Dalamud updates. They also make the plugin unsuitable for the official Dalamud repository.
-
-### Collections, armoire and glamour dresser
-
-| Tool | What it does |
-|---|---|
-| `get_collections` | Owned / total for mounts, minions, orchestrion rolls, fashion accessories and facewear, plus armoire and dresser counts. Can list the owned or missing entries of one collection |
-| `get_armoire` | Items stored in the armoire by category, or the eligible items that aren't stored yet |
-| `get_fc_chest` | Free company chest contents (tabs, crystals, gil) while it is loaded |
-| `fc_chest_transfer` | Deposit or withdraw items or gil through **FCCH** (if installed): item lists, all, duplicates, your FCCH custom list, workshop materials, "withdraw missing up to N". Needs **Allow inventory actions** |
-| `get_glamour_dresser` | Items in the glamour dresser with dyes, filterable by name or equipment category. The game only sends the dresser after it, or a glamour plate, has been opened; it's cached like the retainers |
-
-### Actions, hotbars and macros
-
-| Tool | What it does |
-|---|---|
-| `get_job_actions` | A job's actions with level, unlock state (by level or by job quest), type, GCD/oGCD, cast/recast, range, charges; live cooldowns for the current job |
-| `get_hotbars` | Contents of every hotbar and cross hotbar slot |
-| `get_macros` / `set_macro` / `clear_macro` | Read, create, edit and clear individual and shared macros, with dry run and backups. Writing needs **Allow macro editing** |
+| `get_collections` | Owned / total for mounts, minions, orchestrion rolls, fashion accessories and facewear, armoire and dresser; owned or missing entries of one collection |
+| `get_armoire` / `get_glamour_dresser` | Armoire contents (or eligible items not stored yet); dresser items with dyes |
+| `get_job_actions` / `get_hotbars` | A job's actions with level, unlock state, timing and cooldowns; every hotbar and cross hotbar slot |
+| `get_macros` / `set_macro` / `clear_macro` | Read, create, edit and clear macros, with dry run and backups *(UI editing)* |
 
 ### Waymark presets
 
 | Tool | What it does |
 |---|---|
-| `list_waymark_presets` | The game's 30 preset slots and, if WaymarkPresetPlugin is installed, its preset library |
-| `get_waymark_preset` | Coordinates of a preset (or of the waymarks placed right now) plus **a picture of the arena** with the waymarks drawn on the duty's map |
-| `set_waymark_preset` | Writes a game preset slot: copy from another preset or the current waymarks, and/or set marker positions. Needs **Allow waymark preset editing** |
-| `place_waymark_preset` | Places a preset inside a duty, out of combat. Library presets go through WaymarkPresetPlugin. Needs **Allow game interaction** |
+| `list_waymark_presets` | The game's 30 preset slots and, if WaymarkPresetPlugin is installed, its library |
+| `get_waymark_preset` | Coordinates of a preset (or the waymarks placed now) plus **a picture of the arena** with the waymarks drawn on the duty's map |
+| `set_waymark_preset` | Writes a preset slot: copy one, or set marker positions *(UI editing)* |
+| `place_waymark_preset` | Places a preset inside a duty, out of combat; library presets go through WaymarkPresetPlugin *(Game & navigation)* |
 
-### Retainers
+### Game interaction and navigation *(Game & navigation)*
 
 | Tool | What it does |
 |---|---|
-| `get_retainers` | Retainer list: job, level, gil, venture and when it completes |
-| `get_retainer_inventories` | Every retainer's items, market listings (with prices), gear and crystals, from the cache |
-| `open_retainer` / `close_retainer` | Opens a retainer's inventory from the summoning bell's retainer list (greeting and menu handled automatically), or closes it again *(inventory actions)* |
-| `refresh_retainer_inventories` | Opens every (or every stale) retainer's inventory once at a summoning bell to refresh the cache, opening the bell itself if needed. Only opens and closes windows *(game interaction)* |
-| `transfer_retainer_items` | Moves whole stacks retainer → retainer, retainer → bags or bags → retainer. Retainer-to-retainer goes through your bags; every move is confirmed *(inventory actions)* |
+| `list_windows` / `open_window` / `close_window` | Main menu windows (Achievements, Saddlebag, Currency, …); `close_window` closes any open window by name |
+| `interact_with_object` | Targets and interacts with a nearby object or NPC, like clicking it (summoning bell, company chest, voyage panel, …) |
+| `get_menu` / `select_menu_option` | The choice menu the game shows after an interaction, and picking an entry or advancing dialogue |
+| `load_game_data` | Asks the game to send achievements or titles without opening their window |
+| `navigate_to` | Walks (vnavmesh) and travels (Lifestream) to a summoning bell, company chest, workshop, inn, house, apartment or a named object |
+| `get_navigation_status` / `stop_navigation` | What is installed and moving, and an immediate stop |
+| `get_automation_status` | What XIV MCP detected about AutoRetainer, YesAlready and TextAdvance, and what it is pausing |
 
-`search_inventory` also searches all cached retainer inventories.
+Windows that act instead of opening something (Log Out, Exit Game, Return, Ready Check, Countdown, Stance) can't be triggered through `open_window`.
 
-### Caches, freshness and watching
+### Characters and worlds *(Game & navigation)*
 
-The game only sends some data in certain places. XIV MCP snapshots it there and saves it, one copy per character, in `pluginConfigs/XivMcp/`:
+| Tool | What it does |
+|---|---|
+| `list_characters` | The characters XIV MCP has seen (lobby lists and the character in game): worlds, data center, service account, and whether each is on the account in use |
+| `switch_character` | Logs out and into another character of the account, on any world, data center and service account, and waits until it is in game |
+| `refresh_character_list` | Logs out and straight back in, so XIV MCP learns this data center's character list |
+| `visit_world` | World visit or data center travel for the current character (needs Lifestream) |
+
+Logging in is built in: XIV MCP goes through the game's own lobby (title screen, data center, service account, character list) and confirms only when the game's prompt names the right character. It remembers each character's service account. Accounts are told apart by what XIV MCP observes, so it never tries to reach a character of another account.
+
+### Inventory and retainers *(Items & retainers)*
+
+| Tool | What it does |
+|---|---|
+| `sort_inventory` | Runs the game's own `/itemsort` with your conditions for bags, armory, saddlebag or retainer |
+| `move_items` | Moves items like a manual drag between bags, armory, saddlebag, retainers and the FC chest |
+| `get_retainers` / `get_retainer_inventories` | Retainer list (job, level, gil, venture) and every retainer's items, listings, gear and crystals from the cache |
+| `open_retainer` / `close_retainer` | Opens a retainer's inventory (or just its menu) at the bell, or closes it |
+| `refresh_retainer_inventories` | Opens every (or every stale) retainer once to refresh the cache |
+| `transfer_retainer_items` | Moves whole stacks retainer → retainer, retainer → bags or bags → retainer |
+| `get_fc_chest` / `fc_chest_transfer` | FC chest contents; deposit or withdraw through **FCCH** (if installed) |
+| `find_ventures` | Which venture brings an item, which retainer can take it, and every retainer's current venture |
+| `assign_venture` | Sends a retainer (or a free one that can take it) on a venture. If all are busy it suggests which to recall: quick ventures first, then the long ones |
+| `recall_venture` | Recalls a retainer from a running venture, **only after you approve it in game** |
+
+Every move waits until the game and server confirmed the previous one, then pauses (random 500–800 ms by default, adjustable in `/xivmcp`). Nothing happens in combat, while crafting or gathering, in trades, cutscenes or zone changes. Equipped gear, currency, crystals and key items can't be moved.
+
+**Slots and displayed order.** The game's sort only stores a display order, so `get_inventory` lists items as you see them, with `shown` (page and slot in game) and `slot` (the physical slot `move_items` expects).
+
+### Item sources, vendors and the market
+
+| Tool | What it does |
+|---|---|
+| `get_item_sources` | Where an item comes from: crafting, vendors, currency exchanges, gathering nodes, drops, duties, FATEs, ventures, voyages, desynthesis, … from FFXIV Teamcraft's data, optionally with the wiki page *(Online lookups)* |
+| `find_vendors` | NPCs that sell an item, with zone and map position, from the **Item Vendor Location** plugin |
+| `buy_item` | Travels to a vendor, opens its shop and buys in batches of up to 99. Gil shops buy directly; any other currency shows an approval popup in game while the shop is open *(Market & purchases)* |
+| `get_market_prices` | Current listings, recent sales, averages and sales per day from universalis.app for your world, data center or region *(Online lookups)* |
+| `get_market_listings` | Your retainers' listings from the cache, optionally flagged when undercut (Universalis) |
+| `get_sales` | Sale notices the game showed while XIV MCP was running (item, quantity, gil, time) |
+| `get_sale_history` | A retainer's last 20 sales (item, quantity, price, buyer, date) at the bell *(Market & purchases)* |
+| `sell_item` | Puts a stack up for sale, undercutting the live market (`Compare prices`) unless you give a price *(Market & purchases)* |
+| `reprice_listings` | Undercuts competing listings where someone else is cheaper; big cuts are skipped and reported, `dry_run` only reports *(Market & purchases)* |
+
+Undercuts follow **Penny Pincher**'s settings when it is installed (amount, rounding, minimum, HQ, never your own retainers), otherwise 1 gil. A price below half the recent Universalis average is refused unless allowed.
+
+### Crafting and gathering *(Crafting & gathering, needs Artisan and/or GatherBuddy Reborn)*
+
+| Tool | What it does |
+|---|---|
+| `get_crafting_lists` / `set_crafting_list` / `delete_crafting_list` | Artisan's lists and state; create, edit or delete lists |
+| `craft_item` / `crafting_control` | Craft an item N times; start, pause, resume or stop a list |
+| `get_gather_lists` / `set_gather_list` / `delete_gather_list` / `set_auto_gather` | GatherBuddy Reborn's auto-gather lists and auto-gather on/off |
+| `plan_craft` | Plans a project: recipe tree, craft order, stock from bags and retainers, where to get missing materials, bag space and batches, and the stats Artisan will craft with *(always available)* |
+| `prepare_craft_plan` | Creates the Artisan list in the right order and builds the **Raphael** solution for each recipe ahead of time, with the exact stats Artisan will use |
+| `gather_until` | Gathers until the bags hold the target quantities (your other lists are paused and restored) |
+| `run_crafting_list` | Runs an Artisan list to the end and reports what was crafted |
+
+Neither plugin has IPC for its lists, so editing one briefly unloads the plugin, updates its file (with a backup) and loads it again. Raphael preparation uses Artisan's internals and may need an update after Artisan changes.
+
+### Background jobs
+
+A job is a queue of tool calls XIV MCP runs in the game, one after another, for as long as they take. It doesn't depend on the conversation or connection.
+
+| Tool | What it does |
+|---|---|
+| `start_job` | Starts a job with its steps (tool + arguments); later steps can use earlier results, e.g. `"list": "{{plan.list.id}}"` |
+| `list_jobs` / `get_job` | Jobs with state, progress and the current step; one job's steps, results, errors and log |
+| `update_job` | For a pending or paused job: retry or skip the current step, append steps or replace the remaining ones |
+| `pause_job` / `resume_job` / `cancel_job` | Control a job; also available in game in `/xivmcp` → **Jobs** |
+| `wait` | A step that waits a number of seconds or until a time |
+
+When a step fails or is stopped, the job becomes **pending** and waits for the agent to fix it. While a step runs, other changing tool calls are refused so they can't collide with the job. Jobs survive plugin reloads and come back paused. Each step still needs its own permission.
+
+Example: `prepare_craft_plan` → `gather_until` (the missing materials) → `run_crafting_list` with `{{plan.list.id}}`.
+
+MCP's own task mechanism (the Tasks extension) isn't used because no common client supports it yet. Jobs work with every client through ordinary tools.
+
+### Plugin management *(Plugin management)*
+
+| Tool | What it does |
+|---|---|
+| `list_plugins` | Installed plugins with internal name, version, load state and flags (always available) |
+| `set_plugin_enabled` / `reload_plugin` | Enables, disables or reloads a plugin, like the installer toggle |
+| `list_plugin_config_files` / `get_plugin_config` / `set_plugin_config` | Lists, reads and changes plugin settings by path, with dry run and type checks |
+
+Plugins keep their settings in memory and often save on shutdown, so `set_plugin_config` unloads a loaded plugin, writes the change through Dalamud's reliable file storage and loads it again. The previous file is backed up to `pluginConfigs/XivMcp/backups/<plugin>/` (last 10 per file). XIV MCP refuses to manage itself. Dalamud has no public API for this, so these tools use its internal `PluginManager` like the installer does and may need adjusting after Dalamud updates.
+
+## Approvals in game
+
+Some actions are never decided by the assistant alone: buying with anything but gil, and recalling a running venture. They open an approval window in game, and nothing happens until you click **Approve**. Unanswered requests are declined after two minutes.
+
+## Caches, freshness and watching
+
+The game only sends some data in certain places. XIV MCP snapshots it there and keeps it per character in `pluginConfigs/XivMcp/`:
 
 | Cache | Refreshed when |
 |---|---|
-| `submersibles` | Whenever the voyage control panel data is loaded in the FC workshop (by you or a plugin) |
-| `retainers` | Whenever the game has the data: the retainer list at a summoning bell, and each retainer's inventory as soon as that retainer is selected, also when a plugin like AutoRetainer goes through them |
-| `glamour` | Glamour dresser: whenever it, or a glamour plate, is opened. The armoire is loaded at login and read live, so it needs no cache |
-| `progress` | Achievements and titles: whenever the game has the lists loaded (Achievements window or title list opened, by you or any plugin) |
-| `storage` | Saddlebag and FC chest: whenever they are loaded (opened by you, or by a plugin such as FCCH) |
+| `submersibles` | Whenever the voyage control panel data is loaded in the FC workshop |
+| `retainers` | Whenever the game has the data: the retainer list at a bell, and each retainer's inventory when it is selected (also by plugins like AutoRetainer) |
+| `glamour` | Glamour dresser: whenever it or a glamour plate is opened (the armoire is read live) |
+| `progress` | Achievements and titles: whenever the game has the lists loaded |
+| `storage` | Saddlebag and FC chest: whenever they are loaded |
+| `jobs` | Background jobs, live |
 
-Every cached result carries a `cache` block: `capturedAt`, `age`, `live`, `stale` (older than *Cache stale after* hours, default 12) and a `suggestion` that says exactly what to do in game to refresh it.
+Every cached result carries a `cache` block (`capturedAt`, `age`, `live`, `stale`, and a `suggestion` for refreshing it). `get_cache_status` lists every entry; `wait_for_cache_refresh` waits up to 10 minutes for a cache to refresh. Each cache is also an MCP **resource** (`xiv://cache/<id>`) supporting `resources/subscribe`: clients that open the event stream (`GET /mcp` with their `Mcp-Session-Id`) receive `notifications/resources/updated`.
 
-- `get_cache_status` shows every cache entry with its age. Retainers that were never opened are listed as not captured.
-- `wait_for_cache_refresh` waits up to 10 minutes for a cache to refresh. Use it after asking the user to open a retainer or enter the workshop. It works with every MCP client.
-- Each cache is also an MCP **resource** (`xiv://cache/submersibles`, `xiv://cache/retainers`) that supports `resources/subscribe`. Clients that open the Streamable-HTTP event stream (`GET /mcp` with their `Mcp-Session-Id`) receive `notifications/resources/updated` whenever the cache refreshes.
+XIV MCP also keeps what it learns about item sources (Teamcraft's data), characters (`characters.json`) and sale notices (`sales.json`) in the same folder.
 
-### Crafting & gathering (opt-in, needs Artisan and/or GatherBuddy Reborn)
+## Compatibility with other plugins
 
-Disabled until you tick **Allow crafting & gathering automation** in `/xivmcp`. The setting only appears when Artisan or GatherBuddy Reborn is installed and enabled.
+XIV MCP detects these automatically and only mentions the installed ones in its settings:
 
-| Tool | What it does |
-|---|---|
-| `get_crafting_lists` | Artisan's lists (recipes, jobs, quantities) and its state |
-| `craft_item` | Crafts an item N times with Artisan, preferring the current job's recipe |
-| `crafting_control` | Start a crafting list, pause or resume it, or stop |
-| `set_crafting_list` / `delete_crafting_list` | Create, edit (replace or append recipes, rename) or delete Artisan lists |
-| `get_gather_lists` | GatherBuddy Reborn's auto-gather lists and auto-gather state |
-| `set_gather_list` / `delete_gather_list` | Create, edit or delete auto-gather lists (items, quantities, active, folder) |
-| `set_auto_gather` | Start or stop auto-gathering |
+- **AutoRetainer** starts processing ventures as soon as a bell opens. While XIV MCP uses the bell, it suppresses AutoRetainer through its public IPC and releases it a few seconds after the bell is closed. If AutoRetainer is busy or in multi mode, XIV MCP doesn't touch the bell.
+- **YesAlready and TextAdvance** are paused through their `StopRequests` sets while XIV MCP drives game windows.
+- **FCCH** handles FC chest transfers; item moves wait while it works.
+- **WaymarkPresetPlugin** provides its preset library.
+- **vnavmesh** and **Lifestream** do walking and travel; **Artisan** and **GatherBuddy Reborn** do crafting and gathering.
+- **Item Vendor Location** finds vendors (an Install button appears under *Market & purchases* when it's missing); **Penny Pincher**'s settings drive undercuts.
 
-Neither plugin has IPC for its lists. Editing a list briefly unloads the plugin, updates its file (with a backup) and loads it again; this is refused while the plugin is crafting or gathering.
-
-### Navigation (opt-in, needs vnavmesh and/or Lifestream)
-
-Disabled until you tick **Allow navigation** in `/xivmcp`. The setting only appears when vnavmesh or Lifestream is installed.
-
-| Tool | What it does |
-|---|---|
-| `navigate_to` | Moves the character to `summoning_bell`, `company_chest`, `workshop` (voyage control panel), `inn`, `home`, `fc_house`, `apartment`, or a named `object` in the current zone. It walks with vnavmesh, and travels and enters houses, inns and the workshop with Lifestream. With no bell nearby, it uses the preferred bell location from the settings (default: Lifestream's own property priority), then falls back to the inn |
-| `get_navigation_status` / `stop_navigation` | What is installed and moving right now, and an immediate stop |
-
-### Game interaction (opt-in)
-
-Disabled until you tick **Allow game interaction** in `/xivmcp`.
-
-| Tool | What it does |
-|---|---|
-| `list_windows` | Game windows that can be opened (the main menu commands), whether each is unlocked and open |
-| `open_window` / `close_window` | Opens or closes one, e.g. Achievements (loads achievement progress), Chocobo Saddlebag, Armoury Chest, Currency |
-| `interact_with_object` | Targets and interacts with a nearby object by name or id, like clicking it: summoning bell, company chest, voyage control panel, NPCs. Your character doesn't move, so the object must be within about 8 yalms. |
-| `get_automation_status` | What XIV MCP detected about AutoRetainer, YesAlready and TextAdvance, and what it is currently pausing |
-
-Windows that act instead of opening something (Log Out, Exit Game, Return, Ready Check, Countdown, Stance) can't be triggered.
-
-**Compatibility with automation plugins** is detected automatically:
-
-- **AutoRetainer.** By default it starts processing ventures as soon as a summoning bell opens. When XIV MCP opens the bell or drives retainer windows, it first suppresses AutoRetainer through AutoRetainer's public IPC (`AutoRetainer.SetSuppressed`). It releases AutoRetainer again a few seconds after the bell is closed, or when XIV MCP unloads. If AutoRetainer is already busy, or its multi mode is on, XIV MCP refuses to touch the bell instead of interfering.
-- **YesAlready and TextAdvance** auto-click dialogs and menus. While XIV MCP holds the bell, it pauses them through their shared `StopRequests` sets, the same mechanism AutoRetainer uses.
-
-### Inventory actions (opt-in)
-
-Disabled until you tick **Allow inventory actions** in `/xivmcp`.
-
-| Tool | What it does |
-|---|---|
-| `sort_inventory` | Runs the game's own `/itemsort` with your conditions (e.g. item level descending, then id) for `inventory`, `armoury` or a single armory slot (`mh`, `head`, `rings`, …), `armoury_slots` (every slot), `saddlebag`, `rightsaddlebag`, `retainer` |
-| `move_items` | Moves items like a manual drag: rearrange slots, bags ↔ armory, bags ↔ saddlebag, bags ↔ retainer. Source by slot or by item id (first stack); target slot optional (first empty slot). Occupied targets swap or merge stacks |
-
-**Slots and displayed order.** The game's sort (`/itemsort` and the Sort button) doesn't move items between slots. It only stores a display order per container. So `get_inventory` lists items in the order you see them, and each item has two positions:
-- `shown` is its page and slot as displayed in game.
-- `slot` is the physical slot, which is what `move_items` expects.
-
-Safeguards:
-
-- **One move at a time.** Each move waits until the game has no inventory operation pending and the server has confirmed it. Then the tool pauses before the next one: by default a random 500–800 ms, picked anew for every move. In `/xivmcp` you can change the range or switch to an exact fixed delay. Results list the pauses actually used (`pausesMs`).
-- **Fail fast.** A batch stops at the first failure unless `continue_on_error` is set.
-- **Refused states.** Nothing happens in combat, while crafting or gathering, during a trade, in cutscenes, or during zone changes.
-- **Open windows required.** Saddlebag and retainer actions need the matching window open, just like by hand.
-- **Armory rules.** Gear only goes into its own armory section, and this is checked in both directions when two items would swap.
-- **Not covered.** Equipped gear, currency, crystals and key items can't be moved with these tools.
-
-Automating game actions is against the FFXIV ToS. These tools send the same requests as manual drags and the game's own sort command, but use them at your own risk.
-
-The unlock and game-data tools work by reflection over Dalamud's `IUnlockState` and Lumina's sheet types. New categories and sheets therefore show up automatically when Dalamud is updated.
-
-The game only sends submersible and airship data when you open the voyage control panel in the FC workshop. From then on, while you are in the workshop, XIV MCP saves a snapshot every few seconds to `pluginConfigs/XivMcp/workshop.json`, one per character. `get_submersibles` then works from anywhere, including for alts (`all_characters=true`). Return times are absolute, so "voyaging / ready to collect" stays correct between visits. Rank and loot reflect your last visit (`capturedAt`).
-
-Some data is only filled in by the game after the matching window has been opened once per session. This applies to the Achievements window, the title list, the retainer list (summoning bell), the saddlebag and retainer inventories. The tools say so when this is the case.
+Automating game actions is against the FFXIV ToS. XIV MCP sends the same requests as manual input, but use it at your own risk.
 
 ## Building
 
