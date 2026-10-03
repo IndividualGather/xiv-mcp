@@ -105,6 +105,10 @@ Disabled until you tick **Allow inventory actions** in `/xivmcp`.
 | `sort_inventory` | Runs the game's own `/itemsort` with your conditions (e.g. item level descending, then id) for `inventory`, `armoury` or a single armory slot (`mh`, `head`, `rings`, …), `armoury_slots` (every slot), `saddlebag`, `rightsaddlebag`, `retainer` |
 | `move_items` | Moves items like a manual drag: rearrange slots, bags ↔ armory, bags ↔ saddlebag, bags ↔ retainer. Source by slot or by item id (first stack); target slot optional (first empty slot). Occupied targets swap or merge stacks |
 
+**Slots and displayed order.** The game's sort (`/itemsort` and the Sort button) doesn't move items between slots. It only stores a display order per container. So `get_inventory` lists items in the order you see them, and each item has two positions:
+- `shown` is its page and slot as displayed in game.
+- `slot` is the physical slot, which is what `move_items` expects.
+
 Safeguards:
 
 - **One move at a time.** Each move waits until the game has no inventory operation pending and the server has confirmed it. Then the tool pauses for a configurable delay (default 700 ms) before the next one.
