@@ -17,7 +17,7 @@ namespace XivMcp.Mcp;
 /// Minimal MCP server implementing the Streamable HTTP transport (JSON responses only, no server-initiated SSE).
 /// Dalamud does not ship ASP.NET Core, so this sits directly on <see cref="HttpListener"/>.
 /// </summary>
-public sealed class McpServer : IDisposable
+public sealed partial class McpServer : IDisposable
 {
     public const string ServerName = "xiv-mcp";
     private static readonly string[] SupportedProtocolVersions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
@@ -44,10 +44,12 @@ public sealed class McpServer : IDisposable
     public string? LastClient { get; private set; }
     private long requestCount;
 
-    public McpServer(IEnumerable<McpTool> tools, Configuration config)
+    internal McpServer(IEnumerable<McpTool> tools, Configuration config, Util.CacheRegistry caches)
     {
         this.tools = tools.ToDictionary(t => t.Name);
         this.config = config;
+        this.caches = caches;
+        caches.Updated += OnCacheUpdated;
         version = typeof(McpServer).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
     }
 
@@ -79,6 +81,7 @@ public sealed class McpServer : IDisposable
 
     public void Stop()
     {
+        foreach (var id in sessions.Keys.ToList()) EndSession(id);
         cts?.Cancel();
         try { listener?.Close(); } catch { /* already closed */ }
         listener = null;
@@ -86,7 +89,11 @@ public sealed class McpServer : IDisposable
         cts = null;
     }
 
-    public void Dispose() => Stop();
+    public void Dispose()
+    {
+        caches.Updated -= OnCacheUpdated;
+        Stop();
+    }
 
     private async Task AcceptLoop(HttpListener l, CancellationToken ct)
     {
@@ -142,16 +149,30 @@ public sealed class McpServer : IDisposable
             }
         }
 
+        // Sessions are optional (clients that ignore Mcp-Session-Id work statelessly), but an unknown id means the
+        // server restarted — 404 tells the client to initialize again.
+        var sessionId = req.Headers["Mcp-Session-Id"];
+        Session? session = null;
+        if (!string.IsNullOrEmpty(sessionId) && !sessions.TryGetValue(sessionId, out session))
+        {
+            await WriteText(res, 404, "Unknown session; initialize again.").ConfigureAwait(false);
+            return;
+        }
+
         switch (req.HttpMethod)
         {
             case "POST":
                 break;
-            case "DELETE": // session termination; sessions are stateless here
+            case "GET": // server -> client event stream for resource update notifications
+                await OpenEventStream(req, res, session, ct).ConfigureAwait(false);
+                return;
+            case "DELETE":
+                if (sessionId is not null) EndSession(sessionId);
                 res.StatusCode = 200;
                 res.Close();
                 return;
-            default: // GET (server->client SSE stream) is optional and not offered
-                res.Headers["Allow"] = "POST, DELETE";
+            default:
+                res.Headers["Allow"] = "GET, POST, DELETE";
                 await WriteText(res, 405, "Method not allowed").ConfigureAwait(false);
                 return;
         }
@@ -176,13 +197,13 @@ public sealed class McpServer : IDisposable
         {
             var replies = new JsonArray();
             foreach (var item in batch)
-                if (await HandleMessage(item as JsonObject, res, ct).ConfigureAwait(false) is { } r)
+                if (await HandleMessage(item as JsonObject, res, session, ct).ConfigureAwait(false) is { } r)
                     replies.Add(r);
             reply = replies.Count > 0 ? replies : null;
         }
         else
         {
-            reply = await HandleMessage(message as JsonObject, res, ct).ConfigureAwait(false);
+            reply = await HandleMessage(message as JsonObject, res, session, ct).ConfigureAwait(false);
         }
 
         if (reply is null)
@@ -196,7 +217,7 @@ public sealed class McpServer : IDisposable
     }
 
     /// <summary>Handles one JSON-RPC message. Returns null for notifications.</summary>
-    private async Task<JsonNode?> HandleMessage(JsonObject? msg, HttpListenerResponse res, CancellationToken ct)
+    private async Task<JsonNode?> HandleMessage(JsonObject? msg, HttpListenerResponse res, Session? session, CancellationToken ct)
     {
         if (msg is null) return Error(null, -32600, "Invalid request");
 
@@ -214,8 +235,11 @@ public sealed class McpServer : IDisposable
                 "ping" => new JsonObject(),
                 "tools/list" => new JsonObject { ["tools"] = new JsonArray(tools.Values.OrderBy(t => t.Name).Select(t => (JsonNode)t.ToListEntry()).ToArray()) },
                 "tools/call" => await CallTool(@params, ct).ConfigureAwait(false),
-                "resources/list" => new JsonObject { ["resources"] = new JsonArray() },
+                "resources/list" => ListResources(),
                 "resources/templates/list" => new JsonObject { ["resourceTemplates"] = new JsonArray() },
+                "resources/read" => ReadResource(@params),
+                "resources/subscribe" => Subscribe(@params, session, true),
+                "resources/unsubscribe" => Subscribe(@params, session, false),
                 "prompts/list" => new JsonObject { ["prompts"] = new JsonArray() },
                 _ when method.StartsWith("notifications/", StringComparison.Ordinal) => null,
                 _ => throw new RpcException(-32601, $"Method not found: {method}"),
@@ -240,12 +264,16 @@ public sealed class McpServer : IDisposable
         var requested = p?["protocolVersion"]?.GetValue<string>();
         var negotiated = requested is not null && SupportedProtocolVersions.Contains(requested) ? requested : SupportedProtocolVersions[0];
         LastClient = p?["clientInfo"]?["name"]?.GetValue<string>();
-        res.Headers["Mcp-Session-Id"] = Guid.NewGuid().ToString("N");
+        res.Headers["Mcp-Session-Id"] = StartSession();
 
         return new JsonObject
         {
             ["protocolVersion"] = negotiated,
-            ["capabilities"] = new JsonObject { ["tools"] = new JsonObject { ["listChanged"] = false } },
+            ["capabilities"] = new JsonObject
+            {
+                ["tools"] = new JsonObject { ["listChanged"] = false },
+                ["resources"] = new JsonObject { ["subscribe"] = true, ["listChanged"] = false },
+            },
             ["serverInfo"] = new JsonObject { ["name"] = ServerName, ["title"] = "Final Fantasy XIV (Dalamud)", ["version"] = version },
             ["instructions"] =
                 "Live, read-only access to the Final Fantasy XIV character that is currently logged in, via a Dalamud plugin. " +
@@ -254,10 +282,14 @@ public sealed class McpServer : IDisposable
                 "sort_inventory and move_items change the inventory (also only when allowed); read the inventory first, prefer sort_inventory " +
                 "over many single moves, and confirm larger rearrangements with the user before starting them. " +
                 "Start with get_game_status to see whether a character is logged in. Use the typed tools (character, jobs, inventory, " +
-                "gear, currencies, quests, unlocks, party, objects, fates, retainers, submersibles) for live state,and search_game_data / get_game_data_row " +
+                "gear, currencies, quests, unlocks, party, objects, fates, retainers, submersibles) for live state, and search_game_data / get_game_data_row " +
                 "to look up static game data (items, quests, achievements, ...) from the client's Excel sheets. " +
                 "Some data is only available after the matching in-game window was opened once this session " +
-                "(achievements, titles, retainers, saddlebag, retainer inventories); tools report this when it applies.",
+                "(achievements, titles, saddlebag); tools report this when it applies. " +
+                "Submersibles and retainers (list + every retainer's inventory) come from snapshot caches that refresh only at the FC workshop / " +
+                "summoning bell: results carry a 'cache' block with age, stale flag and a refresh suggestion — relay stale data's age and the " +
+                "suggestion to the user. get_cache_status shows all caches; wait_for_cache_refresh waits for the user to refresh one; the caches " +
+                "are also subscribable resources (xiv://cache/<id>).",
         };
     }
 

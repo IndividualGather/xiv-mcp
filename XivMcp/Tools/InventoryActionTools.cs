@@ -34,7 +34,7 @@ internal static class InventoryActionTools
     private static readonly string[] RetainerAddons = ["InventoryRetainer", "InventoryRetainerLarge"];
 
     /// <summary>Only one inventory action at a time — interleaved moves would confuse the server and each other.</summary>
-    private static readonly SemaphoreSlim Gate = new(1, 1);
+    internal static readonly SemaphoreSlim Gate = new(1, 1);
 
     public static IEnumerable<McpTool> Create(Configuration config)
     {
@@ -214,7 +214,7 @@ internal static class InventoryActionTools
         };
     }
 
-    private sealed record MoveRequest(int Index, GameInventoryType? From, int? FromSlot, uint? ItemId, bool? Hq, GameInventoryType To, int? ToSlot)
+    internal sealed record MoveRequest(int Index, GameInventoryType? From, int? FromSlot, uint? ItemId, bool? Hq, GameInventoryType To, int? ToSlot)
     {
         public static MoveRequest Parse(JsonObject? m, int index)
         {
@@ -232,7 +232,7 @@ internal static class InventoryActionTools
         }
     }
 
-    private sealed record MoveResult(int Index, bool Ok, string Status, string? Item, string? From, string? To, string? Reason)
+    internal sealed record MoveResult(int Index, bool Ok, string Status, string? Item, string? From, string? To, string? Reason)
     {
         public static MoveResult Fail(int index, string reason, string? item = null, string? from = null, string? to = null) =>
             new(index, false, "failed", item, from, to, reason);
@@ -259,7 +259,7 @@ internal static class InventoryActionTools
         return true;
     }
 
-    private static async Task<MoveResult> ExecuteMove(MoveRequest req, CancellationToken ct)
+    internal static async Task<MoveResult> ExecuteMove(MoveRequest req, CancellationToken ct)
     {
         if (!await WaitForNoPendingOperation(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
             return MoveResult.Fail(req.Index, "The game is still processing an earlier inventory operation; try again in a moment.");
@@ -353,7 +353,7 @@ internal static class InventoryActionTools
         return slot >= 0 && slot < items.Length ? items[slot] : default;
     }
 
-    private static int? FirstEmptySlot(ReadOnlySpan<GameInventoryItem> items)
+    internal static int? FirstEmptySlot(ReadOnlySpan<GameInventoryItem> items)
     {
         for (var i = 0; i < items.Length; i++)
             if (items[i].IsEmpty) return i;
@@ -401,7 +401,7 @@ internal static class InventoryActionTools
         EnsureWindowOpen(RetainerAddons, "retainer inventory");
     }
 
-    private static void EnsureNotBusy()
+    internal static void EnsureNotBusy()
     {
         foreach (var name in BusyFlags)
             if (Enum.TryParse<ConditionFlag>(name, out var flag) && Svc.Condition[flag])

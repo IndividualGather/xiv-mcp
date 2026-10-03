@@ -35,7 +35,8 @@ internal static class VoyageTools
                           "(hull-stern-bow-bridge, e.g. SSUC), surveillance/retrieval/speed/range/favor (base + bonus), current voyage route with " +
                           "sector names, return time / time remaining / ready state, loot of the last voyage, and unlocked/explored sectors per sea. " +
                           "The game only provides this data inside the FC workshop; the plugin snapshots it each time you are there, so the result " +
-                          "may be from an earlier visit (see capturedAt). Voyage return times stay accurate regardless.",
+                          "may be from an earlier visit — the 'cache' block gives its age, a stale flag and how to refresh it " +
+                          "(use wait_for_cache_refresh with cache=\"submersibles\" to wait for the next refresh). Voyage return times stay accurate regardless.",
             InputSchema = """
                 {
                   "type": "object",
@@ -79,9 +80,7 @@ internal static class VoyageTools
         {
             character = s.Character,
             world = s.World,
-            capturedAt = s.CapturedUtc,
-            live,
-            snapshotAgeMinutes = Math.Round((DateTime.UtcNow - s.CapturedUtc).TotalMinutes, 1),
+            cache = CacheFreshness.Describe(s.CapturedUtc, live, WorkshopTracker.RefreshHint),
             submersibles = s.Submersibles.Select(v => DescribeSubmersible(v, now, options.Loot)).ToList(),
             airships = options.Airships ? s.Airships.Select(v => DescribeAirship(v, now)).ToList() : null,
             sectors = DescribeSectors(s, options.Sectors),

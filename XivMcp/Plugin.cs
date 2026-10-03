@@ -4,6 +4,7 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using XivMcp.Mcp;
 using XivMcp.Tools;
+using XivMcp.Util;
 using XivMcp.Windows;
 
 namespace XivMcp;
@@ -14,26 +15,37 @@ public sealed class Plugin : IDalamudPlugin
 
     private readonly WindowSystem windows = new("XivMcp");
     private readonly ConfigWindow configWindow;
-    private readonly Util.WorkshopTracker workshop;
+    private readonly WorkshopTracker workshop;
+    private readonly RetainerTracker retainers;
+
+    internal static Plugin? Instance { get; private set; }
 
     public Configuration Config { get; }
     public McpServer Server { get; }
 
     public Plugin(IDalamudPluginInterface pluginInterface)
     {
+        Instance = this;
         pluginInterface.Create<Svc>();
         Config = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
-        workshop = new Util.WorkshopTracker();
+
+        workshop = new WorkshopTracker();
+        retainers = new RetainerTracker();
+        var caches = new CacheRegistry();
+        caches.Add(workshop);
+        caches.Add(retainers);
 
         var tools = CharacterTools.Create()
-            .Concat(InventoryTools.Create())
+            .Concat(InventoryTools.Create(retainers))
             .Concat(UnlockTools.Create())
-            .Concat(WorldTools.Create())
+            .Concat(WorldTools.Create(retainers))
             .Concat(GameDataTools.Create())
             .Concat(PluginTools.Create(Config))
             .Concat(VoyageTools.Create(workshop))
-            .Concat(InventoryActionTools.Create(Config));
-        Server = new McpServer(tools, Config);
+            .Concat(InventoryActionTools.Create(Config))
+            .Concat(RetainerTools.Create(Config, retainers))
+            .Concat(CacheTools.Create(caches));
+        Server = new McpServer(tools, Config, caches);
 
         configWindow = new ConfigWindow(this);
         windows.AddWindow(configWindow);
@@ -58,5 +70,7 @@ public sealed class Plugin : IDalamudPlugin
         windows.RemoveAllWindows();
         Server.Dispose();
         workshop.Dispose();
+        retainers.Dispose();
+        Instance = null;
     }
 }

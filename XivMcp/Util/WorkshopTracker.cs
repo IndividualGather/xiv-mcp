@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 
@@ -12,7 +13,7 @@ namespace XivMcp.Util;
 /// The game only has submersible/airship data while the player is inside the FC workshop. This tracker snapshots it
 /// whenever it is readable and persists the snapshots (per character) so they can be queried from anywhere later.
 /// </summary>
-internal sealed class WorkshopTracker : IDisposable
+internal sealed class WorkshopTracker : IDisposable, ICache
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(3);
     private static readonly JsonSerializerOptions FileOptions = new() { WriteIndented = true };
@@ -137,13 +138,35 @@ internal sealed class WorkshopTracker : IDisposable
             ExploredSectors = explored,
         };
 
-        // Persist only when something besides the timestamp changed.
+        // A "refresh" is a content change, or the first capture of a new visit. Polls in between only move the timestamp.
         var comparable = JsonSerializer.Serialize(snapshot with { CapturedUtc = default });
-        lock (sync) snapshots[snapshot.ContentId] = snapshot;
-        if (comparable == lastSerialized) return;
+        WorkshopSnapshot? previous;
+        lock (sync)
+        {
+            previous = snapshots.GetValueOrDefault(snapshot.ContentId);
+            snapshots[snapshot.ContentId] = snapshot;
+        }
+        var newVisit = previous is null || DateTime.UtcNow - previous.CapturedUtc > TimeSpan.FromSeconds(60);
+        if (comparable == lastSerialized && !newVisit) return;
         lastSerialized = comparable;
         Save();
+        Interlocked.Increment(ref version);
+        Updated?.Invoke(this);
     }
+
+    // ICache
+    private long version;
+    public string Id => "submersibles";
+    public string Title => "FC submersibles & airships";
+    public string Description => "Snapshot of the free company workshop (submersibles, airships, sectors), captured while inside the workshop.";
+    public long Version => Interlocked.Read(ref version);
+    public event Action<ICache>? Updated;
+    public const string RefreshHint = "enter your free company's workshop (the snapshot updates automatically while you are inside).";
+
+    public IEnumerable<CacheEntryStatus> Entries() =>
+        All().Select(s => new CacheEntryStatus($"{s.Character}{(s.World is null ? "" : " @ " + s.World)}", null, s.CapturedUtc, RefreshHint));
+
+    public object Read() => All();
 
     private void Save()
     {

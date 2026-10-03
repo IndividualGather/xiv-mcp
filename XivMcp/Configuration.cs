@@ -29,6 +29,9 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Pause between two item moves, so the server can confirm each one.</summary>
     public int MoveDelayMs { get; set; } = 700;
 
+    /// <summary>Cached snapshots (submersibles, retainers) older than this are reported as stale with a refresh suggestion.</summary>
+    public int CacheStaleHours { get; set; } = 12;
+
     public static string NewToken() => Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
 
     public void Save() => Svc.PluginInterface.SavePluginConfig(this);

@@ -12,7 +12,7 @@ namespace XivMcp.Tools;
 
 internal static class WorldTools
 {
-    public static IEnumerable<McpTool> Create()
+    public static IEnumerable<McpTool> Create(RetainerTracker retainers)
     {
         yield return new McpTool
         {
@@ -171,39 +171,46 @@ internal static class WorldTools
         {
             Name = "get_retainers",
             Description = "The character's retainers: name, class/job, level, gil, item and market listing counts, city, current venture and when it completes. " +
-                          "Requires the retainer list to have been opened once this session (talk to a summoning bell).",
-            Handler = (_, _) => Game.RunLoggedIn<object?>(() =>
+                          "Comes from the retainer cache (refreshed while at a summoning bell); the 'cache' block gives its age and how to refresh it. " +
+                          "Venture completion times stay accurate between refreshes. For retainer inventories use get_retainer_inventories.",
+            InputSchema = """
+                { "type": "object", "properties": { "all_characters": { "type": "boolean", "description": "Include all characters seen by the plugin (default false)." } } }
+                """,
+            Handler = (args, _) => Svc.Framework.RunOnFrameworkThread<object?>(() =>
             {
-                unsafe
-                {
-                    var rm = RetainerManager.Instance();
-                    if (rm == null || !rm->IsReady)
-                        throw new ToolException("Retainer data is not loaded yet. Open the retainer list at a summoning bell once this session, then retry.");
+                List<CharacterRetainers> characters;
+                if (args.Bool("all_characters", false)) characters = retainers.All();
+                else if (!Svc.ClientState.IsLoggedIn || !Svc.PlayerState.IsLoaded)
+                    throw new ToolException("No character is logged in. Use all_characters=true to see saved retainer data.");
+                else characters = retainers.Get(Svc.PlayerState.ContentId) is { } c ? [c]
+                    : throw new ToolException("No retainer data recorded yet for this character. To capture it: " + RetainerTracker.ListRefreshHint);
 
-                    var list = new List<object>();
-                    for (var i = 0u; i < rm->GetRetainerCount(); i++)
+                var now = DateTimeOffset.UtcNow;
+                return characters.Select(c => new
+                {
+                    character = c.Label,
+                    cache = CacheFreshness.Describe(c.ListCapturedUtc,
+                        Svc.PlayerState.ContentId == c.ContentId && (RetainerUi.RetainerListOpen || RetainerUi.InventoryOpen), RetainerTracker.ListRefreshHint),
+                    retainers = c.Retainers.OrderBy(r => r.SortIndex).Select(r =>
                     {
-                        var r = rm->GetRetainerBySortedIndex(i);
-                        if (r == null || r->RetainerId == 0) continue;
-                        var ventureDone = r->VentureComplete > 0 ? DateTimeOffset.FromUnixTimeSeconds(r->VentureComplete) : (DateTimeOffset?)null;
-                        list.Add(new
+                        var ventureDone = r.VentureComplete > 0 ? DateTimeOffset.FromUnixTimeSeconds(r.VentureComplete) : (DateTimeOffset?)null;
+                        return new
                         {
-                            name = r->NameString,
-                            classJob = Excel.Ref<ClassJob>(r->ClassJob),
-                            level = r->Level,
-                            gil = r->Gil,
-                            itemCount = r->ItemCount,
-                            marketItemCount = r->MarketItemCount,
-                            marketExpires = r->MarketExpire > 0 ? DateTimeOffset.FromUnixTimeSeconds(r->MarketExpire) : (DateTimeOffset?)null,
-                            town = r->Town.ToString(),
-                            venture = r->VentureId != 0 ? Excel.Ref<RetainerTask>(r->VentureId) : null,
+                            name = r.Name,
+                            classJob = Excel.Ref<ClassJob>(r.ClassJob),
+                            level = r.Level,
+                            gil = r.Gil,
+                            itemCount = r.ItemCount,
+                            marketItemCount = r.MarketItemCount,
+                            marketExpires = r.MarketExpire > 0 ? DateTimeOffset.FromUnixTimeSeconds(r.MarketExpire) : (DateTimeOffset?)null,
+                            town = r.Town,
+                            venture = r.VentureId != 0 ? Excel.Ref<RetainerTask>(r.VentureId) : null,
                             ventureCompletes = ventureDone,
-                            ventureReady = ventureDone is { } done && done <= DateTimeOffset.UtcNow,
-                            available = r->Available,
-                        });
-                    }
-                    return new { maxRetainers = rm->MaxRetainerEntitlement, retainers = list };
-                }
+                            ventureReady = ventureDone is { } done && done <= now,
+                            inventoryCachedAt = r.InventoryCapturedUtc,
+                        };
+                    }).ToList(),
+                }).ToList();
             }),
         };
     }

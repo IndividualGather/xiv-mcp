@@ -26,7 +26,6 @@ A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV th
 | `get_fates` | Active FATEs in the zone |
 | `get_aetherytes` | Attuned aetherytes with teleport costs |
 | `get_companions` | Chocobo, pet, trusts / duty support |
-| `get_retainers` | Retainers, gil, listings, venture status |
 | `get_submersibles` | FC submersibles: rank and EXP, parts and build code (e.g. `SSUC`), stats (base + bonus), current route with sector names, return time / ready state, last voyage loot, unlocked and explored sectors per sea. Airships with rank, stats and voyage timing |
 | `list_game_sheets` / `search_game_data` / `get_game_data_row` | Generic access to any of the game's Excel sheets (items, quests, achievements, duties, recipes, …) in the client language |
 
@@ -52,6 +51,32 @@ How config edits work:
 - XIV MCP refuses to disable, reload or reconfigure itself.
 
 Dalamud has no public API for loading or unloading other plugins. These tools use Dalamud's internal `PluginManager` the same way the plugin installer does, so they may need adjusting after Dalamud updates. They also make the plugin unsuitable for the official Dalamud repository.
+
+### Retainers
+
+| Tool | What it does |
+|---|---|
+| `get_retainers` | Retainer list: job, level, gil, venture and when it completes |
+| `get_retainer_inventories` | Every retainer's items, market listings (with prices), gear and crystals, from the cache |
+| `open_retainer` / `close_retainer` | Opens a retainer's inventory from the summoning bell's retainer list (greeting and menu handled automatically), or closes it again *(inventory actions)* |
+| `transfer_retainer_items` | Moves whole stacks retainer → retainer, retainer → bags or bags → retainer. Retainer-to-retainer goes through your bags; every move is confirmed *(inventory actions)* |
+
+`search_inventory` also searches all cached retainer inventories.
+
+### Caches, freshness and watching
+
+The game only sends some data in certain places. XIV MCP snapshots it there and saves it, one copy per character, in `pluginConfigs/XivMcp/`:
+
+| Cache | Refreshed when |
+|---|---|
+| `submersibles` | You are inside the FC workshop |
+| `retainers` | You are at a summoning bell (retainer list), and per retainer while that retainer is open |
+
+Every cached result carries a `cache` block: `capturedAt`, `age`, `live`, `stale` (older than *Cache stale after* hours, default 12) and a `suggestion` that says exactly what to do in game to refresh it.
+
+- `get_cache_status` shows every cache entry with its age. Retainers that were never opened are listed as not captured.
+- `wait_for_cache_refresh` waits up to 10 minutes for a cache to refresh. Use it after asking the user to open a retainer or enter the workshop. It works with every MCP client.
+- Each cache is also an MCP **resource** (`xiv://cache/submersibles`, `xiv://cache/retainers`) that supports `resources/subscribe`. Clients that open the Streamable-HTTP event stream (`GET /mcp` with their `Mcp-Session-Id`) receive `notifications/resources/updated` whenever the cache refreshes.
 
 ### Inventory actions (opt-in)
 

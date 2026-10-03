@@ -29,7 +29,7 @@ internal static class InventoryTools
         ["housing"] = ByPrefix("Housing"),
     };
 
-    private static readonly string[] DefaultSearchGroups = ["bags", "equipped", "armory", "crystals", "key_items", "saddlebag", "retainer"];
+    private static readonly string[] DefaultSearchGroups = ["bags", "equipped", "armory", "crystals", "key_items", "saddlebag"];
 
     private static GameInventoryType[] ByPrefix(string prefix) =>
         Enum.GetValues<GameInventoryType>().Where(t => t.ToString().StartsWith(prefix, StringComparison.Ordinal)).ToArray();
@@ -37,7 +37,7 @@ internal static class InventoryTools
     private static readonly string ContainerHelp =
         $"Groups: {string.Join(", ", Groups.Keys)}. Raw container names are also accepted, e.g. {string.Join(", ", Enum.GetNames<GameInventoryType>().Take(6))}, ...";
 
-    public static IEnumerable<McpTool> Create()
+    public static IEnumerable<McpTool> Create(RetainerTracker retainers)
     {
         yield return new McpTool
         {
@@ -81,14 +81,16 @@ internal static class InventoryTools
         {
             Name = "search_inventory",
             Description = "Finds items by (partial) name or item id across the character's containers — by default bags, equipped gear, armory chest, " +
-                          "crystals, key items, saddlebag and the last opened retainer — and reports where each stack is and the total count. " + ContainerHelp,
+                          "crystals, key items and saddlebag (live) plus every retainer (from the retainer cache, each with its snapshot age) — " +
+                          "and reports where each stack is and the total count. " + ContainerHelp,
             InputSchema = """
                 {
                   "type": "object",
                   "properties": {
                     "query": { "type": "string", "description": "Case-insensitive part of the item name." },
                     "item_id": { "type": "integer", "description": "Exact item id (alternative to query)." },
-                    "containers": { "type": "array", "items": { "type": "string" }, "description": "Restrict to these container groups / names." }
+                    "containers": { "type": "array", "items": { "type": "string" }, "description": "Restrict the live search to these container groups / names." },
+                    "include_retainers": { "type": "boolean", "description": "Also search all retainers' cached inventories (default true)." }
                   }
                 }
                 """,
@@ -97,33 +99,57 @@ internal static class InventoryTools
                 var query = args.String("query");
                 var itemId = args.UInt("item_id");
                 if (query is null && itemId is null) throw new ToolException("Provide 'query' or 'item_id'.");
+                bool Wanted(uint baseId, out string? name)
+                {
+                    name = null;
+                    if (itemId is { } id && baseId != id) return false;
+                    name = ItemName(baseId);
+                    return query is null || Game.Matches(name, query);
+                }
 
-                var hits = new List<(GameInventoryItem Item, string? Name)>();
+                var hits = new List<(uint ItemId, string? Name, int Quantity, object Location)>();
                 foreach (var c in ResolveContainers(args.StringList("containers"), DefaultSearchGroups))
                 {
                     foreach (var item in Svc.Inventory.GetInventoryItems(c))
                     {
-                        if (item.IsEmpty) continue;
-                        if (itemId is { } id && item.BaseItemId != id && item.ItemId != id) continue;
-                        var name = ItemName(item.BaseItemId);
-                        if (query is not null && !Game.Matches(name, query)) continue;
-                        hits.Add((item, name));
+                        if (item.IsEmpty || !Wanted(item.BaseItemId, out var name)) continue;
+                        hits.Add((item.BaseItemId, name, item.Quantity,
+                            new { container = item.ContainerType.ToString(), slot = item.InventorySlot, quantity = item.Quantity, hq = item.IsHq }));
                     }
                 }
 
-                return hits.GroupBy(h => h.Item.BaseItemId).Select(g => new
+                var retainerNotes = new List<object>();
+                if (args.Bool("include_retainers", true) && retainers.Get(Svc.PlayerState.ContentId) is { } cached)
                 {
-                    itemId = g.Key,
-                    name = g.First().Name,
-                    totalQuantity = g.Sum(h => h.Item.Quantity),
-                    locations = g.Select(h => new
+                    foreach (var r in cached.Retainers)
                     {
-                        container = h.Item.ContainerType.ToString(),
-                        slot = h.Item.InventorySlot,
-                        quantity = h.Item.Quantity,
-                        hq = h.Item.IsHq,
+                        if (r.InventoryCapturedUtc is not { } captured)
+                        {
+                            retainerNotes.Add(new { retainer = r.Name, notCaptured = true, suggestion = RetainerTracker.InventoryRefreshHint(r.Name) });
+                            continue;
+                        }
+                        var any = false;
+                        foreach (var i in r.Items.Concat(r.Market).Concat(r.Crystals))
+                        {
+                            if (!Wanted(i.ItemId, out var name)) continue;
+                            any = true;
+                            hits.Add((i.ItemId, name, i.Quantity, new { retainer = r.Name, container = i.Container, slot = i.Slot, quantity = i.Quantity, hq = i.Hq, cachedAt = captured }));
+                        }
+                        if (any) retainerNotes.Add(new { retainer = r.Name, cache = CacheFreshness.Describe(captured, RetainerUi.InventoryOpenFor(r.Name), RetainerTracker.InventoryRefreshHint(r.Name)) });
+                    }
+                }
+
+                return new
+                {
+                    items = hits.GroupBy(h => h.ItemId).Select(g => new
+                    {
+                        itemId = g.Key,
+                        name = g.First().Name,
+                        totalQuantity = g.Sum(h => h.Quantity),
+                        locations = g.Select(h => h.Location).ToList(),
                     }).ToList(),
-                }).ToList();
+                    retainerCaches = retainerNotes.Count > 0 ? retainerNotes : null,
+                };
             }),
         };
 
