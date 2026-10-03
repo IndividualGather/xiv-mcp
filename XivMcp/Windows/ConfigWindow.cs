@@ -91,6 +91,26 @@ internal sealed class ConfigWindow : Window
         if (config.AllowPluginManagement)
             ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.3f, 1), "Clients can change other plugins and their settings.");
 
+        var allowInventory = config.AllowInventoryActions;
+        if (ImGui.Checkbox("Allow inventory actions", ref allowInventory))
+        {
+            config.AllowInventoryActions = allowInventory;
+            config.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Lets MCP clients run /itemsort and move items between bags, armory chest, saddlebag and retainer.\n" +
+                             "Moves are sent one at a time like manual drags. Automating game actions is against the FFXIV ToS.");
+        if (config.AllowInventoryActions)
+        {
+            var delay = config.MoveDelayMs;
+            ImGui.SetNextItemWidth(160);
+            if (ImGui.SliderInt("Delay between moves (ms)", ref delay, 200, 3000))
+            {
+                config.MoveDelayMs = delay;
+                config.Save();
+            }
+        }
+
         ImGui.Separator();
         ImGui.TextUnformatted("Connect a client");
 

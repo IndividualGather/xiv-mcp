@@ -31,7 +31,8 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(WorldTools.Create())
             .Concat(GameDataTools.Create())
             .Concat(PluginTools.Create(Config))
-            .Concat(VoyageTools.Create(workshop));
+            .Concat(VoyageTools.Create(workshop))
+            .Concat(InventoryActionTools.Create(Config));
         Server = new McpServer(tools, Config);
 
         configWindow = new ConfigWindow(this);

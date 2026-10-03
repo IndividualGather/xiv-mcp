@@ -4,7 +4,7 @@ A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV th
 
 - **Transport:** MCP Streamable HTTP (JSON responses) at `http://localhost:37521/mcp`, bound to localhost only
 - **Auth:** bearer token, generated on first start (can be turned off)
-- **Read-only game access:** no tool changes game state, sends packets or performs actions. The only tools that write anything are the optional plugin-management tools (see below).
+- **Read-only game access:** no tool changes game state, sends packets or performs actions. The only tools that change anything are the optional plugin-management and inventory-action tools (see below).
 
 ## Tools
 
@@ -52,6 +52,26 @@ How config edits work:
 - XIV MCP refuses to disable, reload or reconfigure itself.
 
 Dalamud has no public API for loading or unloading other plugins. These tools use Dalamud's internal `PluginManager` the same way the plugin installer does, so they may need adjusting after Dalamud updates. They also make the plugin unsuitable for the official Dalamud repository.
+
+### Inventory actions (opt-in)
+
+Disabled until you tick **Allow inventory actions** in `/xivmcp`.
+
+| Tool | What it does |
+|---|---|
+| `sort_inventory` | Runs the game's own `/itemsort` with your conditions (e.g. item level descending, then id) for `inventory`, `armoury` or a single armory slot (`mh`, `head`, `rings`, …), `armoury_slots` (every slot), `saddlebag`, `rightsaddlebag`, `retainer` |
+| `move_items` | Moves items like a manual drag: rearrange slots, bags ↔ armory, bags ↔ saddlebag, bags ↔ retainer. Source by slot or by item id (first stack); target slot optional (first empty slot). Occupied targets swap or merge stacks |
+
+Safeguards:
+
+- **One move at a time.** Each move waits until the game has no inventory operation pending and the server has confirmed it. Then the tool pauses for a configurable delay (default 700 ms) before the next one.
+- **Fail fast.** A batch stops at the first failure unless `continue_on_error` is set.
+- **Refused states.** Nothing happens in combat, while crafting or gathering, during a trade, in cutscenes, or during zone changes.
+- **Open windows required.** Saddlebag and retainer actions need the matching window open, just like by hand.
+- **Armory rules.** Gear only goes into its own armory section, and this is checked in both directions when two items would swap.
+- **Not covered.** Equipped gear, currency, crystals and key items can't be moved with these tools.
+
+Automating game actions is against the FFXIV ToS. These tools send the same requests as manual drags and the game's own sort command, but use them at your own risk.
 
 The unlock and game-data tools work by reflection over Dalamud's `IUnlockState` and Lumina's sheet types. New categories and sheets therefore show up automatically when Dalamud is updated.
 

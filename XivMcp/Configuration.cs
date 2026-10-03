@@ -23,6 +23,12 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Allows the plugin tools: enable/disable/reload other plugins and read/write their config files.</summary>
     public bool AllowPluginManagement { get; set; }
 
+    /// <summary>Allows the inventory action tools: /itemsort and moving items between slots and containers.</summary>
+    public bool AllowInventoryActions { get; set; }
+
+    /// <summary>Pause between two item moves, so the server can confirm each one.</summary>
+    public int MoveDelayMs { get; set; } = 700;
+
     public static string NewToken() => Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
 
     public void Save() => Svc.PluginInterface.SavePluginConfig(this);
