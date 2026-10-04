@@ -13,14 +13,14 @@ using XivMcp.Util;
 
 namespace XivMcp.Windows;
 
-internal sealed class ConfigWindow : Window
+internal sealed partial class ConfigWindow : Window
 {
-    private static readonly Vector4 Gold = new(0.89f, 0.75f, 0.48f, 1);
-    private static readonly Vector4 Green = new(0.42f, 0.84f, 0.42f, 1);
-    private static readonly Vector4 Red = new(0.88f, 0.42f, 0.42f, 1);
-    private static readonly Vector4 Amber = new(0.91f, 0.70f, 0.29f, 1);
-    private static readonly Vector4 Cyan = new(0.50f, 0.91f, 1.00f, 1);
-    private static readonly Vector4 Muted = new(0.62f, 0.64f, 0.70f, 1);
+    internal static readonly Vector4 Gold = new(0.89f, 0.75f, 0.48f, 1);
+    internal static readonly Vector4 Green = new(0.42f, 0.84f, 0.42f, 1);
+    internal static readonly Vector4 Red = new(0.88f, 0.42f, 0.42f, 1);
+    internal static readonly Vector4 Amber = new(0.91f, 0.70f, 0.29f, 1);
+    internal static readonly Vector4 Cyan = new(0.50f, 0.91f, 1.00f, 1);
+    internal static readonly Vector4 Muted = new(0.62f, 0.64f, 0.70f, 1);
 
     private readonly Plugin plugin;
     private readonly string iconPath;
@@ -38,7 +38,7 @@ internal sealed class ConfigWindow : Window
         this.plugin = plugin;
         portInput = plugin.Config.Port;
         iconPath = Path.Combine(Svc.PluginInterface.AssemblyLocation.DirectoryName ?? "", "images", "icon.png");
-        Size = new Vector2(640, 560);
+        Size = new Vector2(880, 640);
         SizeCondition = ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(560, 440), MaximumSize = new Vector2(1600, 1400) };
     }
@@ -53,19 +53,65 @@ internal sealed class ConfigWindow : Window
         if (!tabs) return;
         Tab(FontAwesomeIcon.Plug, "Connect", DrawConnect);
         Tab(FontAwesomeIcon.ShieldAlt, "Permissions", DrawPermissions);
+        Tab(FontAwesomeIcon.UserShield, ThirdPartyTabLabel(), DrawThirdParty);
         var activeJobs = plugin.Jobs?.All().Count(j => !j.Finished) ?? 0;
         Tab(FontAwesomeIcon.Tasks, activeJobs > 0 ? $"Jobs ({activeJobs})" : "Jobs", DrawJobs);
         Tab(FontAwesomeIcon.Database, "Caches", DrawCaches);
         Tab(FontAwesomeIcon.Wrench, $"Tools ({plugin.Server.Tools.Count})", DrawTools);
     }
 
-    private static void Tab(FontAwesomeIcon icon, string label, Action draw)
+    /// <summary>A tab to bring to the front on the next frame (its first label word, e.g. "Third-party").</summary>
+    private string? selectTab;
+
+    private string? currentTab;
+
+    // Dev builds reload on every build: remember whether the window was open and on which tab, and come back the same way.
+    private static string ReopenFile => System.IO.Path.Combine(Svc.PluginInterface.GetPluginConfigDirectory(), "dev-window.txt");
+
+    /// <summary>Dev plugin only: after a hot reload, reopen on the tab that was showing.</summary>
+    public void RestoreAfterReload()
     {
-        using var tab = ImRaii.TabItem($"{icon.ToIconString()}  {label}###{label.Split(' ')[0]}");
+        try
+        {
+            if (!Svc.PluginInterface.IsDev || !File.Exists(ReopenFile)) return;
+            selectTab = File.ReadAllText(ReopenFile).Trim();
+            IsOpen = true;
+        }
+        catch { /* only a convenience */ }
+    }
+
+    /// <summary>Dev plugin only: called on unload, remembers the open tab (or that the window was closed).</summary>
+    public void RememberForReload()
+    {
+        try
+        {
+            if (!Svc.PluginInterface.IsDev) return;
+            if (IsOpen && currentTab is not null) File.WriteAllText(ReopenFile, currentTab);
+            else if (File.Exists(ReopenFile)) File.Delete(ReopenFile);
+        }
+        catch { /* only a convenience */ }
+    }
+
+    private void Tab(FontAwesomeIcon icon, string label, Action draw)
+    {
+        var key = label.Split(' ')[0];
+        var flags = selectTab == key ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None;
+        if (flags != ImGuiTabItemFlags.None) selectTab = null;
+        using var tab = ImRaii.TabItem($"{icon.ToIconString()}  {label}###{key}", flags);
         if (!tab) return;
+        currentTab = key;
         ImGui.Spacing();
-        using var child = ImRaii.Child($"##{label}", new Vector2(-1, -1), false);
+        using var child = ImRaii.Child($"##{key}", new Vector2(-1, -1), false);
         draw();
+    }
+
+    /// <summary>Opens the window on the Third-party plugins tab with that plugin expanded (e.g. from the "new plugin" notification).</summary>
+    public void ShowThirdParty(string pluginId)
+    {
+        IsOpen = true;
+        BringToFront();
+        selectTab = "Third-party";
+        ThirdParty.Focus(pluginId);
     }
 
     // ---------------------------------------------------------------- header
@@ -74,12 +120,12 @@ internal sealed class ConfigWindow : Window
     {
         var server = plugin.Server;
         var config = plugin.Config;
-        var iconSize = 64 * ImGuiHelpers.GlobalScale;
+        var iconSize = 64 * Ui.Scale;
 
         if (File.Exists(iconPath))
         {
             ImGui.Image(Svc.Textures.GetFromFile(iconPath).GetWrapOrEmpty().Handle, new Vector2(iconSize));
-            ImGui.SameLine(0, 12 * ImGuiHelpers.GlobalScale);
+            ImGui.SameLine(0, 12 * Ui.Scale);
         }
 
         using (ImRaii.Group())
@@ -116,7 +162,7 @@ internal sealed class ConfigWindow : Window
         }
 
         // Server switch, right-aligned
-        var toggleWidth = ImGui.CalcTextSize("Server").X + 50 * ImGuiHelpers.GlobalScale;
+        var toggleWidth = ImGui.CalcTextSize("Server").X + 50 * Ui.Scale;
         ImGui.SameLine(ImGui.GetWindowContentRegionMax().X - toggleWidth);
         using (ImRaii.Group())
         {
@@ -210,7 +256,7 @@ internal sealed class ConfigWindow : Window
         if (ImGui.CollapsingHeader($"{FontAwesomeIcon.Key.ToIconString()}  Server & access token"))
         {
             ImGui.Indent();
-            ImGui.SetNextItemWidth(120 * ImGuiHelpers.GlobalScale);
+            ImGui.SetNextItemWidth(120 * Ui.Scale);
             ImGui.InputInt("Port", ref portInput);
             portInput = Math.Clamp(portInput, 1024, 65535);
             ImGui.SameLine();
@@ -235,7 +281,7 @@ internal sealed class ConfigWindow : Window
                 ImGui.TextColored(Amber, "Without a token, any program on this PC can use the server.");
             else
             {
-                using (ImRaii.PushFont(UiBuilder.MonoFont))
+                using (Ui.MonoFont())
                     ImGui.TextUnformatted(showToken ? config.Token : config.Token[..6] + new string('•', 18));
                 ImGui.SameLine();
                 if (ImGuiComponents.IconButton(1, showToken ? FontAwesomeIcon.EyeSlash : FontAwesomeIcon.Eye)) showToken = !showToken;
@@ -286,7 +332,7 @@ internal sealed class ConfigWindow : Window
     {
         using (ImRaii.PushColor(ImGuiCol.ChildBg, new Vector4(0, 0, 0, 0.25f)))
         using (ImRaii.Child($"##cmd-{id}", new Vector2(-1, ImGui.GetTextLineHeightWithSpacing() * (preview.Count(ch => ch == '\n') + 2.4f)), true))
-        using (ImRaii.PushFont(UiBuilder.MonoFont))
+        using (Ui.MonoFont())
         {
             ImGui.PushTextWrapPos();
             ImGui.TextColored(Cyan, preview);
@@ -327,56 +373,15 @@ internal sealed class ConfigWindow : Window
 
     private void DrawPermissions()
     {
-        var config = plugin.Config;
-        ImGui.TextColored(Muted, "Reading game data is always allowed. Everything that changes something is off until you switch it on.");
+        Permissions.Draw();
+
+        // What XIV MCP's own tools changed recently, and every call that was asked or blocked.
+        var activity = plugin.Gate.Audit.Recent(max: 500).Where(e => e.BuiltIn).Take(20).ToList();
         ImGui.Spacing();
-
-        var navPlugins = compat is { } n && (n.Vnavmesh || n.Lifestream);
-        Card("game", FontAwesomeIcon.HandPointer, "Game & navigation", config.AllowGameNavigation, v => config.AllowGameNavigation = v,
-            "Open game windows, interact with objects and NPCs (summoning bell, company chest, voyage panel, NPC menus)" +
-            (navPlugins ? " and move the character: walking (vnavmesh), teleports, housing and world travel (Lifestream)." : ". Walking and teleports need vnavmesh / Lifestream.") +
-            " Log into other characters of the account on any world, data center and service account.",
-            navPlugins ? "Teleports cost gil as usual. stop_navigation stops movement at any time." : null,
-            navPlugins ? DrawBellPreference : null, extraLines: 1.6f);
-
-        Card("items", FontAwesomeIcon.Boxes, "Items & retainers", config.AllowItemsRetainers, v => config.AllowItemsRetainers = v,
-            "Sort and move items between bags, armory, saddlebag, retainers and the FC chest, open retainers, and send retainers on ventures " +
-            "(costs venture tokens). Recalling a running venture always asks you in game first.",
-            "Automating game actions is against the FFXIV ToS. Moves are sent one at a time like manual drags.",
-            DrawMoveDelay, extraLines: 2.6f);
-
-        var vendorPlugin = compat?.ItemVendorLocation ?? false;
-        Card("market", FontAwesomeIcon.Store, "Market & purchases", config.AllowMarketPurchases, v => config.AllowMarketPurchases = v,
-            "Buy from NPC vendors, put items up for sale through retainers, undercut your listings and read sale histories. Gil purchases run " +
-            "directly; anything paid with tomestones, scrips, seals or items asks you in game first. Undercuts follow Penny Pincher's settings " +
-            "when installed and never target your own retainers.",
-            "Large price cuts are skipped and reported instead of applied; only you can approve a non-gil purchase.",
-            DrawGilLimit, extraLines: 1.6f,
-            footer: vendorPlugin ? null : DrawVendorPluginMissing, footerLines: 1.4f);
-
-        // Crafting & gathering builds on Artisan / GatherBuddy Reborn; only offered when one of them is installed and enabled.
-        if (compat is { } cg && (cg.Artisan || cg.GatherBuddy))
-            Card("craftgather", FontAwesomeIcon.Hammer, "Crafting & gathering", config.AllowCraftingGathering, v => config.AllowCraftingGathering = v,
-                string.Join(" ", new[]
-                {
-                    cg.Artisan ? "Start crafts and crafting lists, edit lists and prepare crafting projects (incl. Raphael solutions)." : null,
-                    cg.GatherBuddy ? "Start and stop auto-gathering and edit auto-gather lists." : null,
-                }.Where(s => s is not null)),
-                "Editing lists briefly reloads the plugin that owns them; their config is backed up first.");
-
-        Card("ui", FontAwesomeIcon.Terminal, "UI editing", config.AllowUiEditing, v => config.AllowUiEditing = v,
-            "Create, edit and clear macros and write the 30 waymark preset slots. Every changed macro is backed up first.",
-            null);
-
-        Card("online", FontAwesomeIcon.Globe, "Online lookups", config.AllowOnlineData, v => config.AllowOnlineData = v,
-            "Item sources from FFXIV Teamcraft (downloaded once, ~30 MB) and ffxiv.consolegameswiki.com, and market prices from universalis.app.",
-            null);
-
-        Card("plugins", FontAwesomeIcon.PuzzlePiece, "Plugin management", config.AllowPluginManagement, v => config.AllowPluginManagement = v,
-            "Enable, disable and reload other Dalamud plugins, and read or change their settings. Every change is backed up to pluginConfigs/XivMcp/backups.",
-            "Uses Dalamud internals; may need an update after Dalamud updates.");
-
-        DrawPluginTools();
+        Section(FontAwesomeIcon.History, "Recent activity");
+        if (activity.Count == 0) ImGui.TextColored(Muted, "No changes or approvals yet. Reading that's allowed isn't listed.");
+        else ThirdPartyPanel.DrawAuditTable(activity, showSource: true);
+        ImGui.TextColored(Muted, "Full log: pluginConfigs/XivMcp/audit.jsonl");
 
         // Compatibility is only shown for plugins the player already has installed; otherwise the section doesn't exist.
         if (compat is not { } c || !(c.AutoRetainer || c.YesAlready || c.TextAdvance || c.Fcch || c.WaymarkPresetPlugin || c.Vnavmesh || c.Lifestream || c.Artisan || c.GatherBuddy || c.ItemVendorLocation)) return;
@@ -421,7 +426,7 @@ internal sealed class ConfigWindow : Window
         ImGui.SameLine();
         ImGui.TextUnformatted("Summoning bell location");
         ImGui.SameLine();
-        ImGui.SetNextItemWidth(230 * ImGuiHelpers.GlobalScale);
+        ImGui.SetNextItemWidth(Math.Min(230 * Ui.Scale, ImGui.GetContentRegionAvail().X));
         var current = BellLocations.FirstOrDefault(b => b.Id == config.PreferredBellLocation).Label ?? BellLocations[0].Label;
         using var combo = ImRaii.Combo("##bell-location", current);
         if (!combo) return;
@@ -452,17 +457,16 @@ internal sealed class ConfigWindow : Window
         ImGui.Spacing();
         IconText(FontAwesomeIcon.Coins, Muted);
         ImGui.SameLine();
-        ImGui.TextUnformatted("Also ask for gil purchases above");
+        ImGui.TextUnformatted("Ask for gil purchases above");
         ImGui.SameLine();
-        ImGui.SetNextItemWidth(140 * ImGuiHelpers.GlobalScale);
+        ImGui.SetNextItemWidth(Math.Min(140 * Ui.Scale, ImGui.GetContentRegionAvail().X));
         var limit = config.AskAboveGil;
         if (ImGui.InputInt("gil##ask-gil", ref limit, 1000, 10000))
         {
             config.AskAboveGil = Math.Clamp(limit, 0, 999_999_999);
             config.Save();
         }
-        ImGui.SameLine();
-        ImGui.TextColored(Muted, config.AskAboveGil == 0 ? "(0 = gil never asks)" : "");
+        ImGui.TextColored(Muted, config.AskAboveGil == 0 ? "0: gil purchases never ask." : $"Gil purchases above {config.AskAboveGil:N0} gil ask first.");
     }
 
     /// <summary>Pause between item moves: random within a range (default 500-800 ms) or an exact value.</summary>
@@ -484,7 +488,7 @@ internal sealed class ConfigWindow : Window
         ImGui.TextColored(Muted, random ? "random" : "fixed");
         Tooltip("Random: every pause is picked anew between the two values, so moves don't follow a fixed rhythm.\nFixed: always exactly the same pause.");
 
-        ImGui.SetNextItemWidth(260 * ImGuiHelpers.GlobalScale);
+        ImGui.SetNextItemWidth(Math.Min(260 * Ui.Scale, ImGui.GetContentRegionAvail().X));
         if (random)
         {
             int min = config.MoveDelayMinMs, max = config.MoveDelayMaxMs;
@@ -510,79 +514,12 @@ internal sealed class ConfigWindow : Window
         ImGui.TextColored(Muted, $"Drag or Ctrl+click to type exact values ({Configuration.MoveDelayLimitMin}-{Configuration.MoveDelayLimitMax} ms).");
     }
 
-    private void Card(string id, FontAwesomeIcon icon, string title, bool value, Action<bool> set, string description, string? warning, Action? extra = null,
-                      float extraLines = 1.4f, Action? footer = null, float footerLines = 1.4f)
-    {
-        var lines = 2.6f + (warning is null ? 0 : 1.2f) + (extra is null || !value ? 0 : extraLines) + (footer is null ? 0 : footerLines);
-        using var bg = ImRaii.PushColor(ImGuiCol.ChildBg, value ? new Vector4(0.25f, 0.45f, 0.30f, 0.18f) : new Vector4(1, 1, 1, 0.04f));
-        using var child = ImRaii.Child($"##card-{id}", new Vector2(-1, ImGui.GetTextLineHeightWithSpacing() * lines + 16 * ImGuiHelpers.GlobalScale), true);
-
-        var v = value;
-        if (ImGuiComponents.ToggleButton($"##{id}", ref v))
-        {
-            set(v);
-            plugin.Config.Save();
-        }
-        ImGui.SameLine();
-        IconText(icon, value ? Gold : Muted);
-        ImGui.SameLine();
-        ImGui.TextColored(value ? Gold : ImGui.GetStyle().Colors[(int)ImGuiCol.Text], title);
-        ImGui.SameLine();
-        ImGui.TextColored(value ? Green : Muted, value ? "allowed" : "off");
-
-        ImGui.PushTextWrapPos();
-        ImGui.TextColored(Muted, description);
-        if (warning is not null)
-        {
-            IconText(FontAwesomeIcon.ExclamationTriangle, Amber);
-            ImGui.SameLine();
-            ImGui.TextColored(Amber, warning);
-        }
-        ImGui.PopTextWrapPos();
-        footer?.Invoke();
-        if (value) extra?.Invoke();
-    }
-
-    /// <summary>Plugins that offer tools through the plugin API: each one is off until the player allows it.</summary>
-    private void DrawPluginTools()
-    {
-        var owners = plugin.PluginApi.Owners();
-        if (owners.Count == 0) return;
-        ImGui.Spacing();
-        Section(FontAwesomeIcon.PlusSquare, "Tools from other plugins");
-        ImGui.PushTextWrapPos();
-        ImGui.TextColored(Muted, "These plugins offer their own tools to your assistant through XIV MCP. A plugin's tools are only offered once you allow it here; " +
-                                 "they act with that plugin's own logic, so only allow plugins you trust.");
-        ImGui.PopTextWrapPos();
-        foreach (var o in owners)
-        {
-            var allowed = o.Allowed;
-            if (ImGuiComponents.ToggleButton($"##ext-{o.InternalName}", ref allowed))
-            {
-                if (allowed) plugin.Config.AllowedToolPlugins.Add(o.InternalName);
-                else plugin.Config.AllowedToolPlugins.Remove(o.InternalName);
-                plugin.Config.Save();
-                plugin.Server.NotifyIfToolsChanged();
-            }
-            ImGui.SameLine();
-            ImGui.TextColored(allowed ? Gold : ImGui.GetStyle().Colors[(int)ImGuiCol.Text], o.DisplayName);
-            ImGui.SameLine();
-            var acting = o.Tools.Count(t => !t.ReadOnly);
-            var state = !o.Loaded ? "not loaded"
-                      : o.Tools.Count == 0 ? "no tools registered right now"
-                      : $"{o.Tools.Count} tool{(o.Tools.Count == 1 ? "" : "s")}" + (acting > 0 ? $", {acting} acting in game" : ", read only");
-            ImGui.TextColored(allowed && o.Loaded ? Green : Muted, state);
-            if (o.Tools.Count > 0)
-                Tooltip(string.Join("\n", o.Tools.Select(t => $"{t.Name}{(t.ReadOnly ? "" : t.Destructive ? "  (changes files)" : "  (acts in game)")}")));
-        }
-    }
-
     private static void CompatRow(string name, string state)
     {
         IconText(FontAwesomeIcon.Check, Green);
         ImGui.SameLine();
         ImGui.TextUnformatted(name);
-        ImGui.SameLine(150 * ImGuiHelpers.GlobalScale);
+        ImGui.SameLine(150 * Ui.Scale);
         ImGui.TextColored(Muted, state);
     }
 
@@ -691,7 +628,7 @@ internal sealed class ConfigWindow : Window
         ImGui.Spacing();
 
         var hours = config.CacheStaleHours;
-        ImGui.SetNextItemWidth(220 * ImGuiHelpers.GlobalScale);
+        ImGui.SetNextItemWidth(220 * Ui.Scale);
         if (ImGui.SliderInt("Suggest refresh after (hours)", ref hours, 1, 168))
         {
             config.CacheStaleHours = hours;
@@ -738,10 +675,11 @@ internal sealed class ConfigWindow : Window
         ImGui.InputTextWithHint("##filter", "Filter tools…", ref toolFilter, 64);
         ImGui.Spacing();
 
-        using var table = ImRaii.Table("##tools", 3, ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.SizingStretchProp);
+        using var table = ImRaii.Table("##tools", 4, ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.SizingStretchProp);
         if (!table) return;
         ImGui.TableSetupColumn("Tool", ImGuiTableColumnFlags.WidthStretch, 1.4f);
         ImGui.TableSetupColumn("Access", ImGuiTableColumnFlags.WidthStretch, 0.8f);
+        ImGui.TableSetupColumn("Source", ImGuiTableColumnFlags.WidthStretch, 1.0f);
         ImGui.TableSetupColumn("What it does", ImGuiTableColumnFlags.WidthStretch, 3.2f);
         ImGui.TableHeadersRow();
 
@@ -751,16 +689,18 @@ internal sealed class ConfigWindow : Window
                 !tool.Description.Contains(toolFilter, StringComparison.OrdinalIgnoreCase)) continue;
             ImGui.TableNextRow();
             ImGui.TableNextColumn();
-            using (ImRaii.PushFont(UiBuilder.MonoFont)) ImGui.TextUnformatted(tool.Name);
+            using (Ui.MonoFont()) ImGui.TextUnformatted(tool.Name);
             ImGui.TableNextColumn();
             if (tool.ReadOnly) ImGui.TextColored(Green, "read");
             else ImGui.TextColored(tool.Destructive ? Red : Amber, tool.Destructive ? "writes files" : "acts in game");
             ImGui.TableNextColumn();
-            var summary = tool.Description.Split(". ")[0].TrimEnd('.') + ".";
+            ImGui.TextColored(tool.Provider.Trust == XivMcp.Mcp.ProviderTrust.ThirdParty ? Amber : Muted, SourceOf(tool));
+            ImGui.TableNextColumn();
+            var summary = XivMcp.Mcp.ToolSummaries.For(tool.Name) ?? XivMcp.Mcp.ToolText.FirstSentence(tool.Description);
             ImGui.PushTextWrapPos();
             ImGui.TextColored(Muted, summary);
             ImGui.PopTextWrapPos();
-            Tooltip(tool.Description);
+            DescriptionTooltip(tool.Description);
         }
     }
 
@@ -783,20 +723,67 @@ internal sealed class ConfigWindow : Window
         return age.TotalSeconds < 60 ? "just now" : age.TotalMinutes < 60 ? $"{(int)age.TotalMinutes} min ago" : $"{(int)age.TotalHours} h ago";
     }
 
-    private static void Section(FontAwesomeIcon icon, string title)
+    internal static void Section(FontAwesomeIcon icon, string title)
     {
         IconText(icon, Gold);
         ImGui.SameLine();
         ImGui.TextColored(Gold, title);
     }
 
-    private static void IconText(FontAwesomeIcon icon, Vector4 color)
+    internal static void IconText(FontAwesomeIcon icon, Vector4 color)
     {
-        using var font = ImRaii.PushFont(UiBuilder.IconFont);
+        using var font = Ui.IconFont();
         ImGui.TextColored(color, icon.ToIconString());
     }
 
-    private static void Tooltip(string text)
+    /// <summary>
+    /// A tool description as a formatted tooltip: the summary first, then the details, bullets, and requirements set apart in muted
+    /// text (see <see cref="XivMcp.Mcp.ToolText.Paragraphs"/>). <paramref name="footer"/> is added as a last muted paragraph.
+    /// </summary>
+    internal static void DescriptionTooltip(string description, string? footer = null, string? intro = null)
+    {
+        if (!ImGui.IsItemHovered()) return;
+        using var tt = ImRaii.Tooltip();
+        ImGui.PushTextWrapPos(ImGui.GetFontSize() * 30);
+        var previous = (XivMcp.Mcp.ToolText.BlockKind?)null;
+        if (intro is not null)
+        {
+            ImGui.TextColored(Muted, intro);
+            ImGui.Dummy(new Vector2(0, ImGui.GetFontSize() * 0.2f));
+        }
+        foreach (var block in XivMcp.Mcp.ToolText.Paragraphs(description))
+        {
+            // A gap between paragraphs; bullets that follow each other stay together.
+            if (previous is not null && !(previous == XivMcp.Mcp.ToolText.BlockKind.Bullet && block.Kind == XivMcp.Mcp.ToolText.BlockKind.Bullet))
+                ImGui.Dummy(new Vector2(0, ImGui.GetFontSize() * 0.35f));
+            switch (block.Kind)
+            {
+                case XivMcp.Mcp.ToolText.BlockKind.Summary:
+                    ImGui.TextColored(Gold, block.Text);
+                    break;
+                case XivMcp.Mcp.ToolText.BlockKind.Bullet:
+                    ImGui.Bullet();
+                    ImGui.SameLine();
+                    ImGui.TextUnformatted(block.Text);
+                    break;
+                case XivMcp.Mcp.ToolText.BlockKind.Requirement:
+                    ImGui.TextColored(Muted, block.Text);
+                    break;
+                default:
+                    ImGui.TextUnformatted(block.Text);
+                    break;
+            }
+            previous = block.Kind;
+        }
+        if (footer is not null)
+        {
+            ImGui.Dummy(new Vector2(0, ImGui.GetFontSize() * 0.35f));
+            ImGui.TextColored(Muted, footer);
+        }
+        ImGui.PopTextWrapPos();
+    }
+
+    internal static void Tooltip(string text)
     {
         if (!ImGui.IsItemHovered()) return;
         using var tt = ImRaii.Tooltip();

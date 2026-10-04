@@ -1,3 +1,5 @@
+using System;
+using System.Threading.Tasks;
 using System.Linq;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
@@ -29,6 +31,15 @@ public sealed class Plugin : IDalamudPlugin
     private readonly CacheRegistry caches;
     private readonly XivMcp.Api.PluginApi pluginApi;
     internal XivMcp.Api.PluginApi PluginApi => pluginApi;
+    private readonly ConfigPolicyStore policyStore;
+    private readonly GameProbe probe;
+    private readonly ChatSecurityNotifier notifier;
+    private readonly XivMcp.Permissions.ToolGate gate;
+    internal XivMcp.Permissions.ToolGate Gate => gate;
+    internal XivMcp.Permissions.IPolicyStore Policies => policyStore;
+    internal GameProbe Probe => probe;
+    private readonly PluginDecisions decisions;
+    internal PluginDecisions Decisions => decisions;
 
     internal static Plugin? Instance { get; private set; }
 
@@ -41,6 +52,9 @@ public sealed class Plugin : IDalamudPlugin
     {
         Instance = this;
         pluginInterface.Create<Svc>();
+        CoreLog.Information = m => Svc.Log.Information(m);
+        CoreLog.Warning = m => Svc.Log.Warning(m);
+        CoreLog.Error = m => Svc.Log.Error(m);
         if (pluginInterface.GetPluginConfig() is Configuration saved)
         {
             Config = saved;
@@ -98,30 +112,62 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(LoginTools.Create(Config, roster))
             .Concat(WindowInspectTools.Create())
             .Concat(CacheTools.Create(caches))
+            .Append(SelfTest.Tool())
             .Concat(JobTools.Create(() => jobs!, () => Server?.LastClient))
             .ToList();
+        // Tools that drive one other plugin belong to that plugin's integration (same provider + capability contract as third-party tools).
+        tools = XivMcp.Integrations.IntegrationCatalog.Apply(tools, PluginCompat.IsLoaded).ToList();
         var registry = new ToolRegistry(tools);
-        jobs = new JobManager(registry);
+
+        // Third-party tools: policy per capability, in-game approval, side-effect checks and an audit log.
+        policyStore = new ConfigPolicyStore(Config);
+        probe = new GameProbe();
+        notifier = new ChatSecurityNotifier();
+        var audit = new XivMcp.Permissions.AuditLog(500, AuditFile.Append);
+        foreach (var e in AuditFile.ReadRecent(500)) audit.AddRestored(e);
+        gate = new XivMcp.Permissions.ToolGate(policyStore, new ConsentApprovalGate(), probe, audit, notifier);
+
+        jobs = new JobManager(registry, gate);
         caches.Add(jobs);
         foreach (var t in tools) t.ParsedSchema(); // logs any tool whose input schema is not valid JSON, right at startup
-        Server = new McpServer(registry, Config, caches);
-        pluginApi = new XivMcp.Api.PluginApi(registry, Config, () => jobs);
+        Server = new McpServer(registry, gate, Config, caches);
+        pluginApi = new XivMcp.Api.PluginApi(registry, policyStore, gate, () => jobs);
+        decisions = new PluginDecisions(registry, policyStore, gate, () => Server.NotifyIfToolsChanged());
+        var announcer = new RegistrationNotifier(decisions, policyStore, id => configWindow?.ShowThirdParty(id));
+        pluginApi.Registered += announcer.Registered;
 
         configWindow = new ConfigWindow(this);
         windows.AddWindow(configWindow);
+        configWindow.RestoreAfterReload();
         consentWindow = new ConsentWindow();
         windows.AddWindow(consentWindow);
         pluginInterface.UiBuilder.Draw += windows.Draw;
         pluginInterface.UiBuilder.OpenConfigUi += configWindow.Toggle;
         pluginInterface.UiBuilder.OpenMainUi += configWindow.Toggle;
 
-        Svc.Commands.AddHandler(Command, new CommandInfo((_, _) => configWindow.Toggle())
+        Svc.Commands.AddHandler(Command, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open the XIV MCP server settings and connection info.",
+            HelpMessage = "Open the XIV MCP settings · /xivmcp selftest → run the live self-test and print the results in chat.",
         });
 
         if (Config.ServerEnabled) Server.Start();
         pluginApi.AnnounceReady(); // plugins that loaded before us register their tools now
+    }
+
+    private void OnCommand(string command, string arguments)
+    {
+        if (!arguments.Trim().Equals("selftest", StringComparison.OrdinalIgnoreCase))
+        {
+            configWindow.Toggle();
+            return;
+        }
+        if (SelfTest.Running) return;
+        Svc.Chat.Print("[XIV MCP] Running the self-test…");
+        _ = Task.Run(async () =>
+        {
+            var results = await SelfTest.RunAsync(this).ConfigureAwait(false);
+            await Svc.Framework.RunOnFrameworkThread(() => SelfTest.PrintToChat(results)).ConfigureAwait(false);
+        });
     }
 
     public void Dispose()
@@ -131,8 +177,10 @@ public sealed class Plugin : IDalamudPlugin
         Svc.PluginInterface.UiBuilder.OpenConfigUi -= configWindow.Toggle;
         Svc.PluginInterface.UiBuilder.OpenMainUi -= configWindow.Toggle;
         Consent.DeclineAll();
+        configWindow.RememberForReload();
         windows.RemoveAllWindows();
         pluginApi.Dispose();
+        probe.Dispose();
         jobs?.Dispose();
         Server.Dispose();
         workshop.Dispose();

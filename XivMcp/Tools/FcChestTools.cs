@@ -97,8 +97,6 @@ internal static class FcChestTools
             ReadOnly = false,
             Handler = async (args, ct) =>
             {
-                if (!config.AllowItemsRetainers)
-                    throw new ToolException("Inventory actions are disabled. Enable \"Items & retainers\" in the XIV MCP settings window (/xivmcp) in game.");
                 if (!PluginCompat.FcchLoaded)
                     throw new ToolException("Free company chest transfers use FCCH, which is not installed. Without it, open the chest and move items in game.");
 

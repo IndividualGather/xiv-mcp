@@ -1,38 +1,20 @@
 # XIV MCP plugin API
 
-Your Dalamud plugin can offer its own tools to AI assistants through XIV MCP, and start background jobs, without running a server of its own. XIV MCP lists your tools next to its built-in ones, runs them when an assistant calls them, and can chain them into jobs that run for hours.
+Offer your Dalamud plugin's features to AI assistants through XIV MCP: register tools the assistant can call, ask the player for approval at risky moments, and start background jobs. This guide covers **API version 2**. If you only want to use XIV MCP, see the [README](../README.md).
 
-This guide is for plugin developers. If you only want to use XIV MCP, see the [main README](../README.md).
-
-- [How it works](#how-it-works)
 - [Quick start](#quick-start)
-- [Writing tools the assistant uses well](#writing-tools-the-assistant-uses-well)
-- [Long-running tools](#long-running-tools)
-- [Starting jobs from your plugin](#starting-jobs-from-your-plugin)
-- [Lifecycle and availability](#lifecycle-and-availability)
-- [IPC reference](#ipc-reference)
-- [Testing and troubleshooting](#testing-and-troubleshooting)
-- [Limits and security](#limits-and-security)
-
-## How it works
-
-```
- AI assistant ──MCP──▶ XIV MCP ──Dalamud IPC──▶ your plugin
-                       │  lists your tool         runs it (framework thread)
-                       │  checks the player       replies with a result,
-                       │  allowed your plugin     an error, or "pending"
-                       │  runs it in jobs    ◀──  reports progress / completion
-```
-
-- **Dalamud IPC only.** Plugins can't share types, so everything crossing the boundary is a string of JSON. You don't reference XIV MCP's assembly, and your plugin keeps working when XIV MCP isn't installed.
-- **The player decides.** A registered tool is offered to assistants only after the player allows your plugin in `/xivmcp` → **Permissions** → **Tools from other plugins**. Until then it's listed there as waiting.
-- **Your logic, XIV MCP's plumbing.** XIV MCP handles the MCP protocol, the access token, the tool list, job queueing, collision checks and the in-game job UI. You handle what the tool does.
+- [How to …](#how-to-)
+- [Capabilities: what to declare](#capabilities-what-to-declare)
+- [What the player controls](#what-the-player-controls)
+- [Client reference](#client-reference)
+- [Rules and limits](#rules-and-limits)
+- [Troubleshooting](#troubleshooting)
+- [Appendix: raw IPC](#appendix-raw-ipc)
 
 ## Quick start
 
-**1. Copy the client.** Add [`examples/XivMcpClient.cs`](../examples/XivMcpClient.cs) to your project. It's a single file with no dependencies beyond Dalamud and `System.Text.Json`. Rename its namespace if you like.
-
-**2. Create it and add tools** in your plugin's constructor:
+1. Copy [`examples/XivMcpClient.cs`](../examples/XivMcpClient.cs) into your plugin. It needs only Dalamud and `System.Text.Json`, and works whether or not XIV MCP is installed.
+2. Create the client, add tools, and dispose it:
 
 ```csharp
 using XivMcp.Client;
@@ -47,10 +29,7 @@ public sealed class Plugin : IDalamudPlugin
         mcp.RegistrationFailed += message => Log.Warning($"XIV MCP rejected a tool: {message}");
 
         mcp.AddTool(
-            new McpToolDefinition("myplugin_status", "What My Plugin is doing right now: its mode and the current target.")
-            {
-                ReadOnly = true,
-            },
+            new McpToolDefinition("myplugin_status", "What My Plugin is doing right now: its mode and current target.") { ReadOnly = true },
             args => new { mode = Mode.ToString(), target = CurrentTarget?.Name });
     }
 
@@ -58,26 +37,41 @@ public sealed class Plugin : IDalamudPlugin
 }
 ```
 
-**3. Build and load your plugin**, then open `/xivmcp` → **Permissions** and switch your plugin on under **Tools from other plugins**.
+3. Load your plugin. The player gets a notification that your plugin wants to register; they click **Enable** (or open `/xivmcp` → **Third-party plugins**).
+4. Ask the assistant to "check My Plugin's status". It calls `myplugin_status`.
 
-**4. Ask your assistant** to "check My Plugin's status". It sees `myplugin_status` in its tool list (clients are notified when the list changes).
+[Hello MCP](../examples/HelloMcp/Plugin.cs) is a complete example plugin with a tool of each kind and a job.
 
-The [example plugin](../examples/HelloMcp/Plugin.cs) shows three tools (quick and read-only, one that changes something, one long-running) and a command that starts a job.
+## How to …
 
-### Tools with arguments
+### Add a tool that changes something
 
-Describe arguments with a JSON schema. The assistant fills them in; you read them from the `JsonObject`:
+Anything that isn't read-only must declare what it does. The player decides, per capability, whether it runs freely, asks first or is blocked.
+
+```csharp
+mcp.AddTool(
+    new McpToolDefinition("myplugin_follow", "Follows the current target on foot until myplugin_stop is called.")
+    {
+        Capabilities = [McpCapabilities.MoveCharacter],
+    },
+    args => { StartFollowing(); return new { following = CurrentTarget?.Name }; });
+```
+
+Pick capabilities from [the table below](#capabilities-what-to-declare). If you're unsure, declare more: an undeclared effect gets your plugin suspended.
+
+### Take arguments
+
+Describe them with a JSON schema; read them from the `JsonObject`:
 
 ```csharp
 mcp.AddTool(
     new McpToolDefinition("myplugin_set_mode", "Switches My Plugin's mode. Use \"idle\" to stop it.")
     {
+        Capabilities = [McpCapabilities.GameUi],
         InputSchema = """
             {
               "type": "object",
-              "properties": {
-                "mode": { "type": "string", "enum": ["idle", "follow", "assist"], "description": "The new mode." }
-              },
+              "properties": { "mode": { "type": "string", "enum": ["idle", "follow", "assist"], "description": "The new mode." } },
               "required": ["mode"]
             }
             """,
@@ -90,234 +84,307 @@ mcp.AddTool(
     });
 ```
 
-## Writing tools the assistant uses well
+### Return results and errors
 
-The assistant only knows your tool by its name, description and schema. These tips make the difference between a tool that gets used correctly and one that gets misused or ignored.
+- **Result:** return any JSON-serializable value. An anonymous object is ideal: `return new { kills, gil = earned };`.
+- **Error:** `throw new McpToolException("Not at a summoning bell. Use navigate_to with destination summoning_bell first.");`. The assistant sees the message as-is. Other exceptions arrive as "TypeName: message".
+- Validate before acting, so a bad call changes nothing.
 
-### Names
+### Run something that takes a while
 
-- **Prefix with your plugin**: `myplugin_set_mode`, not `set_mode`. Names are global; built-in names and other plugins' names are refused.
-- Use 3–64 characters `a-z`, `0-9` and `_`, starting with a letter.
-- Start with a verb (`get_`, `list_`, `start_`, `set_`) so the purpose is obvious.
-
-### Descriptions
-
-- **Say what it does and when to use it** in the first sentence: "Lists the duties My Plugin can run. Use it before `myplugin_run`."
-- **Say what it needs and what can go wrong**: "Only at a summoning bell." / "Fails when the inventory is full."
-- **Name related tools**, yours or XIV MCP's (`get_game_status`, `switch_gearset`, `navigate_to`), so the assistant can chain them.
-- Keep it to a few sentences. XIV MCP adds "[Provided by the *Your Plugin* plugin.]" for you.
-
-### Schemas
-
-- Give every property a `description`, and use `enum` for fixed choices and `minimum`/`maximum` for numbers.
-- Mark what's required with `required`. Make everything else optional with a sensible default, and state the default in the description.
-- Accept the forms players use. If an argument is an item, take a name *or* an id.
-
-### Results
-
-- **Return structured data** (an anonymous object), not prose. The assistant reads JSON well.
-- **Keep it small.** Return what answers the question, and offer a `limit` or filter argument for long lists.
-- **Echo what you did**: `{ "mode": "follow", "previous": "idle" }` makes the assistant's report accurate.
-
-### Errors
-
-- Throw `McpToolException("…")` with a message the player could act on: "Not at a summoning bell. Use navigate_to first." The assistant sees it verbatim.
-- Validate arguments before doing anything, so a bad call changes nothing.
-- Other exceptions also reach the assistant, but as "TypeName: message", so prefer `McpToolException` for expected failures.
-
-### Read-only vs acting
-
-- Set `ReadOnly = true` only when the tool **changes nothing**. Assistants and XIV MCP rely on it: while a job step runs, XIV MCP refuses non-read-only calls, so nothing collides with the job.
-- Set `Destructive = true` when changes are hard to undo, like deleting, overwriting, spending currency or discarding items.
-- **Ask the player for anything risky.** Show your own confirmation in game for purchases with special currency, discards and similar, and fail the call if they decline.
-
-### Threads
-
-- `AddTool` handlers run **on the framework thread**: read game state directly, but return quickly. Never wait or sleep in them. Use a long-running tool for anything that waits.
-- Long-running handlers start on the framework thread and continue on the thread pool after their first `await`. Use `IFramework.RunOnFrameworkThread` for game access after that.
-
-## Long-running tools
-
-Anything that waits (walking somewhere, a crafting list, a dungeon) should be a long-running tool. XIV MCP gets a "pending" reply right away and waits for the result, which keeps the game responsive and lets the call run as a job step for hours.
+Use `AddLongRunningTool` for anything that waits. The call can run for hours as a job step.
 
 ```csharp
 mcp.AddLongRunningTool(
     new McpToolDefinition("myplugin_farm", "Farms the current zone until the bags are full or 'minutes' have passed.")
     {
+        Capabilities = [McpCapabilities.MoveCharacter, McpCapabilities.Combat],
         InputSchema = """{ "type": "object", "properties": { "minutes": { "type": "integer", "minimum": 1, "maximum": 600 } } }""",
     },
     async call =>
     {
-        var minutes = call.Args["minutes"]?.GetValue<int>() ?? 60;
-        var until = DateTime.UtcNow.AddMinutes(minutes);
-        var kills = 0;
+        var until = DateTime.UtcNow.AddMinutes(call.Args["minutes"]?.GetValue<int>() ?? 60);
         await Framework.RunOnFrameworkThread(StartFarming);
         try
         {
             while (DateTime.UtcNow < until && !await Framework.RunOnFrameworkThread(BagsFull))
             {
-                await Task.Delay(5000, call.Cancellation);     // throws when the job is paused or cancelled
-                kills = await Framework.RunOnFrameworkThread(() => Kills);
-                if (kills % 10 == 0) call.Progress($"{kills} kills");
+                await Task.Delay(5000, call.Cancellation);   // throws when the job is paused or cancelled
+                call.Progress($"{Kills} kills");              // shown in the job log
             }
-            return new { kills, reason = DateTime.UtcNow >= until ? "time" : "bags full" };
+            return new { kills = Kills };
         }
         finally
         {
-            await Framework.RunOnFrameworkThread(StopFarmingSafely);   // runs on cancel too
+            await Framework.RunOnFrameworkThread(StopFarmingSafely);  // also runs on cancel
         }
     });
 ```
 
-### Cancellation
+- **Threads:** the handler starts on the framework thread and continues on the thread pool after its first `await`. Use `Framework.RunOnFrameworkThread` for game access after that.
+- **Cancel safely:** when `call.Cancellation` fires, finish the fight or close the window, then return or throw. XIV MCP waits up to two minutes for you.
+- **Progress:** `call.Progress("Room 2 of 5")` adds a line to the job log. Report milestones, not every frame.
+- **Ending a cancelled call:** let the `OperationCanceledException` from `Task.Delay(…, call.Cancellation)` propagate, or throw it yourself. The client reports "Cancelled."
+- **Pause and resume:** a paused job reruns the step from the start, with the same arguments. Make tools safe to rerun: prefer targets ("until 20 ore") over counts ("20 more").
+- **Failing** (throwing) makes a job step *pending*: the job waits for the assistant to retry or change it. Say what's left: "Bags full after 120 kills; 3 Iron Ore still missing."
 
-When the player or the assistant pauses or cancels the job, or the client gives up, XIV MCP calls your Cancel gate and `call.Cancellation` fires.
+### Ask for approval at the risky moment
 
-- **Stop safely, not instantly.** Never stop mid-combat or with a window half-filled. Finish the fight, close the window, then return or throw. XIV MCP waits up to **2 minutes** for you to report the end before it moves on, and while it waits the job counts as running, so nothing collides with your cleanup.
-- Cleanup in `finally` runs on cancel as well as on success and failure.
-- Throwing `OperationCanceledException` (e.g. from `Task.Delay(…, call.Cancellation)`) is the normal way to end a cancelled call.
+When the real cost is only known during the call, ask then, with the numbers:
 
-### Progress
+```csharp
+var basket = await Framework.RunOnFrameworkThread(PlanPurchase);
+if (!await call.RequestApprovalAsync(McpCapabilities.SpendGil, $"Buy {basket.Summary} for {basket.Gil:N0} gil"))
+    throw new McpToolException("The player declined the purchase; nothing was bought.");
+```
 
-`call.Progress("Room 2 of 5")` adds a line to the job's log, which the player sees in `/xivmcp` → **Jobs** and the assistant sees in `get_job`. Report milestones, not every frame. Lines are cut at 300 characters.
+- Returns `true` right away if the player allows the capability, `false` if it's denied, and otherwise shows an approval window and waits (two minutes, then `false`).
+- **For a capability set to *Ask*, the player is asked twice:** before the call, and again here. The exception is if they chose *Approve for this session* or *Always allow* the first time. So only ask here when your question adds something, like the price.
+- **A "no" is final for this call.** Throw and say what wasn't done. If the assistant calls again, the player is asked again, and can set the capability to *Deny* to stop that.
+- You can only ask for capabilities the tool declared. Anything else returns `false` and is flagged.
+- Only in long-running tools: quick tools run on the framework thread and must not wait.
 
-### Results and failures
+### Show the player where you stand
 
-- Returning a value completes the call, and the value becomes the step's result for later steps.
-- Throwing fails the call. A failed job step makes the job **pending**: it waits for the assistant to retry, skip or change it, so make the message explain what's left, e.g. "Bags full after 120 kills; 3 Iron Ore still missing."
+Explain in your own UI why your tools aren't used:
 
-## Starting jobs from your plugin
+```csharp
+var status = mcp.GetStatus();
+var hint = status.State switch
+{
+    McpPluginState.Unavailable     => "XIV MCP isn't installed.",
+    McpPluginState.Undecided       => "Enable My Plugin in /xivmcp → Third-party plugins to use it from your assistant.",
+    McpPluginState.KeptDisabled    => "You kept My Plugin disabled in XIV MCP.",
+    McpPluginState.AwaitingConsent => "My Plugin has new features; confirm them in /xivmcp → Third-party plugins.",
+    McpPluginState.Suspended       => $"XIV MCP suspended My Plugin: {status.SuspendReason}",
+    _                              => null,   // Enabled
+};
+var canBuy = status.Capabilities.GetValueOrDefault(McpCapabilities.SpendGil) != McpPermission.Deny;
+```
 
-A job is a queue of tool calls (yours, other plugins' or XIV MCP's built-in ones) that XIV MCP runs one after another, each for as long as it takes. Jobs survive reloads (they come back paused) and show up in `/xivmcp` → **Jobs** with pause, resume and cancel buttons.
+Call it when your window opens or before a step, not every frame. Don't cache it: the player can change settings at any time.
+
+### Start a job
+
+A job runs steps one after another, each as long as it needs. Steps can be your tools, other plugins' or XIV MCP's own.
 
 ```csharp
 var job = mcp.StartJob("Farm, then head to a bell",
     new McpJobStep("myplugin_farm", new { minutes = 90 }, Id: "farm"),
     new McpJobStep("navigate_to", new { destination = "summoning_bell" }),
-    new McpJobStep("myplugin_report", new { text = "Farmed {{farm.kills}} kills ({{farm.reason}}); waiting at the bell." }));
-
-Log.Information($"Started job {job["id"]}");
+    new McpJobStep("myplugin_report", new { text = "Farmed {{farm.kills}} kills." }));
 ```
 
-- **Placeholders** pass results along. A string that is exactly `"{{farm.kills}}"` becomes that value with its type (a number stays a number). Inside a longer string it's replaced by the value as text. Paths can go into objects and arrays: `{{plan.list.id}}`, `{{search.items.0.id}}`.
-- **Permissions still apply.** Each step needs the permission its tool needs (e.g. `navigate_to` needs *Game & navigation*). Starting a job also needs your plugin to be allowed.
-- **Watch it** with `GetJob(id)` or `ListJobs()` (jobs your plugin started), and control it with `PauseJob`, `ResumeJob` and `CancelJob`.
+- **Placeholders:** `"{{farm.kills}}"` on its own becomes that value with its type. Inside a longer string it becomes text. Paths go into objects and arrays (`{{plan.list.id}}`, `{{search.items.0.id}}`) and ignore case, so a result `new { Kills = 12 }` (sent as `{"kills": 12}`) is read by `{{farm.kills}}`.
+- **XIV MCP's own tools** are listed, with their arguments, in the [README](../README.md#tools) and in `tools/list`. For example, `new McpJobStep("sell_item", new { retainer = "{{pick.retainer}}", item = "Iron Ore" })` passes your result into one of them.
+- **Permissions:** every step is checked against the player's settings, so a step set to *Ask* waits for the player.
+- **Control:** use `GetJob(id)`, `ListJobs()`, `PauseJob`, `ResumeJob` and `CancelJob`. Your jobs show in `/xivmcp` → **Jobs** with your plugin's name.
 
-Job states are `queued`, `running`, `paused`, `pending` (a step failed or was stopped; waiting for a fix), `completed`, `failed` and `cancelled`.
+## Capabilities: what to declare
 
-## Lifecycle and availability
+Declare every capability a tool can use on any path, including indirect costs. `read_game` is added for you.
 
-| Situation | What happens |
-|---|---|
-| Your plugin loads before XIV MCP | `AddTool` keeps the tool. When XIV MCP loads it sends `XivMcp.Ready`, and the client registers everything. |
-| XIV MCP loads before your plugin | `AddTool` registers immediately. |
-| XIV MCP reloads | It sends `XivMcp.Disposing` (the client cancels running calls), then `XivMcp.Ready` again (the client registers again). |
-| Your plugin unloads | `mcp.Dispose()` unregisters your tools. If you forget, XIV MCP removes them when it sees your plugin unload, and fails your running calls. |
-| The player hasn't allowed your plugin | Tools are registered but not offered to assistants. Calls and jobs are refused with a message saying how to allow it. |
-
-Registering the same name again from the same plugin replaces the tool, so you can change a description at runtime.
-
-## IPC reference
-
-You don't need this with `XivMcpClient.cs`. It's here for plugins that call the gates directly, or that aren't written in C#.
-
-All gates XIV MCP provides start with `XivMcp.`. Gates that return a string return a JSON envelope: `{"ok": true, …}` or `{"ok": false, "error": "…"}`. They never throw into your plugin.
-
-### Gates XIV MCP provides
-
-| Gate | Signature | Purpose |
+| Declare | When your tool … | Risk |
 |---|---|---|
-| `XivMcp.ApiVersion` | `Func<int>` | API version (currently `1`). Use it to detect XIV MCP. |
-| `XivMcp.IsReady` | `Func<bool>` | True while XIV MCP is loaded. |
-| `XivMcp.RegisterTool` | `Func<string owner, string definitionJson, string>` | Registers or replaces a tool. Returns `{"ok":true,"name":…,"allowed":bool}`. |
-| `XivMcp.UnregisterTool` | `Func<string owner, string name, string>` | Removes one of your tools. |
-| `XivMcp.UnregisterAll` | `Func<string owner, string>` | Removes all your tools. |
-| `XivMcp.CompleteCall` | `Func<string callId, string resultJson, string>` | Finishes a pending call with a result (any JSON). |
-| `XivMcp.FailCall` | `Func<string callId, string message, string>` | Finishes a pending call with an error. |
-| `XivMcp.ReportProgress` | `Func<string callId, string text, string>` | Adds a line to the job log. |
-| `XivMcp.StartJob` | `Func<string owner, string jobJson, string>` | Starts a job: `{"name":…,"steps":[{"id","tool","args","note"}]}`. Returns `{"ok":true,"job":{…}}`. |
-| `XivMcp.GetJob` | `Func<string id, string>` | `{"ok":true,"job":{…}}`. |
-| `XivMcp.ListJobs` | `Func<string owner, string>` | Jobs started by `owner` (empty string: all jobs). |
-| `XivMcp.PauseJob` / `ResumeJob` / `CancelJob` | `Func<string id, string>` | Job control. |
-| `XivMcp.Ready` | message (`ICallGateSubscriber<object>.Subscribe`) | XIV MCP loaded: register your tools. |
-| `XivMcp.Disposing` | message | XIV MCP is unloading: stop running calls. |
+| `McpCapabilities.GameUi` (`game_ui`) | opens, closes or clicks game windows, talks to NPCs | medium |
+| `MoveCharacter` (`move_character`) | walks, mounts, teleports, or changes zone, instance or world | medium |
+| `MoveItems` (`move_items`) | moves items between bags, armoury, saddlebag, retainers or chests | medium |
+| `Network` (`network`) | sends web requests | medium |
+| `Combat` (`combat`) | enters duties or fights | high |
+| `SpendGil` (`spend_gil`) | pays gil, including teleports and repairs | high |
+| `SpendCurrency` (`spend_currency`) | pays tomestones, scrips, seals, MGP or items used as currency | high |
+| `TradeItems` (`trade_items`) | lists on the market board, sells to vendors or trades with players | high |
+| `ChatSend` (`chat_send`) | sends chat or commands others can see | high |
+| `Login` (`login`) | logs out, switches character or closes the game | high |
+| `EditSettings` (`edit_settings`) | changes game, plugin or file settings | high |
+| `DiscardItems` (`discard_items`) | discards or desynthesises, anything that can't be undone | critical |
 
-`owner` is always your plugin's internal name (`IDalamudPluginInterface.InternalName`), and it must belong to a loaded plugin.
+Tips:
 
-### The tool definition
+- **Split by risk.** A read-only `myplugin_plan_purchase` plus a `myplugin_buy` that declares `spend_gil` lets the player allow planning freely and approve only purchases.
+- **Declare indirect effects.** Teleporting spends gil, buying with tokens spends a currency, and selling removes items.
+- **Don't over-declare.** Every capability is a line the player must accept, and an unneeded *high* one makes them hesitate.
+- **Buying** needs `SpendGil` or `SpendCurrency`, not `TradeItems`. Items you gain are never a problem; only what leaves the inventory counts.
+- **A tool tied to an optional feature:** register it at startup anyway, and throw `McpToolException("Turn on Auto-Restock in My Plugin's settings first.")` while the feature is off. Adding it later would pause your plugin.
 
-```json
-{
-  "name": "myplugin_set_mode",
-  "description": "Switches My Plugin's mode. Use \"idle\" to stop it.",
-  "inputSchema": { "type": "object", "properties": { "mode": { "type": "string" } }, "required": ["mode"] },
-  "readOnly": false,
-  "destructive": false
-}
-```
+## What the player controls
 
-`inputSchema` is optional (no arguments), and so are `readOnly` and `destructive` (both default to `false`).
+You don't configure any of this, but it decides how your code must behave:
 
-### Gates your plugin provides
-
-| Gate | Signature | Purpose |
+| The player … | What happens | What you do |
 |---|---|---|
-| `<InternalName>.XivMcp.Invoke` | `Func<string callId, string tool, string argsJson, string>` | Runs a tool. Called on the framework thread. |
-| `<InternalName>.XivMcp.Cancel` | `Action<string callId>` | Optional: asks a pending call to stop. |
+| hasn't enabled your plugin yet (the default) | Your tools aren't offered; calls are refused. | Show it in your UI (`GetStatus`). |
+| chose *Keep disabled* | Same, and they aren't asked again while your registration stays the same. | Respect it. |
+| was asked again because your registration grew (a new tool or capability) | All your tools pause (not offered, refused) until they consent. Removing tools never asks. | **Register every tool at startup**, with every capability it may need. |
+| set a capability to *Deny* | Calls of tools declaring it are refused before your code runs. | Offer a fallback, or say so in your UI. |
+| set a capability to *Ask* | An approval window before each call (or once per session). Critical ones (`discard_items`) are always asked. | Expect waits in jobs. |
+| got a call that changed gil, currencies, items, zone, chat or login state without declaring it | If the call took under two minutes, your plugin is suspended: still listed, but every call is refused. Longer calls are only flagged, since the player may have acted meanwhile. | Declare honestly; the player lifts suspensions. |
 
-`Invoke` replies with exactly one of:
+Every call, decision and approval is listed under your plugin in `/xivmcp` → **Third-party plugins**, and in `pluginConfigs/XivMcp/audit.jsonl`.
 
-| Reply | Meaning |
+## Client reference
+
+### `XivMcpClient`
+
+| Member | Does |
 |---|---|
-| `{"result": <any JSON>}` | Done; this is the result. |
-| `{"error": "message"}` | Failed; the assistant sees the message. |
-| `{"pending": true}` | Still running; finish later with `CompleteCall` or `FailCall` using the same `callId`. |
+| `new XivMcpClient(pluginInterface)` | Connects; tools are (re)registered whenever XIV MCP loads. |
+| `AddTool(definition, args => result)` | A tool that answers right away, called on the framework thread. |
+| `AddLongRunningTool(definition, async call => result)` | A tool that may take long; see `McpCall`. |
+| `RemoveTool(name)` | Unregisters one tool. |
+| `GetStatus()` | `McpStatus`: your `State`, `CanRun`, `SuspendReason`, and the setting of each declared capability. |
+| `CheckPermission(capability)` | `Allow`, `Ask` or `Deny` for one capability (`Deny` unless enabled). |
+| `StartJob(name, params steps)` | Starts a job; returns it as JSON (`id`, `state`, …). |
+| `GetJob(id)` / `ListJobs()` | A job, or the jobs your plugin started. |
+| `PauseJob(id)` / `ResumeJob(id)` / `CancelJob(id)` | Job control. |
+| `IsAvailable` | XIV MCP is loaded and speaks this API version. |
+| `RegistrationFailed` | Event with XIV MCP's message when a definition is rejected. Log it. |
+| `Dispose()` | Unregisters everything; call it in your plugin's `Dispose`. |
 
-### Call sequence of a long-running call
+### `McpToolDefinition(Name, Description)`
 
-```
-XIV MCP                                   your plugin
-   │ Invoke(callId, tool, args) ────────────▶ start work
-   │ ◀──────────────────────── {"pending":true}
-   │            ◀── ReportProgress(callId, "1/3")   (any number of times)
-   │ Cancel(callId) ─────────────────────────▶ (only if the job is paused/cancelled)
-   │            ◀── CompleteCall(callId, result)    or FailCall(callId, message)
-```
+| Property | Meaning |
+|---|---|
+| `Name` | 3–64 characters `a-z0-9_`, starting with a letter. Prefix it with your plugin's name: `myplugin_…`. |
+| `Description` | What the assistant reads to decide when to call it. |
+| `InputSchema` | JSON schema of the arguments (`"type": "object"`), or null for none. |
+| `ReadOnly` | True if it changes nothing. It runs during jobs and needs no capabilities. |
+| `Destructive` | True if the changes are hard to undo. |
+| `Capabilities` | `McpCapabilities` ids. Required unless `ReadOnly`. |
 
-Calling `CompleteCall` from inside `Invoke`, before you've replied, is fine: XIV MCP registers the call before invoking you.
+### `McpCall` (long-running tools)
 
-## Testing and troubleshooting
+| Member | Meaning |
+|---|---|
+| `Args` | The arguments (`JsonObject`). |
+| `Cancellation` | Fires when the job is paused or cancelled. |
+| `Progress(text)` | Adds a line to the job log. |
+| `RequestApprovalAsync(capability, summary)` | Asks the player now; `true` if approved. |
+| `Id`, `Tool` | The call's id and tool name. |
 
-**See what the assistant sees.** List the tools straight from the server; the URL and token are in `/xivmcp` → **Connect**:
+### Other types
+
+- **`McpToolException(message)`:** an error the assistant sees as-is.
+- **`McpJobStep(Tool, Args, Id, Note)`:** one job step.
+- **`McpPermission`:** `Allow`, `Ask` or `Deny`.
+- **`McpPluginState`:** `Unavailable`, `Undecided`, `KeptDisabled`, `Enabled`, `AwaitingConsent` or `Suspended`.
+
+## Rules and limits
+
+**Descriptions** are what the assistant reads:
+
+- Say what the tool does and when to use it, what it needs, and what can go wrong.
+- Name related tools.
+- Keep it to a few sentences.
+
+The player sees an abbreviated version in `/xivmcp`, with the full text as a tooltip. A blank line (`\n\n`) starts a paragraph, a line starting with `- ` becomes a bullet, and sentences starting "Requires", "Needs" or "Only available" are set apart.
+
+Limits:
+
+- **Names:** names are global, so prefix them. XIV MCP's names and other plugins' names are refused.
+- **Threads:** quick tools run on the framework thread and must return fast.
+- **One acting step at a time:** while a job step runs, calls that aren't read-only are refused. Read-only tools always work.
+- **Size:** results are JSON strings; keep them to a few kilobytes.
+- **Identity:** IPC doesn't identify the caller, so your owner name is taken as given. Don't register under another plugin's name.
+- **Observation, not a sandbox:** XIV MCP notices changes to gil, currencies, item counts, zone, world, sent chat and logins. Other effects, such as a market listing, still need declaring.
+- **Versioning:** `ApiVersion` goes up only for breaking changes.
+- **ToS:** automating game actions is against the FFXIV ToS. Make your tools as careful as a button in your own UI.
+
+## Troubleshooting
+
+- **Self-test:** `/xivmcp selftest` (or the `run_self_test` tool) checks that your plugin provides its Invoke gate, and calls one of your read-only tools if your plugin is enabled.
+- **Logs:** `/xllog` shows each registration under `[XivMcp]`.
+- **What the assistant sees:** the URL and token are in `/xivmcp` → **Connect**.
 
 ```bash
 curl -s http://localhost:37521/mcp -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
-and call one:
+| Symptom | Fix |
+|---|---|
+| Your tool isn't in `tools/list` | The player hasn't enabled your plugin, or registration failed: check `RegistrationFailed`. |
+| "A tool that isn't readOnly must declare its 'capabilities'" | Add `Capabilities = [...]`. |
+| "A read-only tool can't declare …" | Drop `ReadOnly` or the acting capabilities. |
+| "'x' is an XIV MCP tool" / "already registered by another plugin" | Use a prefixed name. |
+| "… is blocked for … in /xivmcp" | The player denied a declared capability. |
+| "The player declined …" | Declined, or not answered within two minutes. |
+| "… is suspended by XIV MCP (…)" | A call did something undeclared. Fix the declaration; the player lifts the suspension. |
+| "… changed its registration … waits for the player to consent again" | You added a tool or capability. Register everything at startup. |
+| `RequestApprovalAsync` is always false | The capability isn't declared on that tool. |
+| "The background job '…' is running a step" | A job is running and your tool isn't read-only. Pause the job first. |
+| A cancelled job stays "running" for two minutes | Your handler ignores `call.Cancellation`. |
+| `InvalidOperationException` or hitches | Game access off the framework thread: use `RunOnFrameworkThread`. |
 
-```bash
-curl -s http://localhost:37521/mcp -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"myplugin_status","arguments":{}}}'
+## Appendix: raw IPC
+
+For plugins that don't use `XivMcpClient.cs`. XIV MCP's gates are named `XivMcp.<Gate>`, and yours are named `<InternalName>.XivMcp.<Gate>`. XIV MCP's gates reply with `{"ok": true, …}` or `{"ok": false, "error": "…"}` and never throw into your plugin. `owner` is your `IDalamudPluginInterface.InternalName`; registering from your constructor is fine.
+
+### Gates XIV MCP provides
+
+| Gate | Signature | Returns / does |
+|---|---|---|
+| `ApiVersion` | `Func<int>` | `2` |
+| `IsReady` | `Func<bool>` | True while loaded |
+| `ListCapabilities` | `Func<string>` | `{"capabilities":[{"id","risk","title","description","default"}]}` |
+| `RegisterTool` | `Func<string owner, string definitionJson, string>` | `{"name","enabled","awaitingConsent","state","capabilities":[{"id","mode"}]}` |
+| `UnregisterTool` | `Func<string owner, string name, string>` | `{"removed": bool}` |
+| `UnregisterAll` | `Func<string owner, string>` | `{"removed": count}` |
+| `GetStatus` | `Func<string owner, string>` | `{"state","canRun","suspendReason","tools","capabilities":[{"id","mode"}]}` |
+| `CheckPermission` | `Func<string owner, string capability, string>` | `{"mode":"allow"\|"ask"\|"deny","enabled","suspended","state"}` |
+| `RequestApproval` | `Func<string callId, string requestJson, string>` | Request `{"capability","summary"}`; returns `{"approvalId","state"}` |
+| `GetApproval` | `Func<string approvalId, string>` | `{"state":"pending"\|"approved"\|"denied"}` |
+| `CompleteCall` | `Func<string callId, string resultJson, string>` | Finishes a pending call |
+| `FailCall` | `Func<string callId, string message, string>` | Fails a pending call |
+| `ReportProgress` | `Func<string callId, string text, string>` | Adds a job log line |
+| `StartJob` | `Func<string owner, string jobJson, string>` | Job `{"name","steps":[{"id","tool","args","note"}]}`; returns `{"job":{…}}` |
+| `GetJob` / `ListJobs` | `Func<string id \| owner, string>` | `{"job"}` / `{"jobs"}` |
+| `PauseJob` / `ResumeJob` / `CancelJob` | `Func<string id, string>` | Job control |
+| `Ready` / `Disposing` | messages | Register on `Ready`; stop running calls on `Disposing` |
+
+`state` is one of `undecided`, `kept_disabled`, `enabled`, `awaiting_consent` or `suspended`.
+
+### Tool definition
+
+```json
+{
+  "name": "myplugin_restock",
+  "description": "Buys the consumables your list is short of from the nearest vendor.",
+  "inputSchema": { "type": "object", "properties": {} },
+  "readOnly": false,
+  "destructive": false,
+  "capabilities": ["move_character", "game_ui", "spend_gil"]
+}
 ```
 
-**Read the log.** XIV MCP logs each registration and removal under `[XivMcp]` in `/xllog`.
+`capabilities` is required unless `readOnly`. `readOnly` and `destructive` can't both be true, and unknown capability ids are rejected.
 
-| Symptom | Cause |
-|---|---|
-| Tool missing from `tools/list` | Your plugin isn't allowed in `/xivmcp` yet, or registration failed (check `RegistrationFailed` and the log). |
-| "No loaded plugin has the internal name …" | `owner` isn't your `InternalName` (the client uses it automatically). |
-| "'x' is a built-in XIV MCP tool" / "already registered by another plugin" | Pick a prefixed name. |
-| "… doesn't provide &lt;Name&gt;.XivMcp.Invoke" | You registered a tool by hand but no Invoke gate. |
-| "The background job '…' is running a step" | A job is running and your tool isn't `ReadOnly`. That's by design; pause the job first. |
-| A cancelled call keeps the job "running" for 2 minutes | Your handler doesn't observe `call.Cancellation`. |
-| `InvalidOperationException` / hitches | Game access from the thread pool: wrap it in `RunOnFrameworkThread`. |
+### Gates your plugin provides
 
-## Limits and security
+| Gate | Signature | Does |
+|---|---|---|
+| `<InternalName>.XivMcp.Invoke` | `Func<string callId, string tool, string argsJson, string>` | Runs a tool on the framework thread, after the permission checks. Reply with `{"result": …}`, `{"error": "…"}` or `{"pending": true}`; finish a pending call with `CompleteCall` / `FailCall`. |
+| `<InternalName>.XivMcp.Cancel` | `Action<string callId>` | Optional: stop a pending call. |
 
-- **No caller identity.** Dalamud IPC doesn't tell XIV MCP which plugin is calling, so `owner` is taken as given (it must be a loaded plugin's internal name). The player's per-plugin switch is the trust boundary. Don't register tools under another plugin's name.
-- **Strings of JSON both ways.** Results should stay well under a megabyte; assistants work best with a few kilobytes.
-- **One step at a time.** The game has one character, so XIV MCP runs one job step at a time and refuses other acting calls while one runs. Read-only tools always work.
-- **Versioning.** `XivMcp.ApiVersion` goes up only for breaking changes; new gates may be added without a bump. `XivMcpClient` checks for at least the version it was written for.
-- Automating game actions is against the FFXIV ToS. Your tools act with your plugin's own logic; make them as careful as you would make a button in your own UI.
+`CompleteCall` and `RequestApproval` may be called from inside `Invoke`, before you reply.
+
+A call that takes a minute:
+
+```
+XivMcp → you   Invoke("c1", "myplugin_farm", "{\"minutes\":1}")
+you → XivMcp   reply {"pending": true}                         (start the work, return at once)
+you → XivMcp   ReportProgress("c1", "12 kills")                 (any number of times)
+you → XivMcp   RequestApproval("c1", "{\"capability\":\"spend_gil\",\"summary\":\"Repair for 3,200 gil\"}")
+                → {"approvalId":"a7","state":"pending"}; poll GetApproval("a7") every ~250 ms until approved or denied
+XivMcp → you   Cancel("c1")                                     (only if the job is paused or cancelled: stop safely)
+you → XivMcp   CompleteCall("c1", "{\"kills\":31}")             (the result itself, not wrapped in {"result": …})
+               or FailCall("c1", "Bags full after 31 kills.")
+```
+
+XIV MCP has no time limit of its own on pending calls. Approval windows decline after two minutes, and after a `Cancel` XIV MCP waits up to two minutes for your `CompleteCall` or `FailCall`.
+
+### Upgrading from version 1
+
+- Declare `capabilities` on every tool that isn't read-only.
+- The player now consents to your registration, and again when it grows.
+- New gates: `ListCapabilities`, `CheckPermission`, `GetStatus`, `RequestApproval` and `GetApproval`.

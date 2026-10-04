@@ -10,25 +10,70 @@ A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV th
 
 ## Permissions
 
-`/xivmcp` → **Permissions** has seven switches. All start off.
+XIV MCP has two permission screens, because there are two kinds of tools:
 
-| Permission | Allows |
-|---|---|
-| **Game & navigation** | Opening game windows, interacting with objects and NPCs, moving the character (vnavmesh / Lifestream), logging into other characters, world travel, switching gearsets, running dungeons (AutoDuty) |
-| **Items & retainers** | Sorting and moving items, retainer and FC chest transfers, sending retainers on ventures (recalling one always asks in game) |
-| **Market & purchases** | Buying from NPC vendors (anything not paid in gil asks in game first), putting items up for sale, undercutting listings, reading sale histories |
-| **Crafting & gathering** | Artisan crafts and lists, GatherBuddy Reborn auto-gather and lists, preparing crafting projects. Only shown when one of them is installed |
-| **UI editing** | Macros and the waymark preset slots |
-| **Online lookups** | Item sources (FFXIV Teamcraft, ffxiv.consolegameswiki.com) and market prices (universalis.app) |
-| **Plugin management** | Enabling, disabling and reloading plugins, and editing their settings |
+| | What | Where | How it's controlled |
+|---|---|---|---|
+| **XIV MCP's own tools** | The core tools, plus the integrations XIV MCP maintains for other plugins (AutoDuty, Artisan, GatherBuddy Reborn, Lifestream, Item Vendor Location, FCCH) | `/xivmcp` → **Permissions** | Per group, reading and changes separately: allow, ask or deny, with an activity log |
+| **Third-party tools** | Tools other plugins register through the [plugin API](#for-plugin-developers) | `/xivmcp` → **Third-party plugins** | Per plugin and capability: allow, ask or deny, with consent to registrations, an audit log and automatic suspension |
 
-Some tools need another plugin. The settings only show compatibility rows and plugin-specific options for plugins that are installed.
+Both use the same approval window and the same audit log. While an approval waits, the game's taskbar button flashes, so you notice it even when you're in another window.
 
-**Tools from other plugins.** Other plugins can offer their own tools through XIV MCP ([plugin API](#for-plugin-developers)). Each one appears under **Tools from other plugins** with its tool count and stays off until you switch it on. Its tools then act with that plugin's own logic, so only allow plugins you trust.
+### XIV MCP's own tools
+
+Every tool of XIV MCP belongs to one **group**, and every group has two settings: **Reading** (tools that only look) and **Changes** (tools that act in game or edit something). Each is **Allow**, **Ask** or **Deny**:
+
+- **Allow** runs the tool.
+- **Ask** shows the approval window first: approve once, approve for this session, always allow (sets just that tool to *Allow*), or decline.
+- **Deny** refuses it before it runs, and tells your assistant which setting to change.
+
+| Group | Reading | Changes | Covers |
+|---|---|---|---|
+| **Game data** | Allow | — | Character, jobs, gear, inventory, currencies, quests and unlocks, party and surroundings, collections, game sheets, caches, the self-test |
+| **Game & navigation** | Allow | Deny | Game windows and menus, NPCs and objects, walking and travel (vnavmesh / Lifestream), logging into other characters, gearsets, leaving duties, placing waymarks |
+| **Items & retainers** | Allow | Deny | Sorting and moving items, retainers and their inventories, ventures (recalling one always asks in game), collectable turn-ins, the FC chest |
+| **Market & purchases** | Allow | Deny | Buying from vendors (anything not paid in gil also asks in game), selling and repricing, sale histories, spending approvals |
+| **UI editing** | Allow | Deny | Macros and the waymark preset slots |
+| **Online lookups** | Deny | — | Item sources (FFXIV Teamcraft, ffxiv.consolegameswiki.com) and market prices (universalis.app) |
+| **Plugin management** | Deny | Deny | Enabling, disabling and reloading plugins, reading and changing their settings (which may contain secrets) |
+| **Background jobs** | Allow | Allow | Starting and controlling jobs; every step is still checked against its own group |
+
+The table shows the defaults. Settings from before this version carry over: a switch that was on allows its group's changes.
+
+**Single tools.** Each card's *Reading* and *Changes* rows expand (the arrow on the left) into their tools, each with a short description and its own *Group* / *Allow* / *Ask* / *Deny*. *Group* (the default) follows the group's setting; anything else overrides it for that tool, both ways: allow one tool of a denied group, or ask before one tool of an allowed group. The card's summary says how many tools are set individually.
+
+**Integrations.** Tools whose whole purpose is driving one other plugin have their own group, listed under *Integrations maintained by XIV MCP* for each installed plugin:
+
+| Integration | Reading | Changes |
+|---|---|---|
+| **AutoDuty** (`list_duties`, `get_duty_status` / `run_duty`, `stop_duty`) | Allow | Deny |
+| **Artisan** (`get_crafting_lists` / crafts, lists, `run_crafting_list`, `prepare_craft_plan`) | Allow | Deny |
+| **GatherBuddy Reborn** (`get_gather_lists` / lists, auto-gather, `gather_until`) | Allow | Deny |
+| **Lifestream** (`visit_world`) | — | Deny |
+| **Item Vendor Location** (`find_vendors`) | Allow | — |
+| **FCCH** (`fc_chest_transfer`) | — | Deny |
+
+They're independent of the core groups. For example, AutoDuty can run dungeons while *Game & navigation* changes are denied. They are only offered while their plugin is loaded, and they register through the same provider and capability contract as third-party tools, but XIV MCP maintains and trusts them like its core.
+
+Hover a group's name to see its tools. Some groups have extra options while their changes aren't denied: the summoning bell location for *Game & navigation*, the pause between item moves for *Items & retainers*, and a gil limit for *Market & purchases* (above it, gil purchases also ask). **Recent activity** at the bottom lists what XIV MCP's tools changed and every call that was asked or blocked. Allowed reading isn't listed.
+
+The settings only show compatibility rows and plugin-specific options for plugins that are installed.
+
+### Third-party tools
+
+Other plugins can offer their own tools to your assistant. Those tools run that plugin's code, so XIV MCP can't sandbox them. Instead, it controls when they run and checks what they did:
+
+- **Off until you decide.** When a plugin registers tools, XIV MCP pops up a notification naming it and what it asks to do, with **Enable**, **Keep disabled** and **Review…** buttons (clicking the notification opens the plugin's page, where the same choice is offered). Nothing is offered to your assistant until you enable it. *Keep disabled* is remembered: you're not asked again unless the plugin's registration changes.
+- **Changes need consent again.** If a plugin later registers a new tool or a new capability, you're asked again, for just the additions. If it was enabled, its tools are paused, refused and hidden from your assistant, until you consent again.
+- **Capabilities you decide on.** Every tool declares what it may do: use game windows, move the character, fight, move, sell or destroy items, spend gil or other currencies, send chat, log out, change settings, go online. For each capability you choose **Allow**, **Ask** or **Deny**. Everything except reading starts at *Ask*. Destroying items can't be set to *Allow*; it's asked every time.
+- **Approval window.** *Ask* shows who asks, the tool, what it wants to do and its arguments. You can approve once, approve for this session (until the plugin or XIV MCP reloads), **always allow** (sets those capabilities to *Allow* for that plugin; you can change it back on its page), or decline. No answer in two minutes counts as declined. A plugin can also ask in the middle of a call, with the real numbers ("Buy 3 Hi-Potions for 1,200 gil").
+- **Checks on what changed.** Before and after every call, XIV MCP compares your gil, currencies, item count, zone and world, the chat you sent, and whether you're still logged in. A change the plugin didn't declare flags the call. If the call was short, the plugin is **suspended** until you lift it, and you get a chat message. Longer calls are only flagged, since you or another plugin may have acted meanwhile.
+- **Audit log.** Every call, decision and approval is listed under the plugin, with flagged entries highlighted. The full log is in `pluginConfigs/XivMcp/audit.jsonl`.
+- **Only trust what you know.** Even with all of this, an enabled plugin's code does what it was written to do. Enable plugins you trust, and read the capabilities they ask for.
 
 ## Tools
 
-### Character and world (always available)
+### Character and world *(Game data)*
 
 | Tool | What it returns |
 |---|---|
@@ -47,6 +92,7 @@ Some tools need another plugin. The settings only show compatibility rows and pl
 | `get_submersibles` | FC submersibles and airships: rank, parts and build code, stats, route, return time, last loot, explored sectors |
 | `list_game_sheets` / `search_game_data` / `get_game_data_row` | Generic access to any of the game's Excel sheets in the client language |
 | `inspect_window` | Which game windows are open, or the values and texts one of them shows |
+| `run_self_test` | The live self-test (same as `/xivmcp selftest`): schemas, integrations, game reads, side-effect snapshot, plugin API, audit log, third-party plugins |
 
 ### Collections, actions and macros
 
@@ -130,7 +176,7 @@ Every move waits until the game and server confirmed the previous one, then paus
 
 Undercuts follow **Penny Pincher**'s settings when it is installed (amount, rounding, minimum, HQ, never your own retainers), otherwise 1 gil. A price below half the recent Universalis average is refused unless allowed.
 
-### Crafting and gathering *(Crafting & gathering, needs Artisan and/or GatherBuddy Reborn)*
+### Crafting and gathering *(Artisan and GatherBuddy Reborn integrations; `plan_craft` is Game data)*
 
 | Tool | What it does |
 |---|---|
@@ -144,7 +190,7 @@ Undercuts follow **Penny Pincher**'s settings when it is installed (amount, roun
 
 Neither plugin has IPC for its lists, so editing one briefly unloads the plugin, updates its file (with a backup) and loads it again. Raphael preparation uses Artisan's internals and may need an update after Artisan changes.
 
-### Dungeons *(Game & navigation, only while AutoDuty is loaded)*
+### Dungeons *(AutoDuty integration, only while AutoDuty is loaded; `leave_duty` is Game & navigation)*
 
 | Tool | What it does |
 |---|---|
@@ -179,7 +225,7 @@ A scrip farming round as one job: `prepare_craft_plan` with `"quantity": "fill"`
 
 MCP's own task mechanism (the Tasks extension) isn't used because no common client supports it yet. Jobs work with every client through ordinary tools.
 
-### Plugin management *(Plugin management)*
+### Plugin management *(Plugin management; `list_plugins` is Game data)*
 
 | Tool | What it does |
 |---|---|
@@ -191,7 +237,7 @@ Plugins keep their settings in memory and often save on shutdown, so `set_plugin
 
 ## Approvals in game
 
-Some actions are never decided by the assistant alone: buying with anything but gil, and recalling a running venture. They open an approval window in game, and nothing happens until you click **Approve**. Unanswered requests are declined after two minutes.
+Some actions are never decided by the assistant alone: buying with anything but gil, recalling a running venture, and anything set to *Ask*, whether an XIV MCP group or a third-party capability. They open an approval window in game, and nothing happens until you answer. The game's taskbar button flashes while one waits. Unanswered requests are declined after two minutes. The window says who asks (your assistant or a named plugin) and is highlighted by risk. You can approve once, for this session, or always (which sets the setting to *Allow*).
 
 For jobs that buy repeatedly, a **standing approval** asks once: "spend up to N of this currency (on these items, for this long)". Every purchase under it counts its real cost (measured from the currency balance), stops when the approved amount is used up, and stops if a purchase turns out to be paid with another currency. Active approvals are listed in `/xivmcp` → Jobs with a Revoke button.
 
@@ -210,7 +256,7 @@ The game only sends some data in certain places. XIV MCP snapshots it there and 
 
 Every cached result carries a `cache` block (`capturedAt`, `age`, `live`, `stale`, and a `suggestion` for refreshing it). `get_cache_status` lists every entry; `wait_for_cache_refresh` waits up to 10 minutes for a cache to refresh. Each cache is also an MCP **resource** (`xiv://cache/<id>`) supporting `resources/subscribe`: clients that open the event stream (`GET /mcp` with their `Mcp-Session-Id`) receive `notifications/resources/updated`.
 
-XIV MCP also keeps what it learns about item sources (Teamcraft's data), characters (`characters.json`) and sale notices (`sales.json`) in the same folder.
+XIV MCP also keeps what it learns about item sources (Teamcraft's data), characters (`characters.json`), sale notices (`sales.json`) and the third-party audit log (`audit.jsonl`) in the same folder.
 
 ## Compatibility with other plugins
 
@@ -234,7 +280,33 @@ Requirements: .NET 10 SDK, and XIVLauncher with Dalamud installed (the build ref
 dotnet build XivMcp.slnx
 ```
 
-The plugin is written to `XivMcp/bin/Debug/XivMcp.dll`.
+The plugin is written to `XivMcp/bin/Debug/XivMcp.dll`, next to `XivMcp.Core.dll`.
+
+| Project | What it is |
+|---|---|
+| `XivMcp` | The Dalamud plugin: tools, game access, windows. Thin adapters around the core. |
+| `XivMcp.Core` | Everything that doesn't need the game: tool registry and providers, capabilities, policies, the permission gate, side-effect analysis, the audit log, the integration catalog, job placeholders, the plugin API protocol, the self-test runner. No Dalamud reference. |
+| `XivMcp.Tests` | xUnit v3 tests for `XivMcp.Core`. |
+
+## Testing
+
+XIV MCP is developed test-first: logic goes into `XivMcp.Core` with tests in `XivMcp.Tests`, and the plugin only adapts it to the game.
+
+```sh
+dotnet test --project XivMcp.Tests/XivMcp.Tests.csproj
+```
+
+What needs the game is covered by the **live self-test**. Type `/xivmcp selftest` in game (results go to chat), or let your assistant call `run_self_test`. It checks that:
+
+- every tool schema parses;
+- the integrations match the plugins that are loaded;
+- game reads work (status, character, gearsets);
+- the side-effect snapshot reads gil, items and currencies;
+- the plugin API answers over IPC;
+- the audit log is writable;
+- every third-party plugin provides its Invoke gate (enabled ones also answer a read-only call).
+
+It only reads.
 
 ## Installing as a dev plugin
 
@@ -291,18 +363,21 @@ Your Dalamud plugin can offer tools to AI assistants through XIV MCP, and start 
 mcp = new XivMcpClient(pluginInterface);                     // examples/XivMcpClient.cs, copied into your plugin
 mcp.AddTool(new("myplugin_status", "What My Plugin is doing right now.") { ReadOnly = true },
             args => new { mode = Mode.ToString() });
+mcp.AddTool(new("myplugin_follow", "Follows the current target on foot.") { Capabilities = [McpCapabilities.MoveCharacter] },
+            args => { StartFollowing(); return new { following = true }; });
 ```
 
-- **Guide:** [docs/plugin-api.md](docs/plugin-api.md) covers quick start, writing tools assistants use well, long-running tools and cancellation, jobs, the IPC reference and troubleshooting.
-- **Examples:** [examples/](examples) holds the drop-in client `XivMcpClient.cs` and *Hello MCP*, a complete example plugin with a quick tool, an acting tool, a long-running tool and a job.
+- **Guide:** [docs/plugin-api.md](docs/plugin-api.md) covers the quick start, permissions and approvals, writing tools assistants use well, long-running tools and cancellation, jobs, the IPC reference and troubleshooting.
+- **Examples:** [examples/](examples) holds the drop-in client `XivMcpClient.cs` and *Hello MCP*, a complete example plugin. Its four tools are a quick one, an acting one, a long-running one, and one that asks for approval mid-call. It also starts a job.
 
-Five things to get right:
+Six things to get right:
 
 1. **Prefix tool names** with your plugin's name, and start them with a verb: `myplugin_set_mode`.
 2. **Write descriptions for the assistant:** what the tool does, when to use it, what it needs, and what comes before or after.
-3. **Set `ReadOnly` honestly.** Acting tools are held back while a job step runs, which prevents collisions.
-4. **Keep quick tools quick.** They run on the framework thread. Anything that waits is a long-running tool.
-5. **Cancel safely:** finish the fight, close the window, then stop.
+3. **Declare every capability**, including indirect ones (a teleport spends gil). Undeclared side effects suspend your plugin.
+4. **Ask at the risky moment, with real numbers:** `call.RequestApprovalAsync(McpCapabilities.SpendGil, "Buy 3 Hi-Potions for 1,200 gil")`.
+5. **Keep quick tools quick.** They run on the framework thread. Anything that waits is a long-running tool.
+6. **Cancel safely:** finish the fight, close the window, then stop.
 
 ## Notes
 

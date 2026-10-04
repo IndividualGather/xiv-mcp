@@ -1,0 +1,314 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using Dalamud.Bindings.ImGui;
+using Dalamud.Interface;
+using Dalamud.Interface.Utility;
+using Dalamud.Interface.Utility.Raii;
+using XivMcp.Mcp;
+using XivMcp.Permissions;
+using static XivMcp.Windows.ConfigWindow;
+
+namespace XivMcp.Windows;
+
+/// <summary>What the permission cards need (kept separate from the plugin so the panel only depends on what it draws).</summary>
+internal interface IPermissionsHost
+{
+    IReadOnlyCollection<McpTool> Tools { get; }
+    CorePolicy Policy { get; }
+    void Save();
+    bool IsInstalled(string pluginId);
+    bool IsLoaded(string pluginId);
+
+    /// <summary>Extra options shown in a group's card while its changes aren't denied (bell location, move delay, gil limit).</summary>
+    Action? Options(string groupId);
+}
+
+/// <summary>
+/// The permission groups of XIV MCP's own tools as cards in a two-column grid. Each card: a large icon, the name, a one-line summary of
+/// what's allowed, a short description, and a segmented Allow / Ask / Deny control for reading and for changes.
+/// </summary>
+internal sealed class PermissionsPanel(IPermissionsHost host)
+{
+    private static readonly Vector4 AllowColor = new(0.30f, 0.62f, 0.34f, 1);
+    private static readonly Vector4 AskColor = new(0.72f, 0.56f, 0.24f, 1);
+    private static readonly Vector4 DenyColor = new(0.62f, 0.27f, 0.27f, 1);
+    private static readonly Vector4 NeutralAccent = new(0.45f, 0.46f, 0.50f, 1);
+
+    private static FontAwesomeIcon GroupIcon(string id) => id switch
+    {
+        "game_data" => FontAwesomeIcon.Eye,
+        "game_navigation" => FontAwesomeIcon.Route,
+        "items_retainers" => FontAwesomeIcon.Boxes,
+        "market" => FontAwesomeIcon.Store,
+        "ui_editing" => FontAwesomeIcon.Terminal,
+        "online" => FontAwesomeIcon.Globe,
+        "plugin_management" => FontAwesomeIcon.PuzzlePiece,
+        "jobs" => FontAwesomeIcon.Tasks,
+        "autoduty" => FontAwesomeIcon.Dungeon,
+        "artisan" => FontAwesomeIcon.Hammer,
+        "gatherbuddyreborn" => FontAwesomeIcon.Leaf,
+        "lifestream" => FontAwesomeIcon.PlaneDeparture,
+        "itemvendorlocation" => FontAwesomeIcon.MapMarkedAlt,
+        "fcch" => FontAwesomeIcon.Archive,
+        _ => FontAwesomeIcon.ShieldAlt,
+    };
+
+    public void Draw()
+    {
+        ImGui.PushTextWrapPos();
+        ImGui.TextColored(Muted, "Each group has a setting for reading and one for changes. Allow runs the tool, Ask shows an approval window first, Deny blocks it.");
+        ImGui.PopTextWrapPos();
+        ImGui.Spacing();
+
+        var byGroup = host.Tools.Where(t => t.Provider.Trust != ProviderTrust.ThirdParty)
+                          .GroupBy(t => PermissionCatalog.GroupOf(t)?.Id ?? "")
+                          .ToDictionary(g => g.Key, g => g.OrderBy(t => t.Name).ToList());
+
+        Section(FontAwesomeIcon.ShieldAlt, "XIV MCP");
+        CardGrid("core", PermissionCatalog.Groups.Where(g => g.PluginId is null).ToList(), g => DrawCard(g, byGroup.GetValueOrDefault(g.Id) ?? []));
+
+        var installed = PermissionCatalog.Groups.Where(g => g.PluginId is { } id && host.IsInstalled(id)).ToList();
+        if (installed.Count == 0) return;
+        ImGui.Spacing();
+        Section(FontAwesomeIcon.Link, "Integrations maintained by XIV MCP");
+        ImGui.PushTextWrapPos();
+        ImGui.TextColored(Muted, "XIV MCP's own tools for these plugins, only while the plugin is loaded. Independent of the groups above.");
+        ImGui.PopTextWrapPos();
+        ImGui.Spacing();
+        CardGrid("integrations", installed, g => DrawCard(g, byGroup.GetValueOrDefault(g.Id) ?? []));
+    }
+
+    /// <summary>Two columns when there's room (one in a narrow window).</summary>
+    private static void CardGrid(string id, List<PermissionGroup> groups, Action<PermissionGroup> draw)
+    {
+        var columns = ImGui.GetContentRegionAvail().X >= 540 * Ui.Scale ? 2 : 1;
+        using var table = ImRaii.Table($"##{id}", columns, ImGuiTableFlags.SizingStretchSame);
+        if (!table) return;
+        foreach (var g in groups)
+        {
+            ImGui.TableNextColumn();
+            draw(g);
+        }
+    }
+
+    private void DrawCard(PermissionGroup g, List<McpTool> tools)
+    {
+        using var id = ImRaii.PushId($"card-{g.Id}");
+        var scale = Ui.Scale;
+        var read = g.HasRead ? host.Policy.ModeFor(g.Id, Access.Read) : (PolicyMode?)null;
+        var write = g.HasWrite ? host.Policy.ModeFor(g.Id, Access.Write) : (PolicyMode?)null;
+        var loaded = g.PluginId is null || host.IsLoaded(g.PluginId);
+        // How open the group is decides the card's accent: its changes if it has any, else its reading.
+        var openness = write ?? read ?? PolicyMode.Deny;
+        var accent = openness switch { PolicyMode.Allow => AllowColor, PolicyMode.Ask => AskColor, _ => NeutralAccent };
+
+        var pad = 10 * scale;
+        var bar = 4 * scale;
+        var width = ImGui.GetContentRegionAvail().X - 2 * scale; // keep the border inside the cell
+        var inner = width - 2 * pad - bar;
+        var start = ImGui.GetCursorScreenPos();
+
+        // Everything inside the card is indented past the accent bar, so new lines start at its inner edge.
+        ImGui.Indent(pad + bar);
+        ImGui.Dummy(new Vector2(0, pad - ImGui.GetStyle().ItemSpacing.Y));
+        var left = ImGui.GetCursorPosX();
+        using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, loaded ? 1f : 0.55f))
+        {
+            // Header: a larger icon, the name and a one-line summary.
+            using (Ui.IconFont())
+            {
+                ImGui.SetWindowFontScale(1.45f);
+                ImGui.TextColored(accent, GroupIcon(g.Id).ToIconString());
+                ImGui.SetWindowFontScale(1f);
+            }
+            ImGui.SameLine(0, 10 * scale);
+            using (ImRaii.Group())
+            {
+                ImGui.TextUnformatted(g.Title);
+                var individual = tools.Count(t => host.Policy.ToolMode(t.Name) is not null);
+                ImGui.TextColored(Muted, !loaded ? "Not loaded: its tools are hidden" : Summary(read, write) + (individual > 0 ? $" · {individual} set individually" : ""));
+            }
+            Tooltip(ToolList(tools, loaded));
+
+            ImGui.PushTextWrapPos(left + inner);
+            ImGui.TextColored(Muted, g.Description);
+            ImGui.PopTextWrapPos();
+            ImGui.Dummy(new Vector2(0, 2 * scale));
+
+            var labelWidth = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemSpacing.X + Math.Max(ImGui.CalcTextSize("Reading").X, ImGui.CalcTextSize("Changes").X) + 12 * scale;
+            Segmented(g, Access.Read, "Reading", tools, left, labelWidth, inner);
+            Segmented(g, Access.Write, "Changes", tools, left, labelWidth, inner);
+
+            if (host.Options(g.Id) is { } options && write is not null and not PolicyMode.Deny)
+            {
+                ImGui.Dummy(new Vector2(0, 2 * scale));
+                ImGui.TextColored(Muted, "Options");
+                ImGui.PushTextWrapPos(left + inner);
+                options();
+                ImGui.PopTextWrapPos();
+            }
+        }
+        ImGui.Unindent(pad + bar);
+
+        // Frame: a faint tint, a border and an accent bar on the left, drawn after the content (no channel splitting inside the table).
+        var end = new Vector2(start.X + width, ImGui.GetItemRectMax().Y + pad);
+        var drawList = ImGui.GetWindowDrawList();
+        var rounding = 6 * scale;
+        drawList.AddRectFilled(start, end, ImGui.GetColorU32(openness == PolicyMode.Deny ? new Vector4(1, 1, 1, 0.025f) : accent with { W = 0.07f }), rounding);
+        drawList.AddRect(start, end, ImGui.GetColorU32(accent with { W = 0.45f }), rounding);
+        drawList.AddRectFilled(start, new Vector2(start.X + bar, end.Y), ImGui.GetColorU32(accent), rounding, ImDrawFlags.RoundCornersLeft);
+
+        ImGui.SetCursorScreenPos(new Vector2(start.X, end.Y + 8 * scale));
+        ImGui.Dummy(Vector2.Zero);
+    }
+
+    /// <summary>Rows (group id + access) whose tool list is expanded.</summary>
+    private readonly HashSet<string> expanded = [];
+
+    /// <summary>The Reading / Changes label under the mouse last frame.</summary>
+    private string? hoveredLabel;
+
+    /// <summary>
+    /// "▸ Reading  [Allow][Ask][Deny]": an arrow that expands the row's tools, the label in a fixed column, then three equal buttons
+    /// filling the rest of the card. Expanded, every tool of the row is listed with a short description and its own setting.
+    /// </summary>
+    private void Segmented(PermissionGroup g, Access access, string label, List<McpTool> tools, float left, float labelWidth, float inner)
+    {
+        using var id = ImRaii.PushId(label);
+        var key = $"{g.Id}:{access}";
+        var mine = tools.Where(t => PermissionCatalog.AccessOf(t) == access).ToList();
+        var open = expanded.Contains(key);
+        if (mine.Count > 0)
+        {
+            if (ImGui.ArrowButton("##expand", open ? ImGuiDir.Down : ImGuiDir.Right))
+                if (!expanded.Remove(key)) expanded.Add(key);
+            Tooltip(open ? "Hide the tools" : $"Set the {mine.Count} tool{(mine.Count == 1 ? "" : "s")} one by one");
+        }
+        else ImGui.Dummy(new Vector2(ImGui.GetFrameHeight(), ImGui.GetFrameHeight()));
+        ImGui.SameLine();
+        ImGui.AlignTextToFramePadding();
+        if (mine.Count > 0)
+        {
+            // Highlight the clickable label on hover (last frame's hover state, so the colour is set before drawing).
+            var hovered = hoveredLabel == key;
+            using (ImRaii.PushColor(ImGuiCol.Text, Gold, hovered)) ImGui.TextUnformatted(label);
+            if (ImGui.IsItemHovered()) hoveredLabel = key;
+            else if (hovered) hoveredLabel = null;
+        }
+        else ImGui.TextUnformatted(label);
+        if (mine.Count > 0)
+        {
+            // The label toggles the tool list too, not just the arrow.
+            // No cursor change: Dalamud draws ImGui cursors as an extra icon next to the game's own. Hovering highlights the label instead.
+            if (ImGui.IsItemClicked() && !expanded.Remove(key)) expanded.Add(key);
+        }
+        ImGui.SameLine();
+        ImGui.SetCursorPosX(left + labelWidth);
+        if (!g.Has(access))
+        {
+            ImGui.TextColored(Muted, access == Access.Write ? "Only reads" : "Nothing to read");
+            return;
+        }
+        var current = host.Policy.ModeFor(g.Id, access);
+        ModeButtons(inner - labelWidth, [(null, PolicyMode.Allow), (null, PolicyMode.Ask), (null, PolicyMode.Deny)], current, mode =>
+        {
+            host.Policy.Set(g.Id, access, mode!.Value);
+            host.Save();
+        });
+
+        if (!open || mine.Count == 0) return;
+        using var indent = ImRaii.PushIndent(ImGui.GetFrameHeight() + ImGui.GetStyle().ItemSpacing.X, false);
+        var toolLeft = ImGui.GetCursorPosX();
+        var toolInner = inner - (toolLeft - left);
+        foreach (var t in mine) DrawTool(t, current, toolLeft, toolInner);
+        ImGui.Dummy(new Vector2(0, 2 * Ui.Scale));
+    }
+
+    /// <summary>One tool: its name, a short description, and Group / Allow / Ask / Deny (Group = follow the group's setting).</summary>
+    private void DrawTool(McpTool t, PolicyMode groupMode, float left, float inner)
+    {
+        using var id = ImRaii.PushId(t.Name);
+        ImGui.Dummy(new Vector2(0, 2 * Ui.Scale));
+        var own = host.Policy.ToolMode(t.Name);
+        using (Ui.MonoFont()) ImGui.TextUnformatted(t.Name);
+        if (own is { } o)
+        {
+            ImGui.SameLine();
+            ImGui.TextColored(ModeColor(o), $"set to {o}");
+        }
+        ImGui.PushTextWrapPos(left + inner);
+        // The player-facing text for XIV MCP's tools; third-party tools only have their own description.
+        var plain = ToolSummaries.For(t.Name);
+        ImGui.TextColored(Muted, plain ?? ShortDescription(t.Description));
+        ImGui.PopTextWrapPos();
+        if (plain is not null) DescriptionTooltip(t.Description, intro: "What your assistant reads:");
+        else if (ShortDescription(t.Description) != t.Description.Trim()) DescriptionTooltip(t.Description); // the full text when the short one leaves anything out
+        ImGui.SetCursorPosX(left);
+        ModeButtons(inner, [("Group", null), (null, PolicyMode.Allow), (null, PolicyMode.Ask), (null, PolicyMode.Deny)], own, mode =>
+        {
+            host.Policy.SetTool(t.Name, mode);
+            host.Save();
+        }, groupMode, small: true);
+    }
+
+    /// <summary>
+    /// A row of equal buttons, the active one filled in its colour. A null option means "follow the group": it is filled in the group's
+    /// colour, dimmed, when active.
+    /// </summary>
+    private static void ModeButtons(float width, (string? Label, PolicyMode? Mode)[] options, PolicyMode? current, Action<PolicyMode?> set,
+                                    PolicyMode? inherited = null, bool small = false)
+    {
+        var gap = 2 * Ui.Scale;
+        var buttonWidth = MathF.Floor((width - (options.Length - 1) * gap) / options.Length);
+        using var spacing = ImRaii.PushStyle(ImGuiStyleVar.ItemSpacing, new Vector2(gap, ImGui.GetStyle().ItemSpacing.Y));
+        using var padding = ImRaii.PushStyle(ImGuiStyleVar.FramePadding, ImGui.GetStyle().FramePadding with { Y = 1 * Ui.Scale }, small);
+        for (var i = 0; i < options.Length; i++)
+        {
+            if (i > 0) ImGui.SameLine();
+            var (label, mode) = options[i];
+            var active = mode == current;
+            var color = mode is { } m ? ModeColor(m) : ModeColor(inherited ?? PolicyMode.Deny) with { W = 0.55f };
+            using var colors = ImRaii.PushColor(ImGuiCol.Button, active ? color : new Vector4(1, 1, 1, 0.06f))
+                                     .Push(ImGuiCol.ButtonHovered, active ? color : color with { W = 0.45f })
+                                     .Push(ImGuiCol.ButtonActive, color)
+                                     .Push(ImGuiCol.Text, active ? new Vector4(1, 1, 1, 1) : Muted);
+            if (ImGui.Button(label ?? mode.ToString(), new Vector2(buttonWidth, 0)) && !active) set(mode);
+            if (mode is null && inherited is { } inh) Tooltip($"Follow the group's setting (now {inh}).");
+        }
+    }
+
+    private static Vector4 ModeColor(PolicyMode m) => m switch { PolicyMode.Allow => AllowColor, PolicyMode.Ask => AskColor, _ => DenyColor };
+
+    /// <summary>The first sentence of a tool's description, at most ~120 characters.</summary>
+    /// <summary>The first sentence of a tool's description, cut at a word after ~110 characters; the full text is the tooltip.</summary>
+    private static string ShortDescription(string description) => ToolText.Truncate(ToolText.FirstSentence(description), 110);
+
+    private static string Summary(PolicyMode? read, PolicyMode? write)
+    {
+        static string Verb(PolicyMode m, string allowed, string asked, string denied) => m switch
+        {
+            PolicyMode.Allow => allowed,
+            PolicyMode.Ask => asked,
+            _ => denied,
+        };
+        var parts = new List<string>();
+        if (read is { } r) parts.Add(Verb(r, "reads freely", "asks before reading", "can't read"));
+        if (write is { } w) parts.Add(Verb(w, "changes freely", "asks before changes", "no changes"));
+        var text = string.Join(" · ", parts);
+        return text.Length == 0 ? "" : char.ToUpperInvariant(text[0]) + text[1..];
+    }
+
+    private static string ToolList(List<McpTool> tools, bool loaded)
+    {
+        if (tools.Count == 0) return loaded ? "No tools right now." : "Not loaded: its tools are hidden.";
+        var reads = tools.Where(t => t.ReadOnly).Select(t => t.Name).ToList();
+        var changes = tools.Where(t => !t.ReadOnly).Select(t => t.Name).ToList();
+        return string.Join("\n\n", new[]
+        {
+            reads.Count > 0 ? "Reading:\n  " + string.Join("\n  ", reads) : null,
+            changes.Count > 0 ? "Changes:\n  " + string.Join("\n  ", changes) : null,
+        }.Where(s => s is not null));
+    }
+}

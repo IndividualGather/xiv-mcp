@@ -168,7 +168,6 @@ internal static class LoginTools
             ReadOnly = false,
             Handler = async (args, ct) =>
             {
-                RequireEnabled();
                 if (!PluginCompat.IsLoaded(Lifestream)) throw new ToolException("World travel needs Lifestream, which is not installed or not enabled.");
                 var worldName = args.String("world") ?? throw new ToolException("'world' is required.");
                 if (!await Gate.WaitAsync(0, ct).ConfigureAwait(false)) throw new ToolException("A character switch or world travel is already running.");

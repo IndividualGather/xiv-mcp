@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Game-independent logic of XIV MCP (tool registry, permissions, audit, jobs helpers, plugin protocol).
+       No Dalamud or game references, so everything here is unit tested in XivMcp.Tests. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>XivMcp</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="XivMcp.Tests" />
+  </ItemGroup>
+</Project>

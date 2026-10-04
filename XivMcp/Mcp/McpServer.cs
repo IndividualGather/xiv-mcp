@@ -45,11 +45,14 @@ public sealed partial class McpServer : IDisposable
     public DateTime? StartedUtc { get; private set; }
     private long requestCount;
 
-    internal McpServer(ToolRegistry tools, Configuration config, Util.CacheRegistry caches)
+    private readonly XivMcp.Permissions.ToolGate gate;
+
+    internal McpServer(ToolRegistry tools, XivMcp.Permissions.ToolGate gate, Configuration config, Util.CacheRegistry caches)
     {
         this.tools = tools;
         this.config = config;
         this.caches = caches;
+        this.gate = gate;
         caches.Updated += OnCacheUpdated;
         availableTools = AvailableToolNames();
         Svc.PluginInterface.ActivePluginsChanged += OnPluginsChanged;
@@ -337,7 +340,8 @@ public sealed partial class McpServer : IDisposable
     {
         var name = p?["name"]?.GetValue<string>() ?? throw new RpcException(-32602, "Missing tool name");
         if (!tools.TryGet(name, out var tool)) throw new RpcException(-32602, $"Unknown tool: {name}");
-        if (!tool.IsAvailable)
+        // Third-party tools go to the gate even when hidden, so the refusal says why (not enabled, suspended).
+        if (!tool.IsAvailable && tool.Provider.Trust != ProviderTrust.ThirdParty)
             return new JsonObject
             {
                 ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = $"'{name}' is not available right now: the plugin it needs is not installed or not loaded." }),
@@ -356,7 +360,7 @@ public sealed partial class McpServer : IDisposable
         IReadOnlyList<ToolImage> images = [];
         try
         {
-            var result = await tool.Handler(new ToolArgs(p?["arguments"] as JsonObject), ct).ConfigureAwait(false);
+            var result = await gate.InvokeAsync(tool, new ToolArgs(p?["arguments"] as JsonObject), ct).ConfigureAwait(false);
             if (result is ToolResultWithImages withImages)
             {
                 images = withImages.Images;

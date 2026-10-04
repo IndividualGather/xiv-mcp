@@ -124,7 +124,6 @@ internal static class DutyTools
             Available = Available,
             Handler = async (_, ct) =>
             {
-                RequireEnabled();
                 if (!await Game.Run(AutoDutyBridge.Running).ConfigureAwait(false)) return "AutoDuty is not running.";
                 await StopSafely(false, TimeSpan.FromMinutes(10), ct, ownsOverrides: false).ConfigureAwait(false);
                 return "AutoDuty stopped (after the fight, if one was going on).";
@@ -161,7 +160,6 @@ internal static class DutyTools
             Available = Available,
             Handler = async (args, ct) =>
             {
-                RequireEnabled();
                 var dutyArg = args.String("duty") ?? throw new ToolException("Give 'duty'.");
                 var modeArg = args.String("mode");
                 var untilAll = args.Bool("until_all", true);

@@ -8,6 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Game-independent logic, unit tested in XivMcp.Tests. -->
+    <ProjectReference Include="..\XivMcp.Core\XivMcp.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Dalamud shows images/icon.png next to the DLL as the plugin icon. Regenerate with images/draw-icon.ps1. -->
     <Content Include="images\icon.png" CopyToOutputDirectory="PreserveNewest" Link="images\icon.png" />
     <None Remove="images\draw-icon.ps1" />

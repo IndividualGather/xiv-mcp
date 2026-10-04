@@ -69,9 +69,12 @@ internal sealed class JobManager : IDisposable, ICache
 
     public static JobManager? Instance { get; private set; }
 
-    public JobManager(ToolRegistry tools)
+    private readonly XivMcp.Permissions.ToolGate gate;
+
+    public JobManager(ToolRegistry tools, XivMcp.Permissions.ToolGate gate)
     {
         this.tools = tools;
+        this.gate = gate;
         try { jobs = File.Exists(file) ? JsonSerializer.Deserialize<List<Job>>(File.ReadAllText(file), JsonOptions) ?? [] : []; }
         catch (Exception ex) { Svc.Log.Warning($"[MCP] jobs.json unreadable, starting empty: {ex.Message}"); jobs = []; }
         // Whatever was running when the plugin stopped resumes only when someone says so.
@@ -289,7 +292,7 @@ internal sealed class JobManager : IDisposable, ICache
             {
                 if (!tools.TryGet(step.Tool, out var stepTool)) throw new ToolException($"The tool '{step.Tool}' no longer exists (its plugin was unloaded or unregistered it).");
                 if (!stepTool.IsAvailable) throw new ToolException($"'{step.Tool}' is not available right now (the plugin it needs is not loaded or not allowed).");
-                result = await stepTool.Handler(new ToolArgs(args), stepCts.Token).ConfigureAwait(false);
+                result = await gate.InvokeAsync(stepTool, new ToolArgs(args), stepCts.Token, inJob: true).ConfigureAwait(false);
             }
             catch (OperationCanceledException) { interrupted = true; }
             catch (ToolException ex) { error = ex.Message; }
@@ -341,67 +344,12 @@ internal sealed class JobManager : IDisposable, ICache
         AddLog(job, "Completed.");
     }
 
-    /// <summary>Replaces "{{stepId.path}}" string arguments with values from earlier step results.</summary>
-    private static JsonObject Resolve(Job job, JsonObject args)
+    /// <summary>Replaces "{{stepId.path}}" placeholders with values from earlier step results (see XivMcp.Jobs.Placeholders).</summary>
+    private static JsonObject Resolve(Job job, JsonObject args) => XivMcp.Jobs.Placeholders.Resolve(args, stepId =>
     {
-        var copy = (JsonObject)args.DeepClone();
-        void Walk(JsonNode? node)
-        {
-            switch (node)
-            {
-                case JsonObject o:
-                    foreach (var key in o.Select(kv => kv.Key).ToList())
-                    {
-                        if (o[key] is JsonValue v && v.TryGetValue<string>(out var s) && s.Contains("{{")) o[key] = Substitute(job, s);
-                        else Walk(o[key]);
-                    }
-                    break;
-                case JsonArray a:
-                    for (var i = 0; i < a.Count; i++)
-                    {
-                        if (a[i] is JsonValue v && v.TryGetValue<string>(out var s) && s.Contains("{{")) a[i] = Substitute(job, s);
-                        else Walk(a[i]);
-                    }
-                    break;
-            }
-        }
-        Walk(copy);
-        return copy;
-    }
-
-    private static readonly Regex Placeholder = new(@"^\{\{([A-Za-z0-9_-]+)\.([^}]+)\}\}$");
-    private static readonly Regex EmbeddedPlaceholder = new(@"\{\{([A-Za-z0-9_-]+)\.([^}]+)\}\}");
-
-    /// <summary>A whole-string placeholder keeps the value's type; placeholders inside a longer string are replaced by the value as text.</summary>
-    private static JsonNode? Substitute(Job job, string s)
-    {
-        if (Placeholder.Match(s) is { Success: true } whole) return Lookup(job, whole.Groups[1].Value, whole.Groups[2].Value);
-        if (!EmbeddedPlaceholder.IsMatch(s)) return JsonValue.Create(s);
-        return JsonValue.Create(EmbeddedPlaceholder.Replace(s, m => Lookup(job, m.Groups[1].Value, m.Groups[2].Value) switch
-        {
-            JsonValue v when v.TryGetValue<string>(out var text) => text,
-            null => "",
-            var node => node.ToJsonString(),
-        }));
-    }
-
-    private static JsonNode? Lookup(Job job, string stepId, string path)
-    {
-        var step = job.Steps.FirstOrDefault(s => s.Id == stepId) ?? throw new ToolException($"No step '{stepId}' for {{{{{stepId}.{path}}}}}.");
-        if (step.State != StepState.Done || step.Result is null) throw new ToolException($"Step '{stepId}' has no result yet for {{{{{stepId}.{path}}}}}.");
-        JsonNode? node = step.Result;
-        foreach (var part in path.Split('.'))
-        {
-            node = node switch
-            {
-                JsonObject o => o.FirstOrDefault(kv => kv.Key.Equals(part, StringComparison.OrdinalIgnoreCase)).Value,
-                JsonArray a when int.TryParse(part, out var i) && i >= 0 && i < a.Count => a[i],
-                _ => null,
-            };
-            if (node is null) throw new ToolException($"Step '{stepId}' result has no '{path}'.");
-        }
-        return node.DeepClone();
-    }
+        var step = job.Steps.FirstOrDefault(s => s.Id == stepId) ?? throw new ToolException($"No step '{stepId}' in this job.");
+        return step.State == StepState.Done && step.Result is not null ? step.Result : throw new ToolException($"Step '{stepId}' has no result yet.");
+    });
 
     private void Validate(List<Step> steps, Job? job = null)
     {

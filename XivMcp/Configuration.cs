@@ -7,7 +7,7 @@ namespace XivMcp;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 2;
+    public int Version { get; set; } = 4;
 
     /// <summary>Whether the MCP server should be running.</summary>
     public bool ServerEnabled { get; set; } = true;
@@ -23,29 +23,42 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>The assistant chosen in the Connect tab: "claude", "codex" or "other".</summary>
     public string ConnectClient { get; set; } = "claude";
 
-    /// <summary>Allows the plugin tools: enable/disable/reload other plugins and read/write their config files.</summary>
-    public bool AllowPluginManagement { get; set; }
+    /// <summary>
+    /// Allow / Ask / Deny per permission group (core areas and maintained integrations) and access (read / write) for XIV MCP's own
+    /// tools. Enforced by the permission gate before a tool runs; unset entries use the group's defaults.
+    /// </summary>
+    public XivMcp.Permissions.CorePolicy CorePolicy { get; set; } = new();
 
-    /// <summary>Game & navigation: opening game windows, interacting with objects and NPCs, and moving the character (vnavmesh / Lifestream).</summary>
-    public bool AllowGameNavigation { get; set; }
+    // ---- The switches of settings version 3 and before. Reading them gives the matching group's current setting (for the checks some
+    // tools still make, e.g. whether turning in collectables may travel); setting them only happens when an old settings file is read.
+    private bool legacyPluginManagement, legacyGameNavigation, legacyUiEditing, legacyItemsRetainers, legacyMarketPurchases, legacyCraftingGathering, legacyOnlineData;
 
-    /// <summary>UI editing: creating, editing and clearing macros and writing the waymark preset slots.</summary>
-    public bool AllowUiEditing { get; set; }
+    private bool NotDenied(string group, XivMcp.Permissions.Access access) => CorePolicy.ModeFor(group, access) != XivMcp.Permissions.PolicyMode.Deny;
 
-    /// <summary>Items & retainers: sorting and moving items, retainer and FC chest transfers, retainer ventures.</summary>
-    public bool AllowItemsRetainers { get; set; }
+    public bool AllowPluginManagement { get => NotDenied("plugin_management", XivMcp.Permissions.Access.Read) || NotDenied("plugin_management", XivMcp.Permissions.Access.Write); set => legacyPluginManagement = value; }
+    public bool AllowGameNavigation { get => NotDenied("game_navigation", XivMcp.Permissions.Access.Write); set => legacyGameNavigation = value; }
+    public bool AllowUiEditing { get => NotDenied("ui_editing", XivMcp.Permissions.Access.Write); set => legacyUiEditing = value; }
+    public bool AllowItemsRetainers { get => NotDenied("items_retainers", XivMcp.Permissions.Access.Write); set => legacyItemsRetainers = value; }
+    public bool AllowMarketPurchases { get => NotDenied("market", XivMcp.Permissions.Access.Write); set => legacyMarketPurchases = value; }
+    public bool AllowCraftingGathering { get => NotDenied("artisan", XivMcp.Permissions.Access.Write) || NotDenied("gatherbuddyreborn", XivMcp.Permissions.Access.Write); set => legacyCraftingGathering = value; }
+    public bool AllowOnlineData { get => NotDenied("online", XivMcp.Permissions.Access.Read); set => legacyOnlineData = value; }
+    public bool ShouldSerializeAllowPluginManagement() => false;
+    public bool ShouldSerializeAllowGameNavigation() => false;
+    public bool ShouldSerializeAllowUiEditing() => false;
+    public bool ShouldSerializeAllowItemsRetainers() => false;
+    public bool ShouldSerializeAllowMarketPurchases() => false;
+    public bool ShouldSerializeAllowCraftingGathering() => false;
+    public bool ShouldSerializeAllowOnlineData() => false;
 
-    /// <summary>Market & purchases: buying from NPC vendors (non-gil asks in game), selling and repricing through retainers.</summary>
-    public bool AllowMarketPurchases { get; set; }
+    /// <summary>
+    /// What each third-party plugin (by internal name) may do through the plugin API: enabled, suspended, and Allow / Ask / Deny per
+    /// capability. A plugin is off until the player enables it.
+    /// </summary>
+    public System.Collections.Generic.Dictionary<string, XivMcp.Permissions.PluginPolicy> ThirdPartyPolicies { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Allows starting crafts / lists in Artisan, editing Artisan and GatherBuddy Reborn lists and toggling auto-gather.</summary>
-    public bool AllowCraftingGathering { get; set; }
-
-    /// <summary>Allows online lookups (FFXIV Teamcraft's item data, ffxiv.consolegameswiki.com, universalis.app prices).</summary>
-    public bool AllowOnlineData { get; set; }
-
-    /// <summary>Plugins (by internal name) whose tools, registered through the plugin API, are offered to clients. Off until the player allows a plugin.</summary>
+    /// <summary>Before version 3: the plugins whose tools were allowed. Read once and moved into <see cref="ThirdPartyPolicies"/>.</summary>
     public System.Collections.Generic.HashSet<string> AllowedToolPlugins { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public bool ShouldSerializeAllowedToolPlugins() => false;
 
     /// <summary>Optional: gil purchases costing more than this in one buy_item call also ask in game first (0 = gil never asks).</summary>
     public int AskAboveGil { get; set; }
@@ -74,12 +87,25 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public bool Migrate()
     {
-        if (Version >= 2) return false;
-        AllowGameNavigation = AllowGameInteraction && AllowNavigation;
-        AllowUiEditing = AllowMacroEditing && AllowWaymarkEditing;
-        AllowItemsRetainers = AllowInventoryActions && AllowVentures;
-        AllowMarketPurchases = AllowPurchasing && AllowMarket;
-        Version = 2;
+        if (Version >= 4) return false;
+        if (Version < 2)
+        {
+            legacyGameNavigation = AllowGameInteraction && AllowNavigation;
+            legacyUiEditing = AllowMacroEditing && AllowWaymarkEditing;
+            legacyItemsRetainers = AllowInventoryActions && AllowVentures;
+            legacyMarketPurchases = AllowPurchasing && AllowMarket;
+        }
+        // Version 3 → 4: on/off switches become Allow / Ask / Deny per group, read and write (a switch that was on allows its writes).
+        if (CorePolicy.Modes.Count == 0)
+            CorePolicy = XivMcp.Permissions.CorePolicy.FromLegacy(new XivMcp.Permissions.LegacySwitches(legacyGameNavigation, legacyItemsRetainers,
+                legacyMarketPurchases, legacyCraftingGathering, legacyUiEditing, legacyOnlineData, legacyPluginManagement));
+        foreach (var plugin in AllowedToolPlugins)
+        {
+            if (!ThirdPartyPolicies.TryGetValue(plugin, out var p)) ThirdPartyPolicies[plugin] = p = new XivMcp.Permissions.PluginPolicy();
+            p.Enabled = true;
+        }
+        AllowedToolPlugins.Clear();
+        Version = 4;
         return true;
     }
 

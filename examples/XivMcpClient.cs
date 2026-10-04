@@ -1,4 +1,4 @@
-// XivMcpClient.cs: a drop-in client for the XIV MCP plugin API (API version 1).
+// XivMcpClient.cs: a drop-in client for the XIV MCP plugin API (API version 2).
 //
 // Copy this file into your Dalamud plugin. It has no dependencies besides Dalamud and System.Text.Json, and
 // it works whether or not XIV MCP is installed: tools are (re)registered whenever XIV MCP loads.
@@ -34,6 +34,61 @@ public sealed record McpToolDefinition(string Name, string Description)
 
     /// <summary>True if the tool's changes are hard to undo (deleting, overwriting files, spending currency).</summary>
     public bool Destructive { get; init; }
+
+    /// <summary>
+    /// What the tool may do, from <see cref="McpCapabilities"/>. Required for tools that aren't read-only: the player decides per
+    /// capability whether the tool runs, asks first or is blocked, and XIV MCP checks each call against what you declared.
+    /// </summary>
+    public string[] Capabilities { get; init; } = [];
+}
+
+/// <summary>Capability ids for <see cref="McpToolDefinition.Capabilities"/>. XivMcp.ListCapabilities returns the full catalog with descriptions.</summary>
+public static class McpCapabilities
+{
+    public const string ReadGame = "read_game";            // low: reads game state (implied for every tool)
+    public const string GameUi = "game_ui";                // medium: opens or clicks game windows, talks to NPCs
+    public const string MoveCharacter = "move_character";  // medium: walks, teleports, changes zone, instance or world
+    public const string Combat = "combat";                 // high: enters duties or fights
+    public const string MoveItems = "move_items";          // medium: moves items between containers
+    public const string SpendGil = "spend_gil";            // high
+    public const string SpendCurrency = "spend_currency";  // high: tomestones, scrips, seals, MGP, item currencies
+    public const string TradeItems = "trade_items";        // high: market board, vendors, player trades
+    public const string DiscardItems = "discard_items";    // critical: discard or desynthesise; always asked
+    public const string ChatSend = "chat_send";            // high: chat or commands other players can see
+    public const string Login = "login";                   // high: log out, switch character
+    public const string EditSettings = "edit_settings";    // high: game, plugin or file settings
+    public const string Network = "network";               // medium: web requests
+}
+
+/// <summary>What the player set for a capability: run without asking, ask first, or blocked.</summary>
+public enum McpPermission { Allow, Ask, Deny }
+
+/// <summary>Where your plugin stands with the player in XIV MCP.</summary>
+public enum McpPluginState
+{
+    /// <summary>XIV MCP isn't loaded (or speaks an older API).</summary>
+    Unavailable,
+
+    /// <summary>Registered; the player hasn't decided yet (they got a notification).</summary>
+    Undecided,
+
+    /// <summary>The player chose to keep you disabled; they aren't asked again until your registration changes.</summary>
+    KeptDisabled,
+
+    /// <summary>Enabled: your tools are offered and run under the player's capability policies.</summary>
+    Enabled,
+
+    /// <summary>You were enabled, but your registration grew (new tool or capability): all your tools are paused until the player consents.</summary>
+    AwaitingConsent,
+
+    /// <summary>A call did something it didn't declare; every call is refused until the player lifts the suspension.</summary>
+    Suspended,
+}
+
+/// <summary>Your plugin's status and the player's setting for each capability you declared.</summary>
+public sealed record McpStatus(McpPluginState State, string? SuspendReason, IReadOnlyDictionary<string, McpPermission> Capabilities)
+{
+    public bool CanRun => State == McpPluginState.Enabled;
 }
 
 /// <summary>A tool error the assistant should see as-is ("Not at a summoning bell."). Other exceptions are reported with their type.</summary>
@@ -62,6 +117,26 @@ public sealed class McpCall
 
     /// <summary>Adds a line to the job log when the call runs as a job step ("Room 2 of 5"). Cheap; call it on milestones, not every frame.</summary>
     public void Progress(string text) => client.Call(XivMcpClient.Prefix + "ReportProgress", Id, text);
+
+    /// <summary>
+    /// Asks whether this call may do something it declared right now, with a summary the player decides on ("Buy 3 Hi-Potions for 1,200
+    /// gil"). Allowed capabilities return true at once and denied ones false; "ask" shows XIV MCP's approval window and waits for the
+    /// player (declined after two minutes without an answer). Asking for a capability the tool didn't declare is refused and flagged.
+    /// Call it right before the risky step, with the real numbers.
+    /// </summary>
+    public async Task<bool> RequestApprovalAsync(string capability, string summary)
+    {
+        var request = new JsonObject { ["capability"] = capability, ["summary"] = summary }.ToJsonString();
+        var reply = client.Call(XivMcpClient.Prefix + "RequestApproval", Id, request);
+        var id = reply["approvalId"]!.GetValue<string>();
+        var state = reply["state"]!.GetValue<string>();
+        while (state == "pending")
+        {
+            await Task.Delay(250, Cancellation);
+            state = client.Call(XivMcpClient.Prefix + "GetApproval", id)["state"]!.GetValue<string>();
+        }
+        return state == "approved";
+    }
 }
 
 /// <summary>A step of a job: a tool (built-in or any plugin's) and its arguments. Arguments may use "{{stepId.path}}" placeholders.</summary>
@@ -70,7 +145,7 @@ public sealed record McpJobStep(string Tool, object? Args = null, string? Id = n
 public sealed class XivMcpClient : IDisposable
 {
     internal const string Prefix = "XivMcp.";
-    public const int ApiVersion = 1;
+    public const int ApiVersion = 2;
 
     private readonly IDalamudPluginInterface pi;
     private readonly string owner;
@@ -132,6 +207,39 @@ public sealed class XivMcpClient : IDisposable
         Register(definition);
     }
 
+    /// <summary>What the player set for one of your capabilities right now (Deny while your plugin is off, paused or suspended).</summary>
+    public McpPermission CheckPermission(string capability) => Permission(Call(Prefix + "CheckPermission", owner, capability)["mode"]!.GetValue<string>());
+
+    /// <summary>
+    /// Where your plugin stands with the player (e.g. to show "Waiting for your approval in /xivmcp" in your own UI), and the setting of
+    /// each capability you declared. Cheap; fine to call when your window opens, not every frame.
+    /// </summary>
+    public McpStatus GetStatus()
+    {
+        if (!IsAvailable) return new McpStatus(McpPluginState.Unavailable, null, new Dictionary<string, McpPermission>());
+        var reply = Call(Prefix + "GetStatus", owner);
+        var state = reply["state"]?.GetValue<string>() switch
+        {
+            "undecided" => McpPluginState.Undecided,
+            "kept_disabled" => McpPluginState.KeptDisabled,
+            "enabled" => McpPluginState.Enabled,
+            "awaiting_consent" => McpPluginState.AwaitingConsent,
+            "suspended" => McpPluginState.Suspended,
+            _ => McpPluginState.Unavailable,
+        };
+        var caps = new Dictionary<string, McpPermission>();
+        foreach (var c in reply["capabilities"]?.AsArray() ?? [])
+            if (c?["id"]?.GetValue<string>() is { } id) caps[id] = Permission(c["mode"]?.GetValue<string>());
+        return new McpStatus(state, reply["suspendReason"]?.GetValue<string>(), caps);
+    }
+
+    private static McpPermission Permission(string? mode) => mode switch
+    {
+        "allow" => McpPermission.Allow,
+        "ask" => McpPermission.Ask,
+        _ => McpPermission.Deny,
+    };
+
     public void RemoveTool(string name)
     {
         if (tools.Remove(name)) Call(Prefix + "UnregisterTool", owner, name);
@@ -174,6 +282,7 @@ public sealed class XivMcpClient : IDisposable
         var def = new JsonObject
         {
             ["name"] = d.Name, ["description"] = d.Description, ["readOnly"] = d.ReadOnly, ["destructive"] = d.Destructive,
+            ["capabilities"] = new JsonArray(Array.ConvertAll(d.Capabilities, c => (JsonNode)JsonValue.Create(c))),
             ["inputSchema"] = d.InputSchema is null ? null : JsonNode.Parse(d.InputSchema),
         };
         try { Call(Prefix + "RegisterTool", owner, def.ToJsonString()); }

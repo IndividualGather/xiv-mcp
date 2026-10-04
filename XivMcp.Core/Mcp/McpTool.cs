@@ -24,8 +24,11 @@ public sealed class McpTool
     /// <summary>True for tools whose changes may be hard to undo (e.g. overwriting config files).</summary>
     public bool Destructive { get; init; }
 
-    /// <summary>Internal name of the plugin that registered the tool through the plugin API; null for built-in tools.</summary>
-    public string? Owner { get; init; }
+    /// <summary>Who provides the tool: XIV MCP's core, an integration XIV MCP maintains, or a third-party plugin.</summary>
+    public ToolProvider Provider { get; init; } = ToolProvider.Core;
+
+    /// <summary>What the tool may do (ids from <see cref="XivMcp.Permissions.Capabilities"/>). Third-party tools are gated on these.</summary>
+    public IReadOnlyList<string> Capabilities { get; init; } = [];
 
     /// <summary>When set, the tool is only listed (and callable) while this returns true, e.g. while the plugin it drives is loaded.</summary>
     public Func<bool>? Available { get; init; }
@@ -39,13 +42,25 @@ public sealed class McpTool
         }
     }
 
+    /// <summary>The same tool under another provider (and capabilities); <paramref name="available"/> is combined with the tool's own availability.</summary>
+    public McpTool WithProvider(ToolProvider provider, IReadOnlyList<string> capabilities, Func<bool>? available = null)
+    {
+        var own = Available;
+        return new McpTool
+        {
+            Name = Name, Description = Description, InputSchema = InputSchema, Handler = Handler, ReadOnly = ReadOnly, Destructive = Destructive,
+            Provider = provider, Capabilities = capabilities,
+            Available = available is null ? own : own is null ? available : () => available() && own(),
+        };
+    }
+
     /// <summary>The input schema; a broken one is logged and replaced by an empty schema, so one tool can't break tools/list for all.</summary>
     public JsonNode ParsedSchema()
     {
         try { return JsonNode.Parse(InputSchema) ?? new JsonObject { ["type"] = "object" }; }
         catch (System.Text.Json.JsonException ex)
         {
-            XivMcp.Svc.Log.Error($"[MCP] Tool {Name} has an invalid input schema: {ex.Message}");
+            CoreLog.Error?.Invoke($"[MCP] Tool {Name} has an invalid input schema: {ex.Message}");
             return new JsonObject { ["type"] = "object" };
         }
     }

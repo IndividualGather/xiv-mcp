@@ -6,16 +6,16 @@ using System.Linq;
 namespace XivMcp.Mcp;
 
 /// <summary>
-/// All tools the server offers: the built-in ones plus those other plugins register at runtime (see Api/PluginApi.cs).
-/// Thread-safe; <see cref="Changed"/> fires when tools are added or removed.
+/// All tools the server offers: the core ones, those of the integrations XIV MCP maintains, and those third-party plugins register at
+/// runtime. Thread-safe; <see cref="Changed"/> fires when tools are added or removed. A name belongs to the provider that registered it.
 /// </summary>
 public sealed class ToolRegistry
 {
     private readonly ConcurrentDictionary<string, McpTool> tools = new(StringComparer.Ordinal);
 
-    public ToolRegistry(IEnumerable<McpTool> builtIn)
+    public ToolRegistry(IEnumerable<McpTool> initial)
     {
-        foreach (var t in builtIn)
+        foreach (var t in initial)
             if (!tools.TryAdd(t.Name, t)) throw new InvalidOperationException($"Duplicate tool name {t.Name}.");
     }
 
@@ -28,14 +28,14 @@ public sealed class ToolRegistry
 
     public IReadOnlyCollection<McpTool> All => tools.Values.ToList();
 
-    /// <summary>Adds a tool or replaces one with the same name and owner; false if the name belongs to someone else.</summary>
+    /// <summary>Adds a tool or replaces one of the same provider; false if the name belongs to the core or another provider.</summary>
     public bool AddOrReplace(McpTool tool)
     {
         while (true)
         {
             if (tools.TryGetValue(tool.Name, out var existing))
             {
-                if (existing.Owner is null || existing.Owner != tool.Owner) return false;
+                if (existing.Provider.Trust == ProviderTrust.Core || existing.Provider != tool.Provider) return false;
                 if (!tools.TryUpdate(tool.Name, tool, existing)) continue;
             }
             else if (!tools.TryAdd(tool.Name, tool)) continue;
@@ -44,19 +44,21 @@ public sealed class ToolRegistry
         }
     }
 
-    /// <summary>Removes one tool of an owner; built-in tools can't be removed.</summary>
-    public bool Remove(string name, string owner)
+    /// <summary>Removes one tool of a provider; core tools can't be removed.</summary>
+    public bool Remove(string name, ToolProvider provider)
     {
-        if (!tools.TryGetValue(name, out var t) || t.Owner != owner || !tools.TryRemove(new KeyValuePair<string, McpTool>(name, t))) return false;
+        if (provider.Trust == ProviderTrust.Core || !tools.TryGetValue(name, out var t) || t.Provider != provider
+            || !tools.TryRemove(new KeyValuePair<string, McpTool>(name, t))) return false;
         Changed?.Invoke();
         return true;
     }
 
-    /// <summary>Removes every tool of an owner; returns how many.</summary>
-    public int RemoveOwner(string owner)
+    /// <summary>Removes every tool of a provider; returns how many.</summary>
+    public int RemoveProvider(ToolProvider provider)
     {
+        if (provider.Trust == ProviderTrust.Core) return 0;
         var removed = 0;
-        foreach (var t in tools.Values.Where(t => t.Owner == owner).ToList())
+        foreach (var t in tools.Values.Where(t => t.Provider == provider).ToList())
             if (tools.TryRemove(new KeyValuePair<string, McpTool>(t.Name, t))) removed++;
         if (removed > 0) Changed?.Invoke();
         return removed;

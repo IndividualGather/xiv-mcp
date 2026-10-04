@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using Dalamud.Game.Command;
@@ -52,11 +53,12 @@ public sealed class Plugin : IDalamudPlugin
                 return new { greeting, world = player.CurrentWorld.Value.Name.ExtractText(), territory = ClientState.TerritoryType };
             });
 
-        // 2. Changes something (here: prints to the local chat log), so ReadOnly stays false.
+        // 2. Changes something (here: prints to the local chat log), so it isn't read-only and declares what it does.
         mcp.AddTool(
             new McpToolDefinition("hellomcp_print",
                 "Prints a message into the player's own chat log (only they see it). Use it to tell the player something in game.")
             {
+                Capabilities = [McpCapabilities.GameUi],
                 InputSchema = """
                     {
                       "type": "object",
@@ -80,6 +82,7 @@ public sealed class Plugin : IDalamudPlugin
                 "Counts down a number of seconds, then prints a message in chat. Long-running: use it as a job step (start_job) to try " +
                 "progress reporting and pause / cancel.")
             {
+                Capabilities = [McpCapabilities.GameUi],
                 InputSchema = """
                     {
                       "type": "object",
@@ -97,6 +100,35 @@ public sealed class Plugin : IDalamudPlugin
                 }
                 await Framework.RunOnFrameworkThread(() => Chat.Print($"Countdown of {seconds} s finished.", "Hello MCP"));
                 return new { seconds, finishedAt = DateTime.UtcNow };
+            });
+
+        // 4. Asks for approval at the risky moment, with the real numbers. (This example only pretends: nothing is bought.)
+        mcp.AddLongRunningTool(
+            new McpToolDefinition("hellomcp_pretend_purchase",
+                "Pretends to buy an item for gil, to try XIV MCP's approval flow: it asks the player first and reports what they decided. " +
+                "Nothing is actually bought or spent.")
+            {
+                Capabilities = [McpCapabilities.SpendGil],
+                InputSchema = """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "item": { "type": "string", "description": "What to pretend to buy (default Hi-Potion)." },
+                        "gil": { "type": "integer", "minimum": 1, "description": "The pretend price (default 1200)." }
+                      }
+                    }
+                    """,
+            },
+            async call =>
+            {
+                var item = call.Args["item"]?.GetValue<string>() ?? "Hi-Potion";
+                var gil = call.Args["gil"]?.GetValue<int>() ?? 1200;
+                if (mcp.CheckPermission(McpCapabilities.SpendGil) == McpPermission.Deny)
+                    throw new McpToolException("Spending gil is blocked for Hello MCP in /xivmcp.");
+                var approved = await call.RequestApprovalAsync(McpCapabilities.SpendGil, $"Buy {item} for {gil:N0} gil (pretend)");
+                if (!approved) throw new McpToolException("The player declined the purchase; nothing was bought.");
+                await Framework.RunOnFrameworkThread(() => Chat.Print($"Pretended to buy {item} for {gil:N0} gil.", "Hello MCP"));
+                return new { item, gil, approved, note = "Nothing was actually bought." };
             });
 
         Commands.AddHandler("/hellomcp", new CommandInfo(OnCommand)
@@ -124,8 +156,17 @@ public sealed class Plugin : IDalamudPlugin
                         Chat.Print($"{j?["id"]} {j?["name"]}: {j?["state"]} ({j?["progress"]})", "Hello MCP");
                     break;
                 default:
-                    Chat.Print(mcp.IsAvailable ? "XIV MCP is loaded; the tools are offered once you allow Hello MCP in /xivmcp → Permissions."
-                                               : "XIV MCP is not loaded.", "Hello MCP");
+                    // Tell the player where things stand, the way your own UI could.
+                    var status = mcp.GetStatus();
+                    Chat.Print(status.State switch
+                    {
+                        McpPluginState.Unavailable => "XIV MCP is not loaded.",
+                        McpPluginState.Undecided => "XIV MCP is waiting for your decision: enable Hello MCP in /xivmcp → Third-party plugins.",
+                        McpPluginState.KeptDisabled => "You kept Hello MCP disabled in XIV MCP.",
+                        McpPluginState.AwaitingConsent => "Hello MCP changed its tools; XIV MCP waits for your consent in /xivmcp → Third-party plugins.",
+                        McpPluginState.Suspended => $"XIV MCP suspended Hello MCP: {status.SuspendReason}",
+                        _ => "Enabled in XIV MCP. " + string.Join(", ", status.Capabilities.Select(c => $"{c.Key}: {c.Value}")),
+                    }, "Hello MCP");
                     break;
             }
         }
