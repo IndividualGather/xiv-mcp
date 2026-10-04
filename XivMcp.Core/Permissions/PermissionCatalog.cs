@@ -117,6 +117,17 @@ public sealed class CorePolicy
 
     public void Set(string group, Access access, PolicyMode mode) => Modes[Key(group, access)] = mode;
 
+    /// <summary>Groups the player turned off: their tools are not offered to the assistant at all. Every group is on until turned off.</summary>
+    public HashSet<string> GroupsOff { get; set; } = new();
+
+    public bool IsGroupOn(string group) => !GroupsOff.Contains(group);
+
+    public void SetGroupOn(string group, bool on)
+    {
+        if (on) GroupsOff.Remove(group);
+        else GroupsOff.Add(group);
+    }
+
     /// <summary>Per-tool settings that override the tool's group (by tool name). Tools not listed follow their group.</summary>
     public Dictionary<string, PolicyMode> Tools { get; set; } = new();
 

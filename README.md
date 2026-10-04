@@ -27,6 +27,8 @@ Every tool of XIV MCP belongs to one **group**, and every group has two settings
 - **Ask** shows the approval window first: approve once, approve for this session, always allow (sets just that tool to *Allow*), or decline.
 - **Deny** refuses it before it runs, and tells your assistant which setting to change.
 
+**Turning a group off.** The switch in each card's top right removes the group's tools from your assistant entirely: they disappear from its tool list (clients are told the list changed), calls and job steps are refused, and the card shows only its description. Unlike *Deny*, which keeps the tools listed so the assistant can tell you they're blocked, this keeps the assistant's tool list short. Turn the group back on to bring the tools back with their settings.
+
 | Group | Reading | Changes | Covers |
 |---|---|---|---|
 | **Game data** | Allow | — | Character, jobs, gear, inventory, currencies, quests and unlocks, party and surroundings, collections, game sheets, caches, the self-test |

@@ -289,3 +289,67 @@ public class IntegrationGroupAccessTests
         Assert.Equal(hasWrite, g.HasWrite);
     }
 }
+
+public class GroupSwitchTests
+{
+    private sealed class NoGate : IApprovalGate { public Task<ApprovalDecision> RequestAsync(ApprovalRequest r, CancellationToken ct) => Task.FromResult(ApprovalDecision.ApprovedOnce); }
+    private sealed class NoProbe : IGameProbe { public GameSnapshot? Capture() => null; }
+    private sealed class NoNotifier : ISecurityNotifier { public void Flagged(ToolProvider p, string t, IReadOnlyList<SideEffect> e, bool s) { } }
+
+    private static McpTool Core(string name, bool readOnly = true) =>
+        new() { Name = name, Description = "d", ReadOnly = readOnly, Handler = (_, _) => Task.FromResult<object?>("ran") };
+
+    [Fact]
+    public void Groups_are_on_until_turned_off()
+    {
+        var p = new CorePolicy();
+        Assert.True(p.IsGroupOn("market"));
+        p.SetGroupOn("market", false);
+        Assert.False(p.IsGroupOn("market"));
+        p.SetGroupOn("market", true);
+        Assert.True(p.IsGroupOn("market"));
+    }
+
+    [Fact]
+    public async Task Tools_of_a_turned_off_group_are_not_listed_and_refused()
+    {
+        var store = new InMemoryPolicyStore();
+        var gate = new ToolGate(store, new NoGate(), new NoProbe(), new AuditLog(10), new NoNotifier());
+        var tool = Core("get_market_listings");
+        Assert.True(gate.IsListed(tool));
+
+        store.Core.SetGroupOn("market", false);
+        Assert.False(gate.IsListed(tool));
+        var ex = await Assert.ThrowsAsync<ToolException>(() => gate.InvokeAsync(tool, new ToolArgs(null), default));
+        Assert.Contains("turned off", ex.Message);
+        Assert.Contains("Market & purchases", ex.Message);
+    }
+
+    [Fact]
+    public void Turning_off_one_group_leaves_the_others_listed()
+    {
+        var store = new InMemoryPolicyStore();
+        store.Core.SetGroupOn("market", false);
+        var gate = new ToolGate(store, new NoGate(), new NoProbe(), new AuditLog(10), new NoNotifier());
+        Assert.True(gate.IsListed(Core("get_game_status")));
+    }
+
+    [Fact]
+    public void Integrations_can_be_turned_off_too()
+    {
+        var store = new InMemoryPolicyStore();
+        var gate = new ToolGate(store, new NoGate(), new NoProbe(), new AuditLog(10), new NoNotifier());
+        var duty = IntegrationCatalog.Apply([Core("run_duty", false)], _ => true).Single();
+        store.Core.SetGroupOn(PermissionCatalog.ForIntegration("AutoDuty")!.Id, false);
+        Assert.False(gate.IsListed(duty));
+    }
+
+    [Fact]
+    public void Third_party_and_unlisted_tools_are_not_affected_by_group_switches()
+    {
+        var gate = new ToolGate(new InMemoryPolicyStore(), new NoGate(), new NoProbe(), new AuditLog(10), new NoNotifier());
+        Assert.True(gate.IsListed(Core("brand_new_tool")));
+        var third = new McpTool { Name = "x_tool", Description = "d", Provider = new ToolProvider("X", "X", ProviderTrust.ThirdParty), Handler = (_, _) => Task.FromResult<object?>(null) };
+        Assert.True(gate.IsListed(third));
+    }
+}

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
+using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using XivMcp.Mcp;
@@ -23,6 +24,9 @@ internal interface IPermissionsHost
 
     /// <summary>Extra options shown in a group's card while its changes aren't denied (bell location, move delay, gil limit).</summary>
     Action? Options(string groupId);
+
+    /// <summary>A group was turned on or off: tell clients the tool list changed.</summary>
+    void ToolsChanged();
 }
 
 /// <summary>
@@ -100,9 +104,10 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
         var read = g.HasRead ? host.Policy.ModeFor(g.Id, Access.Read) : (PolicyMode?)null;
         var write = g.HasWrite ? host.Policy.ModeFor(g.Id, Access.Write) : (PolicyMode?)null;
         var loaded = g.PluginId is null || host.IsLoaded(g.PluginId);
+        var on = host.Policy.IsGroupOn(g.Id);
         // How open the group is decides the card's accent: its changes if it has any, else its reading.
         var openness = write ?? read ?? PolicyMode.Deny;
-        var accent = openness switch { PolicyMode.Allow => AllowColor, PolicyMode.Ask => AskColor, _ => NeutralAccent };
+        var accent = !on ? NeutralAccent : openness switch { PolicyMode.Allow => AllowColor, PolicyMode.Ask => AskColor, _ => NeutralAccent };
 
         var pad = 10 * scale;
         var bar = 4 * scale;
@@ -114,7 +119,8 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
         ImGui.Indent(pad + bar);
         ImGui.Dummy(new Vector2(0, pad - ImGui.GetStyle().ItemSpacing.Y));
         var left = ImGui.GetCursorPosX();
-        using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, loaded ? 1f : 0.55f))
+        var headerY = ImGui.GetCursorPosY();
+        using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, loaded && on ? 1f : 0.55f))
         {
             // Header: a larger icon, the name and a one-line summary.
             using (Ui.IconFont())
@@ -128,32 +134,51 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
             {
                 ImGui.TextUnformatted(g.Title);
                 var individual = tools.Count(t => host.Policy.ToolMode(t.Name) is not null);
-                ImGui.TextColored(Muted, !loaded ? "Not loaded: its tools are hidden" : Summary(read, write) + (individual > 0 ? $" · {individual} set individually" : ""));
+                ImGui.TextColored(Muted, !on ? "Turned off: its tools are not offered to your assistant" : !loaded ? "Not loaded: its tools are hidden" : Summary(read, write) + (individual > 0 ? $" · {individual} set individually" : ""));
             }
             Tooltip(ToolList(tools, loaded));
 
             ImGui.PushTextWrapPos(left + inner);
             ImGui.TextColored(Muted, g.Description);
             ImGui.PopTextWrapPos();
-            ImGui.Dummy(new Vector2(0, 2 * scale));
 
-            var labelWidth = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemSpacing.X + Math.Max(ImGui.CalcTextSize("Reading").X, ImGui.CalcTextSize("Changes").X) + 12 * scale;
-            Segmented(g, Access.Read, "Reading", tools, left, labelWidth, inner);
-            Segmented(g, Access.Write, "Changes", tools, left, labelWidth, inner);
-
-            if (host.Options(g.Id) is { } options && write is not null and not PolicyMode.Deny)
+            // A turned-off group shows nothing to set: its tools aren't offered at all.
+            if (on)
             {
                 ImGui.Dummy(new Vector2(0, 2 * scale));
-                ImGui.TextColored(Muted, "Options");
-                ImGui.PushTextWrapPos(left + inner);
-                options();
-                ImGui.PopTextWrapPos();
+                var labelWidth = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemSpacing.X + Math.Max(ImGui.CalcTextSize("Reading").X, ImGui.CalcTextSize("Changes").X) + 12 * scale;
+                Segmented(g, Access.Read, "Reading", tools, left, labelWidth, inner);
+                Segmented(g, Access.Write, "Changes", tools, left, labelWidth, inner);
+
+                if (host.Options(g.Id) is { } options && write is not null and not PolicyMode.Deny)
+                {
+                    ImGui.Dummy(new Vector2(0, 2 * scale));
+                    ImGui.TextColored(Muted, "Options");
+                    ImGui.PushTextWrapPos(left + inner);
+                    options();
+                    ImGui.PopTextWrapPos();
+                }
             }
         }
+        var contentBottom = ImGui.GetItemRectMax().Y;
+
+        // The on/off switch, right-aligned in the header and never dimmed.
+        var afterContent = ImGui.GetCursorPos();
+        var switchWidth = ImGui.GetFrameHeight() * 1.55f;
+        ImGui.SetCursorPos(new Vector2(left + inner - switchWidth, headerY));
+        var isOn = on;
+        if (ImGuiComponents.ToggleButton("##on", ref isOn))
+        {
+            host.Policy.SetGroupOn(g.Id, isOn);
+            host.Save();
+            host.ToolsChanged();
+        }
+        Tooltip(isOn ? "On: its tools are offered to your assistant. Turn off to remove them." : "Off: its tools are not offered to your assistant at all.");
+        ImGui.SetCursorPos(afterContent);
         ImGui.Unindent(pad + bar);
 
         // Frame: a faint tint, a border and an accent bar on the left, drawn after the content (no channel splitting inside the table).
-        var end = new Vector2(start.X + width, ImGui.GetItemRectMax().Y + pad);
+        var end = new Vector2(start.X + width, contentBottom + pad);
         var drawList = ImGui.GetWindowDrawList();
         var rounding = 6 * scale;
         drawList.AddRectFilled(start, end, ImGui.GetColorU32(openness == PolicyMode.Deny ? new Vector4(1, 1, 1, 0.025f) : accent with { W = 0.07f }), rounding);

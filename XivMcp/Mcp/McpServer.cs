@@ -108,7 +108,7 @@ public sealed partial class McpServer : IDisposable
     private string availableTools;
     private readonly Lock toolListLock = new();
 
-    private string AvailableToolNames() => string.Join(",", tools.All.Where(t => t.IsAvailable).Select(t => t.Name).Order());
+    private string AvailableToolNames() => string.Join(",", tools.All.Where(t => t.IsAvailable && gate.IsListed(t)).Select(t => t.Name).Order());
 
     /// <summary>Some tools only exist while the plugin they drive is loaded: tell clients when the tool list changes.</summary>
     private void OnPluginsChanged(Dalamud.Plugin.IActivePluginsChangedEventArgs args) => NotifyIfToolsChanged();
@@ -273,7 +273,7 @@ public sealed partial class McpServer : IDisposable
             {
                 "initialize" => Initialize(@params, res),
                 "ping" => new JsonObject(),
-                "tools/list" => new JsonObject { ["tools"] = new JsonArray(tools.All.Where(t => t.IsAvailable).OrderBy(t => t.Name).Select(t => (JsonNode)t.ToListEntry()).ToArray()) },
+                "tools/list" => new JsonObject { ["tools"] = new JsonArray(tools.All.Where(t => t.IsAvailable && gate.IsListed(t)).OrderBy(t => t.Name).Select(t => (JsonNode)t.ToListEntry()).ToArray()) },
                 "tools/call" => await CallTool(@params, ct).ConfigureAwait(false),
                 "resources/list" => ListResources(),
                 "resources/templates/list" => new JsonObject { ["resourceTemplates"] = new JsonArray() },

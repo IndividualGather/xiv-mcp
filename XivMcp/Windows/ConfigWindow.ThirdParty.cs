@@ -31,6 +31,7 @@ internal sealed partial class ConfigWindow
         public void Save() => window.plugin.Config.Save();
         public bool IsInstalled(string pluginId) => Svc.PluginInterface.InstalledPlugins.Any(p => p.InternalName.Equals(pluginId, StringComparison.OrdinalIgnoreCase));
         public bool IsLoaded(string pluginId) => PluginCompat.IsLoaded(pluginId);
+        public void ToolsChanged() => window.plugin.Server.NotifyIfToolsChanged();
 
         public Action? Options(string groupId) => groupId switch
         {

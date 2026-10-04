@@ -206,6 +206,13 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
     }
 
     /// <summary>
+    /// Whether a tool is offered to the assistant at all: false for XIV MCP's own tools whose group the player turned off. Third-party
+    /// tools and tools missing from the catalog aren't affected (they have their own switches and fail-safes).
+    /// </summary>
+    public bool IsListed(McpTool tool) =>
+        tool.Provider.Trust == ProviderTrust.ThirdParty || PermissionCatalog.GroupOf(tool) is not { } g || store.Core.IsGroupOn(g.Id);
+
+    /// <summary>
     /// The effective mode of one of XIV MCP's own tools: its group's read or write setting. Tools missing from the catalog fail safe
     /// (reads allowed, writes asked).
     /// </summary>
@@ -233,6 +240,12 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
             Utc = now(), ProviderId = tool.Provider.Id, ProviderName = tool.Provider.DisplayName, Tool = tool.Name,
             ArgsPreview = Preview(args.Raw.ToJsonString()), Capabilities = [sessionKey], Decision = decision, InJob = inJob, BuiltIn = true,
         };
+
+        if (!IsListed(tool))
+        {
+            audit.Add(Entry("blocked") with { Error = $"{area} is turned off." });
+            throw new ToolException($"{area} is turned off in /xivmcp → Permissions, so {tool.Name} isn't available. The player can turn it on there.");
+        }
 
         if (mode == PolicyMode.Deny)
         {
