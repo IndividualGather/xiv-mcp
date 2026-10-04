@@ -1,0 +1,50 @@
+---
+title: Connecting your AI app
+description: Set up ChatGPT, Claude, LM Studio or another AI app with one click in /xivmcp → Connect.
+---
+
+Open `/xivmcp` → **Connect** and pick your app. Most apps have a one-click button. The others have copy buttons with your access token already filled in.
+
+<Screenshot src="connect.png" alt="The Connect tab of XIV MCP, with large tiles for ChatGPT, Claude Desktop and LM Studio and smaller tiles for other apps" caption="The Connect tab. Each tile shows whether XIV MCP is set up in that app." />
+
+## Which app to pick
+
+<Cards>
+  <Card title="ChatGPT" href="/docs/user/connect/chatgpt" description="Through Codex in the ChatGPT desktop app. Paid plan." />
+  <Card title="Claude Desktop" href="/docs/user/connect/claude-desktop" description="Installs as a Claude Desktop extension. Paid plan." />
+  <Card title="LM Studio" href="/docs/user/connect/lm-studio" description="Runs a model on your own PC. Free." />
+  <Card title="Claude Code" href="/docs/user/connect/claude-code" description="In the terminal or your editor. Paid plan." />
+  <Card title="VS Code" href="/docs/user/connect/vs-code" description="With GitHub Copilot. Paid plan." />
+  <Card title="Other apps" href="/docs/user/connect/other-apps" description="Any app that reaches MCP servers over HTTP." />
+</Cards>
+
+ChatGPT, Claude Desktop and LM Studio have large tiles; the others are below them. Every app except LM Studio is marked **Paid**, because their free plans run out quickly when they control the game. See [Costs](/docs/user/costs).
+
+## What the tiles show
+
+Each tile shows the app's own icon, read from the app installed on your PC. Under the name is its state:
+
+| State | Meaning |
+|---|---|
+| **Connected** | XIV MCP is set up in that app. XIV MCP reads this from the app's own MCP settings. |
+| **Installed** | The app is on your PC, but XIV MCP is not set up in it yet. |
+| **Not found** | The app is not installed. |
+
+Tiles marked **Coming soon** are greyed out: their setup has not been tested yet. Today that is Cursor, GitHub Copilot and Grok Build.
+
+## The server and the access token
+
+The **Server & access token** section at the bottom of the **Connect** tab holds the server settings:
+
+- **The address** is `http://localhost:37521/mcp`. It only answers on your own PC. You can change the port there and click **Apply & restart**; then set up your apps again.
+- **The access token** is created once, on first start, and saved with the plugin settings. It stays the same across game restarts until you generate a new one with the arrows button next to it. After that, set up every app again.
+- **Require access token** is on by default. Without a token, any program on your PC can use the server, so leave it on unless an app cannot send one.
+- **To cut off every app at once,** switch off the **Server** in the top right of the window, or generate a new token.
+
+<Callout type="warn">
+  The token gives full access to everything you allowed. Do not post it, and do not commit config files that contain it.
+</Callout>
+
+## After connecting
+
+Start a new chat in your app and ask something simple, such as "What job am I on in Final Fantasy XIV?". The app should call `get_character` and answer with your current job. If it does not, see [Troubleshooting](/docs/user/troubleshooting).

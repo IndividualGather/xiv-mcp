@@ -1,0 +1,20 @@
+---
+title: Costs
+description: XIV MCP is free. The AI app you connect it to usually is not.
+icon: Coins
+---
+
+XIV MCP itself is free. The AI app you connect it to usually is not:
+
+- **Every request uses tokens.** Each time your assistant reads the game or acts in it, the AI model handles a request. Controlling the game uses many: every tool call is a request, and a job such as a dungeon run can make hundreds of them.
+- **Free plans run out quickly.** Claude, ChatGPT, GitHub Copilot and Cursor include a small amount of use on their free plans. For regular use you need a paid plan.
+- **API keys bill every token.** There is no limit unless you set one with the provider.
+- **LM Studio is the free option.** Models on your own PC cost nothing per request. They do take a lot of memory and share the graphics card with the game. See [LM Studio](/docs/user/connect/lm-studio).
+
+XIV MCP cannot see how many tokens your assistant uses, so check the usage page of your plan.
+
+## Using fewer tokens
+
+- **Turn off modules you do not use.** A module that is switched off disappears from your assistant's tool list, so every request is shorter. See [Turning a module off](/docs/user/permissions/modules#turning-a-module-off).
+- **Use background jobs for long tasks.** A job runs its steps in the game by itself, without a request per step. See [Background jobs](/docs/user/features/jobs).
+- **Start new chats.** Long chats send the whole history with every request.

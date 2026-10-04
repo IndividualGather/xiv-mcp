@@ -1,0 +1,50 @@
+---
+title: Branding
+description: The crystal satellite, its colours, and how the images are generated.
+icon: Palette
+---
+
+<BrandLogo size={120} />
+
+XIV MCP's mark is a Final Fantasy crystal as the body of a satellite: tilted as if in orbit, with a solar panel on each side and waves sent from its tip. It is drawn as rounded line art in a teal-to-blue gradient, on a dark tile inside a gradient frame.
+
+## Colours and type
+
+<div className="not-prose my-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+  <div className="xiv-card overflow-hidden"><div className="h-14" style={{ background: '#3BEFC4' }} /><div className="p-2 text-xs">Teal <code>#3BEFC4</code></div></div>
+  <div className="xiv-card overflow-hidden"><div className="h-14" style={{ background: '#3F7BFF' }} /><div className="p-2 text-xs">Blue <code>#3F7BFF</code></div></div>
+  <div className="xiv-card overflow-hidden"><div className="h-14" style={{ background: '#1C1C1E' }} /><div className="p-2 text-xs">Tile <code>#1C1C1E</code></div></div>
+  <div className="xiv-card overflow-hidden"><div className="h-14" style={{ background: '#141518' }} /><div className="p-2 text-xs">Card <code>#141518</code></div></div>
+</div>
+
+| | Value |
+|---|---|
+| Teal (gradient start, top left) | `#3BEFC4` |
+| Blue (gradient end, bottom right) | `#3F7BFF` |
+| Tile (behind the mark) | `#1C1C1E` |
+| Card (banner and social image) | `#141518` |
+| Wordmark | Bahnschrift SemiBold, filled with the gradient |
+| Tagline | Segoe UI Semibold, `#E6EDF3` |
+
+This site uses the same gradient, on near-black surfaces (`#1A1A1A`), with Inter for text.
+
+## Generating the images
+
+Everything in `branding/` is generated. Change the drawing in `brand.ps1`, then run:
+
+```powershell
+powershell -File branding/draw-assets.ps1        # banner, icons, logos, docs-site files
+powershell -File XivMcp/images/draw-icon.ps1 -Out XivMcp/images/icon.png   # the plugin icon
+```
+
+| File | Use |
+|---|---|
+| `banner.png` | README banner, 1600 × 400 (shown at 800 × 200). |
+| `icon.png`, `icon.svg` | The icon: mark, tile and frame. |
+| `logo.svg`, `logo.png` | The mark alone on transparent, for any background. The crystal's facets are cut out, so the page shows through them. |
+| `icon-outline.*`, `logo-outline.*` | The outline variant: the crystal drawn in lines instead of filled. |
+| `web/` | The site's favicon, app icons and social images, copied into `docs-site/app/` and `docs-site/public/`. |
+
+## App logos
+
+The **Connect** tab shows each app's own icon, read from the app installed on your PC. For GitHub Copilot, Cursor and Grok, XIV MCP also ships their logos (from [LobeHub Icons](https://github.com/lobehub/lobe-icons), MIT; sources in `branding/apps`), so they show even when the app is not installed.

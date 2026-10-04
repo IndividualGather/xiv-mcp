@@ -1,0 +1,74 @@
+---
+title: Installing XIV MCP
+description: Add the plugin to Final Fantasy XIV through XIVLauncher and Dalamud.
+icon: Download
+---
+
+XIV MCP is a Dalamud plugin, so you need [XIVLauncher](https://goatcorp.github.io/) with Dalamud, the plugin framework it loads into the game.
+
+## From the plugin repository
+
+<Callout type="info" title="Coming soon">
+  XIV MCP will be installable from its own plugin repository: you add one URL in Dalamud's settings and install it like any other plugin. Until the repository is published, install it as a dev plugin (below).
+</Callout>
+
+Once the repository is available:
+
+<Steps>
+<Step>
+
+In the game, type `/xlsettings` and open the **Experimental** tab.
+
+</Step>
+<Step>
+
+Under **Custom Plugin Repositories**, paste the repository URL, tick **Enabled** and click **Save and Close**.
+
+</Step>
+<Step>
+
+Type `/xlplugins`, search for **XIV MCP** and click **Install**.
+
+</Step>
+<Step>
+
+Type `/xivmcp` to open its window, and [connect your AI app](/docs/user/connect).
+
+</Step>
+</Steps>
+
+## As a dev plugin
+
+Until then, you build XIV MCP yourself and load it from your PC. You need the [.NET 10 SDK](https://dotnet.microsoft.com/download) and XIVLauncher with Dalamud installed. The steps to build it are in [Building XIV MCP](/docs/developer/contributing/building).
+
+<Steps>
+<Step>
+
+In the game, open `/xlsettings` → **Experimental** → **Dev Plugin Locations**, add the full path to `XivMcp/bin/Debug/XivMcp.dll`, and save.
+
+</Step>
+<Step>
+
+Open `/xlplugins` → **Dev Tools** → **Installed Dev Plugins** and enable **XIV MCP**.
+
+</Step>
+<Step>
+
+Type `/xivmcp` to open the settings window. Its **Connect** tab sets up your AI app.
+
+</Step>
+</Steps>
+
+## The `/xivmcp` window
+
+Everything about XIV MCP is in one window, with these tabs:
+
+| Tab | What it is for |
+|---|---|
+| **Connect** | Setting up your AI apps, the server switch and the access token. See [Connecting your AI app](/docs/user/connect). |
+| **Modules** | What XIV MCP's own tools may do. See [Modules and permissions](/docs/user/permissions/modules). |
+| **Third-party plugins** | Tools other plugins offer. See [Third-party plugins](/docs/user/permissions/third-party). |
+| **Jobs** | Background jobs and spending approvals. See [Background jobs](/docs/user/features/jobs). |
+| **Info** | Recent activity, compatibility with your plugins, the full tools list and the caches. |
+
+`/xivmcp selftest` runs a quick check of everything and prints the results in chat. See [Troubleshooting](/docs/user/troubleshooting).

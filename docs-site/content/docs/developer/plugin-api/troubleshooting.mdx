@@ -1,0 +1,29 @@
+---
+title: Troubleshooting
+description: The self-test, logs, and what the common error messages mean.
+icon: LifeBuoy
+---
+
+- **Self-test:** `/xivmcp selftest` (or the `run_self_test` tool) checks that your plugin provides its Invoke gate, and calls one of your read-only tools if your plugin is enabled.
+- **Logs:** `/xllog` shows each registration under `[XivMcp]`.
+- **What the assistant sees:** the address and token are in `/xivmcp` → **Connect**.
+
+```bash
+curl -s http://localhost:37521/mcp -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+| Symptom | Fix |
+|---|---|
+| Your tool is not in `tools/list` | The player has not enabled your plugin, or registration failed: check `RegistrationFailed`. |
+| "A tool that isn't readOnly must declare its 'capabilities'" | Add `Capabilities = [...]`. |
+| "A read-only tool can't declare …" | Drop `ReadOnly`, or the acting capabilities. |
+| "'x' is an XIV MCP tool" / "already registered by another plugin" | Use a prefixed name. |
+| "… is blocked for … in /xivmcp" | The player denied a declared capability. |
+| "The player declined …" | Declined, or not answered within two minutes. |
+| "… is suspended by XIV MCP (…)" | A call did something undeclared. Fix the declaration; the player lifts the suspension. |
+| "… changed its registration … waits for the player to consent again" | You added a tool or capability. Register everything at startup. |
+| `RequestApprovalAsync` is always false | The capability is not declared on that tool. |
+| "The background job '…' is running a step" | A job is running and your tool is not read-only. Pause the job first. |
+| A cancelled job stays "running" for two minutes | Your handler ignores `call.Cancellation`. |
+| `InvalidOperationException` or hitches | Game access off the framework thread: use `RunOnFrameworkThread`. |

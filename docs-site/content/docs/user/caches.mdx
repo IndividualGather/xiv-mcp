@@ -1,0 +1,46 @@
+---
+title: Caches
+description: What XIV MCP remembers between visits, how fresh it is, and how apps are told about changes.
+icon: Database
+---
+
+The game only sends some data in certain places: your retainers at a summoning bell, your submersibles in the workshop. XIV MCP takes a snapshot there and keeps it per character in `pluginConfigs/XivMcp/`. You see the caches in `/xivmcp` → **Info** → **Caches**.
+
+| Cache | Refreshed when |
+|---|---|
+| `submersibles` | The voyage control panel data is loaded in the FC workshop |
+| `retainers` | The game has the data: the retainer list at a bell, and each retainer's inventory when it is selected (also by plugins such as AutoRetainer) |
+| `glamour` | The glamour dresser or a glamour plate is opened (the armoire is read live) |
+| `progress` | Achievements and titles: the game has the lists loaded |
+| `storage` | Saddlebag and FC chest: they are loaded |
+| `jobs` | Background jobs, live |
+
+## How fresh is it?
+
+Every cached result carries a `cache` block, so your assistant knows how old the data is:
+
+| Field | Meaning |
+|---|---|
+| `capturedAt` | When the snapshot was taken |
+| `age` | How long ago that was |
+| `live` | Whether the data was read live just now |
+| `stale` | Whether it is old enough to refresh |
+| `suggestion` | How to refresh it, such as "open a retainer at a summoning bell" |
+
+`get_cache_status` lists every cache. `wait_for_cache_refresh` waits up to 10 minutes for you to refresh one, for example by visiting a bell. `refresh_retainer_inventories` opens every retainer once at a bell next to you.
+
+## Watching for changes
+
+Each cache is also an MCP **resource** (`xiv://cache/<id>`) that apps can subscribe to (`resources/subscribe`). Apps that open the event stream (`GET /mcp` with their `Mcp-Session-Id`) receive `notifications/resources/updated` when a cache changes.
+
+## Other files
+
+XIV MCP keeps a few more files in the same folder:
+
+| File | What it holds |
+|---|---|
+| `characters.json` | The characters XIV MCP has seen, with worlds and service accounts |
+| `sales.json` | Sale notices the game showed |
+| `audit.jsonl` | The third-party audit log |
+| Item sources | What it learned from FFXIV Teamcraft's data |
+| `backups/` | Backups of plugin settings XIV MCP changed |

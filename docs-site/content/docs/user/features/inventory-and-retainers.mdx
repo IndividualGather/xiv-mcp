@@ -1,0 +1,35 @@
+---
+title: Inventory and retainers
+description: Sorting and moving items, retainers and their inventories, ventures, collectables and the FC chest.
+icon: Boxes
+---
+
+Reading your retainers and chests follows the *Reading* setting of **Items & retainers**, which is *Allow* by default. Everything that moves items or calls a retainer needs **Items & retainers** changes to be allowed (or set to *Ask*).
+
+| Tool | What it does |
+|---|---|
+| `sort_inventory` | Runs the game's own `/itemsort` with your conditions, for bags, armoury, saddlebag or a retainer |
+| `move_items` | Moves items like a manual drag between bags, armoury, saddlebag, retainers and the FC chest |
+| `get_retainers` / `get_retainer_inventories` | Your retainers (job, level, gil, venture), and every retainer's items, listings, gear and crystals from the cache |
+| `open_retainer` / `close_retainer` | Opens a retainer's inventory (or just its menu) at the bell, or closes it |
+| `refresh_retainer_inventories` | Opens every retainer (or every one not seen recently) once, to refresh the cache |
+| `transfer_retainer_items` | Moves whole stacks from retainer to retainer, from a retainer to your bags or from your bags to a retainer |
+| `get_fc_chest` / `fc_chest_transfer` | What the FC chest holds; deposits or withdraws through **FCCH**, if installed |
+| `find_ventures` | Which venture brings an item, which retainer can take it, and every retainer's current venture |
+| `assign_venture` | Sends a retainer (or a free one that can take it) on a venture. If all are busy, it suggests which to recall: quick ventures first, then the long ones. |
+| `recall_venture` | Recalls a retainer from a running venture, **only after you approve it in the game** |
+| `turn_in_collectables` | Turns in collectables at a Collectable Appraiser for scrips, travelling there if needed. When the game warns that a trade would go over the scrip cap, it answers No and stops. |
+
+## Careful by design
+
+- Every move waits until the game and the server have confirmed the previous one, then pauses. The pause is random, 500 to 800 ms by default, and you can change it in `/xivmcp` → **Modules** → **Items & retainers**.
+- Nothing happens in combat, while crafting or gathering, in trades, cutscenes or zone changes.
+- Equipped gear, currency, crystals and key items cannot be moved.
+
+## Slots and the order you see
+
+The game's sorting only stores a display order. So `get_inventory` lists items as you see them, with `shown` (page and slot in the game) and `slot` (the physical slot that `move_items` expects).
+
+## Retainers and AutoRetainer
+
+AutoRetainer starts processing ventures as soon as a bell opens. While XIV MCP uses the bell, it holds AutoRetainer back and releases it a few seconds after the bell is closed. If AutoRetainer is busy or in multi mode, XIV MCP does not touch the bell. See [Compatibility](/docs/user/compatibility).

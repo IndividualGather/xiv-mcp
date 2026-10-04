@@ -1,0 +1,21 @@
+---
+title: Plugin management
+description: Turning other plugins on and off, reloading them, and reading and changing their settings.
+icon: Settings
+---
+
+These tools are in the **Plugin management** module, which is denied by default, reading included: plugin settings may contain passwords or keys.
+
+| Tool | What it does |
+|---|---|
+| `list_plugins` | Installed plugins with internal name, version, load state and flags (module **Game data**, so reading it is allowed by default even while *Plugin management* is denied) |
+| `set_plugin_enabled` / `reload_plugin` | Turns a plugin on or off, or reloads it, like the installer's switch |
+| `list_plugin_config_files` / `get_plugin_config` / `set_plugin_config` | Lists, reads and changes plugin settings by path, with a dry run and type checks |
+
+## How settings are changed
+
+Plugins keep their settings in memory and often save them when they shut down. So `set_plugin_config` unloads a loaded plugin, writes the change through Dalamud's own file storage, and loads the plugin again.
+
+- The previous file is backed up to `pluginConfigs/XivMcp/backups/<plugin>/` (the last 10 per file).
+- XIV MCP refuses to manage itself.
+- Dalamud has no public way to do this, so these tools use its internal plugin manager, like the installer does. They may need an update after Dalamud updates.

@@ -1,0 +1,37 @@
+---
+title: ChatGPT
+description: Use XIV MCP from Codex in the ChatGPT desktop app, the Codex CLI or the IDE extension.
+---
+
+XIV MCP works in **Codex**, which is part of the ChatGPT desktop app. ChatGPT's Chat mode only connects to MCP servers on the internet, so it cannot reach the game.
+
+## One click
+
+In `/xivmcp` → **Connect**, choose **ChatGPT** and click the button. XIV MCP adds itself to `~/.codex/config.toml`, the file that Codex in the ChatGPT desktop app, the Codex CLI and the IDE extension share.
+
+- The rest of the file is kept.
+- The previous file is saved as `config.toml.xivmcp-backup`.
+- Restart ChatGPT afterwards, so Codex reads the new entry.
+
+## By hand
+
+Codex can read the token from an environment variable. Open a new terminal after `setx`, before you start Codex:
+
+```sh
+setx XIVMCP_TOKEN "<token>"
+codex mcp add ffxiv --url http://localhost:37521/mcp --bearer-token-env-var XIVMCP_TOKEN
+```
+
+Or add the server to `~/.codex/config.toml` directly:
+
+```toml title="~/.codex/config.toml"
+[mcp_servers.ffxiv]
+url = "http://localhost:37521/mcp"
+http_headers = { "Authorization" = "Bearer <token>" }
+```
+
+Replace `<token>` with the token from `/xivmcp` → **Connect**.
+
+## Removing it
+
+**Remove from ChatGPT** in the **Connect** tab deletes the entry from `~/.codex/config.toml`, with a backup. Restart ChatGPT afterwards.

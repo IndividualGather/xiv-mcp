@@ -1,0 +1,55 @@
+---
+title: Adding tools
+description: Tools that change something, arguments, results and errors.
+icon: Wrench
+---
+
+## A tool that changes something
+
+Anything that is not read-only must declare what it does. The player decides, per capability, whether it runs freely, asks first or is blocked.
+
+```csharp
+mcp.AddTool(
+    new McpToolDefinition("myplugin_follow", "Follows the current target on foot until myplugin_stop is called.")
+    {
+        Capabilities = [McpCapabilities.MoveCharacter],
+    },
+    args => { StartFollowing(); return new { following = CurrentTarget?.Name }; });
+```
+
+Pick capabilities from the [capabilities table](/docs/developer/plugin-api/capabilities). If you are unsure, declare more: an undeclared effect gets your plugin suspended.
+
+## Arguments
+
+Describe them with a JSON schema, and read them from the `JsonObject`:
+
+```csharp
+mcp.AddTool(
+    new McpToolDefinition("myplugin_set_mode", "Switches My Plugin's mode. Use \"idle\" to stop it.")
+    {
+        Capabilities = [McpCapabilities.GameUi],
+        InputSchema = """
+            {
+              "type": "object",
+              "properties": { "mode": { "type": "string", "enum": ["idle", "follow", "assist"], "description": "The new mode." } },
+              "required": ["mode"]
+            }
+            """,
+    },
+    args =>
+    {
+        var mode = args["mode"]?.GetValue<string>() ?? throw new McpToolException("Give 'mode'.");
+        SetMode(mode);
+        return new { mode };
+    });
+```
+
+## Results and errors
+
+- **Result:** return any value that serializes to JSON. An anonymous object is ideal: `return new { kills, gil = earned };`.
+- **Error:** `throw new McpToolException("Not at a summoning bell. Use navigate_to with destination summoning_bell first.");`. The assistant sees the message as it is. Other exceptions arrive as "TypeName: message".
+- **Validate before acting,** so a bad call changes nothing.
+
+## Optional features
+
+Register a tool tied to an optional feature at startup anyway, and throw `McpToolException("Turn on Auto-Restock in My Plugin's settings first.")` while the feature is off. Adding the tool later would pause your plugin until the player consents again.

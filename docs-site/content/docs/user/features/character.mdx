@@ -1,0 +1,54 @@
+---
+title: Your character and the game
+description: What your assistant can read about your character, collections, actions, macros and waymarks.
+icon: UserRound
+---
+
+Most tools on this page only read. They are in the **Game data** module, whose *Reading* setting is *Allow* by default, so they work as soon as your app is connected. Like every setting, you can change it to *Ask* or *Deny* in `/xivmcp` → **Modules**, for the module or for single tools.
+
+## Character and world
+
+| Tool | What it returns |
+|---|---|
+| `get_game_status` | Logged-in state, zone, map and instance, active duty, PvP and GPose, all active condition flags, Eorzea time |
+| `get_character` | Name, worlds, race and clan, nameday, guardian, Grand Company and ranks, job and level, HP, MP, GP and CP, position, status effects, aetherytes, mentor flags, all attributes |
+| `get_class_jobs` | Level, experience and experience to the next level for every class and job |
+| `get_inventory` | Bags, armoury, saddlebag, crystals, key items, retainer, FC chest and housing containers |
+| `search_inventory` | Where an item is stored and how many you have in total, including cached retainers, saddlebag and FC chest |
+| `get_equipment` | Equipped gear with item level, materia, dyes and glamour, and your average item level |
+| `list_gearsets` | Saved gear sets: number, name, job, item level, items missing from the inventory, and the one you wear |
+| `get_currencies` | Gil, MGP, seals, tomestones and the weekly cap, wolf marks and more |
+| `list_unlock_categories` / `check_unlocks` | Unlock or completion state for achievements, quests, mounts, minions, emotes, orchestrion rolls, Triple Triad cards, titles, recipes and more |
+| `get_active_quests` / `check_quests` | Journal quests and steps, tribe quests, levequests, allowances and reputation; whether given quests are done or accepted |
+| `get_party` / `get_targets` / `get_nearby_objects` | Party and alliance, targets and cast bars, objects around you |
+| `get_fates` / `get_aetherytes` / `get_companions` | FATEs in the zone, attuned aetherytes with their costs, your chocobo, pet and trust members |
+| `get_submersibles` | FC submersibles and airships: rank, parts and build code, stats, route, return time, last loot, explored sectors |
+| `list_game_sheets` / `search_game_data` / `get_game_data_row` | Any of the game's data tables, in your client language |
+| `inspect_window` | Which game windows are open, or the values and texts one of them shows |
+| `run_self_test` | The live self-test. See [Troubleshooting](/docs/user/troubleshooting). |
+
+Some of this data is only sent by the game in certain places, such as your retainers at a summoning bell. XIV MCP remembers it between visits. See [Caches](/docs/user/caches).
+
+## Collections and actions
+
+| Tool | What it does |
+|---|---|
+| `get_collections` | Owned and total counts for mounts, minions, orchestrion rolls, fashion accessories, facewear, armoire and dresser; the owned or missing entries of one collection |
+| `get_armoire` / `get_glamour_dresser` | What the armoire holds (or eligible items not stored yet); dresser items with their dyes |
+| `get_job_actions` / `get_hotbars` | A job's actions with level, unlock state, timing and cooldowns; every hotbar and cross hotbar slot |
+
+## Macros
+
+| Tool | What it does | Module |
+|---|---|---|
+| `get_macros` | Reads your macros | UI editing (reading) |
+| `set_macro` / `clear_macro` | Creates, edits or clears a macro, with a dry run and a backup first | UI editing (changes) |
+
+## Waymark presets
+
+| Tool | What it does | Module |
+|---|---|---|
+| `list_waymark_presets` | The game's 30 preset slots and, if WaymarkPresetPlugin is installed, its library | UI editing |
+| `get_waymark_preset` | The coordinates of a preset (or of the waymarks placed now), plus **a picture of the arena** with the waymarks drawn on the duty's map | UI editing |
+| `set_waymark_preset` | Writes a preset slot: copies one, or sets marker positions | UI editing (changes) |
+| `place_waymark_preset` | Places a preset inside a duty, out of combat. Library presets go through WaymarkPresetPlugin. | Game & navigation (changes) |

@@ -1,0 +1,74 @@
+---
+title: Raw IPC
+description: The Dalamud IPC gates behind the client, for plugins that do not use XivMcpClient.cs.
+icon: Cable
+---
+
+For plugins that do not use `XivMcpClient.cs`.
+
+- XIV MCP's gates are named `XivMcp.<Gate>`. Yours are named `<InternalName>.XivMcp.<Gate>`.
+- XIV MCP's gates reply with `{"ok": true, …}` or `{"ok": false, "error": "…"}` and never throw into your plugin.
+- `owner` is your `IDalamudPluginInterface.InternalName`. Registering from your constructor is fine.
+
+## Gates XIV MCP provides
+
+| Gate | Signature | Returns / does |
+|---|---|---|
+| `ApiVersion` | `Func<int>` | `2` |
+| `IsReady` | `Func<bool>` | True while loaded |
+| `ListCapabilities` | `Func<string>` | `{"capabilities":[{"id","risk","title","description","default"}]}` |
+| `RegisterTool` | `Func<string owner, string definitionJson, string>` | `{"name","enabled","awaitingConsent","state","capabilities":[{"id","mode"}]}` |
+| `UnregisterTool` | `Func<string owner, string name, string>` | `{"removed": bool}` |
+| `UnregisterAll` | `Func<string owner, string>` | `{"removed": count}` |
+| `GetStatus` | `Func<string owner, string>` | `{"state","canRun","suspendReason","tools":[{"name","mode","own"}],"capabilities":[{"id","mode"}]}` |
+| `CheckPermission` | `Func<string owner, string capability, string>` | `{"mode":"allow"\|"ask"\|"deny","enabled","suspended","state"}` |
+| `RequestApproval` | `Func<string callId, string requestJson, string>` | Request `{"capability","summary"}`; returns `{"approvalId","state"}` |
+| `GetApproval` | `Func<string approvalId, string>` | `{"state":"pending"\|"approved"\|"denied"}` |
+| `CompleteCall` | `Func<string callId, string resultJson, string>` | Finishes a pending call |
+| `FailCall` | `Func<string callId, string message, string>` | Fails a pending call |
+| `ReportProgress` | `Func<string callId, string text, string>` | Adds a job log line |
+| `StartJob` | `Func<string owner, string jobJson, string>` | Job `{"name","steps":[{"id","tool","args","note"}]}`; returns `{"job":{…}}` |
+| `GetJob` / `ListJobs` | `Func<string id \| owner, string>` | `{"job"}` / `{"jobs"}` |
+| `PauseJob` / `ResumeJob` / `CancelJob` | `Func<string id, string>` | Job control |
+| `Ready` / `Disposing` | messages | Register on `Ready`; stop running calls on `Disposing` |
+
+`state` is one of `undecided`, `kept_disabled`, `enabled`, `awaiting_consent` or `suspended`.
+
+## Tool definition
+
+```json
+{
+  "name": "myplugin_restock",
+  "description": "Buys the consumables your list is short of from the nearest vendor.",
+  "inputSchema": { "type": "object", "properties": {} },
+  "readOnly": false,
+  "destructive": false,
+  "capabilities": ["move_character", "game_ui", "spend_gil"]
+}
+```
+
+`capabilities` is required unless `readOnly`. `readOnly` and `destructive` cannot both be true, and unknown capability ids are rejected.
+
+## Gates your plugin provides
+
+| Gate | Signature | Does |
+|---|---|---|
+| `<InternalName>.XivMcp.Invoke` | `Func<string callId, string tool, string argsJson, string>` | Runs a tool on the framework thread, after the permission checks. Reply with `{"result": …}`, `{"error": "…"}` or `{"pending": true}`; finish a pending call with `CompleteCall` / `FailCall`. |
+| `<InternalName>.XivMcp.Cancel` | `Action<string callId>` | Optional: stop a pending call. |
+
+`CompleteCall` and `RequestApproval` may be called from inside `Invoke`, before you reply.
+
+## A call that takes a minute
+
+```text
+XivMcp → you   Invoke("c1", "myplugin_farm", "{\"minutes\":1}")
+you → XivMcp   reply {"pending": true}                         (start the work, return at once)
+you → XivMcp   ReportProgress("c1", "12 kills")                 (any number of times)
+you → XivMcp   RequestApproval("c1", "{\"capability\":\"spend_gil\",\"summary\":\"Repair for 3,200 gil\"}")
+                → {"approvalId":"a7","state":"pending"}; poll GetApproval("a7") every ~250 ms until approved or denied
+XivMcp → you   Cancel("c1")                                     (only if the job is paused or cancelled: stop safely)
+you → XivMcp   CompleteCall("c1", "{\"kills\":31}")             (the result itself, not wrapped in {"result": …})
+               or FailCall("c1", "Bags full after 31 kills.")
+```
+
+XIV MCP has no time limit of its own on pending calls. Approval windows decline after two minutes, and after a `Cancel` XIV MCP waits up to two minutes for your `CompleteCall` or `FailCall`.

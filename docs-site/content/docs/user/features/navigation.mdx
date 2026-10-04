@@ -1,0 +1,41 @@
+---
+title: Game windows, travel and characters
+description: Opening windows, talking to NPCs, walking and teleporting, switching characters, worlds and jobs.
+icon: Navigation
+---
+
+These tools act in the game, so they need **Game & navigation** changes to be allowed (or set to *Ask*) in `/xivmcp` → **Modules**.
+
+## Windows and menus
+
+| Tool | What it does |
+|---|---|
+| `list_windows` / `open_window` / `close_window` | Opens main menu windows (Achievements, Saddlebag, Currency and more); `close_window` closes any open window by name |
+| `interact_with_object` | Targets and interacts with a nearby object or NPC, like clicking it: a summoning bell, the company chest, the voyage panel |
+| `get_menu` / `select_menu_option` | The choice menu the game shows after an interaction; picks an entry or advances dialogue |
+| `load_game_data` | Asks the game to send your achievements or titles without opening their window |
+
+Windows that act instead of opening something (Log Out, Exit Game, Return, Ready Check, Countdown, Stance) cannot be triggered through `open_window`.
+
+## Walking and travel
+
+| Tool | What it does |
+|---|---|
+| `navigate_to` | Walks (with vnavmesh) and travels (with Lifestream) to a summoning bell, the company chest, the workshop, an inn, your house or apartment, or a named object |
+| `get_navigation_status` / `stop_navigation` | What is installed and moving; an immediate stop |
+| `get_automation_status` | What XIV MCP detected about AutoRetainer, YesAlready and TextAdvance, and what it is pausing |
+
+Teleports cost gil. For flags on the map and routes through several spots, see [Maps and routes](/docs/user/features/maps-and-routes).
+
+## Characters, worlds and jobs
+
+| Tool | What it does |
+|---|---|
+| `list_characters` | The characters XIV MCP has seen (in the lobby lists and in the game): worlds, data center, service account, and whether each is on the account in use |
+| `switch_character` | Logs out and into another character of the account, on any world, data center and service account, and waits until it is in the game |
+| `refresh_character_list` | Logs out and straight back in, so XIV MCP learns this data center's character list |
+| `visit_world` | World visit or data center travel for the current character (needs Lifestream; module **Lifestream**) |
+| `switch_gearset` | Changes job by equipping a gear set, by number, name or job (the set with the highest item level of that job) |
+| `leave_duty` | Leaves the current duty like the Duty Finder's Leave entry, once the current fight is over |
+
+Logging in is built in. XIV MCP goes through the game's own lobby (title screen, data center, service account, character list) and confirms only when the game's prompt names the right character. It remembers each character's service account. Accounts are told apart by what XIV MCP observes, so it never tries to reach a character of another account.

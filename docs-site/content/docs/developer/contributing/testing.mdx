@@ -1,0 +1,47 @@
+---
+title: Testing
+description: Test-first in XivMcp.Core, and the live self-test for what needs the game.
+icon: FlaskConical
+---
+
+XIV MCP is developed test-first: logic goes into `XivMcp.Core` with tests in `XivMcp.Tests`, and the plugin only adapts it to the game.
+
+```sh
+dotnet test --project XivMcp.Tests/XivMcp.Tests.csproj
+```
+
+## What belongs in the core
+
+If a piece of logic can be described without the game, it belongs in `XivMcp.Core` with a test. For example:
+
+- deciding whether a call is allowed, asked or denied (`ToolGate`, `PermissionCatalog`);
+- comparing snapshots before and after a call (`SideEffects`);
+- resolving job placeholders (`Placeholders`);
+- converting between map and world coordinates and planning routes (`MapMath`, `RoutePlan`);
+- merging an AI app's config file without losing the rest (`ClientSetup`);
+- matching the search on the **Modules** tab (`ModuleSearch`).
+
+The plugin code that remains reads game memory, clicks game windows or draws the UI. Keep it small enough that a read in the game shows it works.
+
+## The live self-test
+
+What needs the game is covered by the live self-test. Type `/xivmcp selftest` in the game (the results go to chat), or let your assistant call `run_self_test`. It checks that:
+
+- every tool schema parses;
+- the integrations match the plugins that are loaded;
+- game reads work (status, character, gear sets);
+- the side-effect snapshot reads gil, items and currencies;
+- the plugin API answers over IPC;
+- the audit log is writable;
+- every third-party plugin provides its Invoke gate (enabled ones also answer a read-only call).
+
+It only reads, so it is safe to run at any time.
+
+## Trying tools by hand
+
+Every tool can be called directly over HTTP, without an AI app:
+
+```bash
+curl -s http://localhost:37521/mcp -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_position","arguments":{}}}'
+```

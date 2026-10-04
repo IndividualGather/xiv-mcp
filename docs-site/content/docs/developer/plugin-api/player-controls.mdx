@@ -1,0 +1,21 @@
+---
+title: What the player controls
+description: The player's settings decide how your code must behave.
+icon: SlidersHorizontal
+---
+
+You do not configure any of this, but it decides how your code must behave:
+
+| The player … | What happens | What you do |
+|---|---|---|
+| has not enabled your plugin yet (the default) | Your tools are not offered; calls are refused. | Show it in your UI (`GetStatus`). |
+| chose *Keep disabled* | The same, and they are not asked again while your registration stays the same. | Respect it. |
+| was asked again because your registration grew (a new tool or capability) | All your tools pause (not offered, refused) until they consent. Removing tools never asks. | **Register every tool at startup**, with every capability it may need. |
+| set a capability to *Deny* | Calls of tools declaring it are refused before your code runs. | Offer a fallback, or say so in your UI. |
+| set a capability to *Ask* | An approval window before each call (or once per session). Critical ones (`discard_items`) are always asked. | Expect waits in jobs. |
+| set one of your tools on its own | That tool ignores its capabilities' settings: *Allow*, *Ask* or *Deny* for the whole call (critical tools still ask every time). *Always allow* in the approval window sets just that tool. Undeclared side effects still suspend your plugin. | Read it from `GetStatus().Tools`. |
+| got a call that changed gil, currencies, items, zone, chat or login state without declaring it | If the call took under two minutes, your plugin is suspended: still listed, but every call is refused. Longer calls are only flagged, since the player may have acted in the meantime. | Declare honestly; the player lifts suspensions. |
+
+Every call, decision and approval is listed under your plugin in `/xivmcp` → **Third-party plugins**, and in `pluginConfigs/XivMcp/audit.jsonl`.
+
+The player's side of this is described in [Third-party plugins](/docs/user/permissions/third-party).

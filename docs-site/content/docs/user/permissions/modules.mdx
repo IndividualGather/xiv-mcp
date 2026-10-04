@@ -1,0 +1,104 @@
+---
+title: Modules and permissions
+description: Choose what XIV MCP's own tools may do, per module and per tool, in /xivmcp → Modules.
+icon: ShieldCheck
+---
+
+XIV MCP has two permission screens, because there are two kinds of tools:
+
+| | What | Where | How it is controlled |
+|---|---|---|---|
+| **XIV MCP's own tools** | The core tools, plus the integrations XIV MCP maintains for other plugins | `/xivmcp` → **Modules** | Per module, reading and changes separately: allow, ask or deny |
+| **Third-party tools** | Tools other plugins register through the [plugin API](/docs/developer) | `/xivmcp` → **Third-party plugins** | Per plugin, capability and tool, with consent and automatic suspension. See [Third-party plugins](/docs/user/permissions/third-party). |
+
+This page is about the first kind.
+
+<Screenshot src="modules.png" alt="The Modules tab, with a card per module and Allow, Ask and Deny settings for reading and changes" caption="The Modules tab, here with everything allowed. The defaults are in the table below." />
+
+## Allow, ask or deny
+
+Every tool belongs to one **module**, and every module has two settings: **Reading** (tools that only look) and **Changes** (tools that act in the game or edit something). Each setting is one of:
+
+- **Allow** runs the tool.
+- **Ask** shows the approval window first. You can approve once, approve for this session, always allow (which sets just that tool to *Allow*), or decline. See [Approvals in the game](/docs/user/permissions/approvals).
+- **Deny** refuses the tool before it runs, and tells your assistant which setting to change.
+
+## The modules and their defaults
+
+| Module | Reading | Changes | Covers |
+|---|---|---|---|
+| **Game data** | Allow | — | Character, jobs, gear, inventory, currencies, quests and unlocks, party and surroundings, collections, game data, caches, the self-test |
+| **Game & navigation** | Allow | Deny | Game windows and menus, NPCs and objects, walking and travel, logging into other characters, gear sets, leaving duties, placing waymarks, map flags and routes |
+| **Items & retainers** | Allow | Deny | Sorting and moving items, retainers and their inventories, ventures (recalling one always asks in the game), collectable turn-ins, the FC chest |
+| **Market & purchases** | Allow | Deny | Buying from vendors (anything not paid in gil also asks in the game), selling and repricing, sale histories, spending approvals |
+| **UI editing** | Allow | Deny | Macros and the waymark preset slots |
+| **Online lookups** | Deny | — | Item sources (FFXIV Teamcraft, ffxiv.consolegameswiki.com) and market prices (universalis.app) |
+| **Plugin management** | Deny | Deny | Turning plugins on and off, reloading them, reading and changing their settings (which may contain passwords or keys) |
+| **Background jobs** | Allow | Allow | Starting and controlling jobs. Every step is still checked against its own module. |
+
+These are only the defaults. Reading is a setting like any other: set it to *Ask* to approve every look at your game, or to *Deny* to refuse it. Switch a module off to remove its tools entirely.
+
+The [tools reference](/docs/user/tools) lists every tool of every module.
+
+## Single tools
+
+Each card's *Reading* and *Changes* rows expand (the arrow on the left) into their tools, each with a short description and its own setting: *Group*, *Allow*, *Ask* or *Deny*.
+
+- *Group* (the default) follows the module's setting.
+- Anything else overrides it for that tool, in both directions: allow one tool of a denied module, or ask before one tool of an allowed module.
+
+The card's summary says how many tools are set on their own. Hover a module's name to see its tools.
+
+## Extra options
+
+Some modules have extra options while their changes are not denied:
+
+- **Game & navigation:** **Summoning bell location**, where `navigate_to` goes for a bell when none is nearby.
+- **Items & retainers:** **Pause between moves**, a random pause between item moves (500 to 800 ms by default).
+- **Market & purchases:** **Ask for gil purchases above**, a gil limit above which gil purchases also ask (0: never).
+
+## Turning a module off
+
+The switch in each card's top right removes the module's tools from your assistant entirely:
+
+- They disappear from its tool list (apps are told the list changed).
+- Calls and job steps are refused.
+- The card shows only its description.
+
+Unlike *Deny*, which keeps the tools listed so your assistant can tell you they are blocked, this keeps your assistant's tool list short, and every request a little cheaper. Turn the module back on to bring its tools back with their settings.
+
+## Integrations
+
+Tools whose whole purpose is driving one other plugin have their own module, listed under **Integrations maintained by XIV MCP** for each installed plugin:
+
+| Integration | Reading | Changes |
+|---|---|---|
+| **AutoDuty** | Allow | Deny |
+| **Artisan** | Allow | Deny |
+| **GatherBuddy Reborn** | Allow | Deny |
+| **Lifestream** | — | Deny |
+| **Item Vendor Location** | Allow | — |
+| **FCCH** | — | Deny |
+
+They are independent of the core modules: AutoDuty can run dungeons while *Game & navigation* changes are denied, for example. They are only offered while their plugin is loaded. XIV MCP maintains and trusts them like its own tools.
+
+## Searching
+
+The search field at the top of the **Modules** tab filters as you type. It matches module names and descriptions, and tools by name or by what they do. Every word has to match. Modules with matching tools open those rows and show only the matching tools.
+
+## Coming soon
+
+Below the integrations, dimmed cards show what is planned next. They have nothing to set yet:
+
+- **AutoHook:** automated fishing.
+- **Fishing:** where and when fish bite, weather, baits and where to get them, counting macros for bite timing, suggested abilities, ocean fishing.
+- **Gold Saucer:** Saucy and more, with Triple Triad card collecting: finding missing cards, seeking out players who have them and preparing decks.
+- **Quests:** through Questionable.
+
+## Recent activity
+
+`/xivmcp` → **Info** → **Recent activity** lists what XIV MCP's own tools changed, and every call that was asked or blocked. Allowed reading is not listed.
+
+## Older settings
+
+Settings from earlier versions carry over: a switch that was on allows its module's changes.

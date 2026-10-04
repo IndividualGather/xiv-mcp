@@ -1,0 +1,35 @@
+---
+title: Approvals in the game
+description: The approval window, and standing approvals for jobs that buy repeatedly.
+icon: Hand
+---
+
+Some actions are never decided by your assistant alone:
+
+- buying with anything other than gil,
+- recalling a running venture,
+- and anything set to *Ask*, whether a module of XIV MCP or a capability of a third-party plugin.
+
+They open an approval window in the game, and nothing happens until you answer.
+
+## The approval window
+
+<Screenshot src="approval.png" alt="The approval window, asking whether to allow a tool call, with approve and decline buttons" caption="The approval window says who asks, what for, and with which arguments." width={560} />
+
+- **Who asks:** your assistant, or a named plugin.
+- **What:** the tool, what it wants to do and its arguments. The window is highlighted by risk.
+- **Your answer:** approve once, approve for this session, always allow (which sets the setting to *Allow*), or decline.
+- **No answer** within two minutes counts as declined.
+- **You notice it** even in another window: the game's taskbar button flashes while an approval waits.
+
+A plugin can also ask in the middle of a call, with the real numbers, such as "Buy 3 Hi-Potions for 1,200 gil".
+
+## Standing approvals
+
+For jobs that buy repeatedly, a **standing approval** asks once: "spend up to this much of this currency (on these items, for this long)". Your assistant asks for it with `request_spending_approval`, and later purchases with `buy_item` use it without asking again.
+
+- Every purchase under it counts its real cost, measured from your currency balance.
+- It stops when the approved amount is used up.
+- It stops if a purchase turns out to be paid with another currency.
+
+Active approvals are listed in `/xivmcp` → **Jobs**, with what has been spent and what is left, and a **Revoke** button. Your assistant can also list them (`list_approvals`) and revoke them (`revoke_approval`).

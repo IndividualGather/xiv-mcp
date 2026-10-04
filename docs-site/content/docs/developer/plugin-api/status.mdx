@@ -1,0 +1,32 @@
+---
+title: Showing your status
+description: Explain in your own UI why your tools are not used.
+icon: Info
+---
+
+The player may not have enabled your plugin yet, or may have suspended it. `GetStatus()` tells you, so you can say so in your own UI:
+
+```csharp
+var status = mcp.GetStatus();
+var hint = status.State switch
+{
+    McpPluginState.Unavailable     => "XIV MCP is not installed.",
+    McpPluginState.Undecided       => "Enable My Plugin in /xivmcp → Third-party plugins to use it from your assistant.",
+    McpPluginState.KeptDisabled    => "You kept My Plugin disabled in XIV MCP.",
+    McpPluginState.AwaitingConsent => "My Plugin has new features; confirm them in /xivmcp → Third-party plugins.",
+    McpPluginState.Suspended       => $"XIV MCP suspended My Plugin: {status.SuspendReason}",
+    _                              => null,   // Enabled
+};
+var canBuy = status.Capabilities.GetValueOrDefault(McpCapabilities.SpendGil) != McpPermission.Deny;
+```
+
+Call it when your window opens or before a step, not every frame. Do not cache it: the player can change settings at any time.
+
+| State | Meaning |
+|---|---|
+| `Unavailable` | XIV MCP is not loaded, or speaks another API version. |
+| `Undecided` | The player has not enabled your plugin yet (the default). |
+| `KeptDisabled` | The player chose *Keep disabled*. |
+| `Enabled` | Your tools are offered. |
+| `AwaitingConsent` | Your registration grew; all your tools pause until the player consents again. |
+| `Suspended` | A call did something undeclared. `SuspendReason` says what. |

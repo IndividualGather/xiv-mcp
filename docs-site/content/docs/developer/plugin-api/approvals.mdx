@@ -1,0 +1,28 @@
+---
+title: Approvals during a call
+description: Ask the player at the risky moment, with the real numbers.
+icon: Hand
+---
+
+When the real cost is only known during the call, ask then, with the numbers:
+
+```csharp
+var basket = await Framework.RunOnFrameworkThread(PlanPurchase);
+if (!await call.RequestApprovalAsync(McpCapabilities.SpendGil, $"Buy {basket.Summary} for {basket.Gil:N0} gil"))
+    throw new McpToolException("The player declined the purchase; nothing was bought.");
+```
+
+## How it answers
+
+- **`true` right away** if the player allows the capability, or set this tool to *Allow* on its own.
+- **`false` right away** if the capability is denied.
+- **Otherwise** it shows an approval window and waits: two minutes, then `false`.
+
+## Rules
+
+- **For a capability set to *Ask*, the player is asked twice:** before the call, and again here, unless they chose *Approve for this session* or *Always allow* the first time. So only ask here when your question adds something, like the price.
+- **A "no" is final for this call.** Throw, and say what was not done. If the assistant calls again, the player is asked again, and can set the capability to *Deny* to stop that.
+- **Only declared capabilities.** Asking for a capability the tool did not declare returns `false` and is flagged.
+- **Only in long-running tools.** Quick tools run on the framework thread and must not wait.
+
+Use `mcp.CheckPermission(capability)` beforehand to adapt, for example to skip an optional purchase when spending is denied.

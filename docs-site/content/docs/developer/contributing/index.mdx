@@ -1,0 +1,77 @@
+---
+title: Contributing
+description: How changes to XIV MCP are made, from the first test to the pull request.
+icon: GitPullRequest
+---
+
+XIV MCP is open source under the MIT license, and contributions are welcome: bug reports, fixes, new tools, integrations with more plugins, and improvements to this documentation.
+
+## Before you start
+
+- **Bugs:** open an [issue](https://github.com/IndividualGather/xiv-mcp/issues) with what you asked your assistant, what happened, and the output of `/xivmcp selftest`. Leave out your access token and other players' names.
+- **New features:** open an issue first and describe what players would ask for. Tools that act in the game need a permission module, capabilities and a safe way to stop, so it is worth agreeing on the shape before writing code.
+
+## The workflow
+
+<Steps>
+<Step>
+
+**Fork and branch.** Fork the repository, and create a branch from `master`.
+
+</Step>
+<Step>
+
+**Write the test first.** Logic that does not need the game goes into `XivMcp.Core`, with an xUnit test in `XivMcp.Tests` that fails before your change. See [Testing](/docs/developer/contributing/testing).
+
+</Step>
+<Step>
+
+**Keep the plugin thin.** The code in `XivMcp` only adapts the core to the game: reading memory, clicking windows, drawing the UI. See [Architecture](/docs/developer/contributing/architecture).
+
+</Step>
+<Step>
+
+**Check it in the game.** Build, let the dev plugin reload, and try your change with an assistant. Run `/xivmcp selftest`.
+
+</Step>
+<Step>
+
+**Update the documentation.** `README.md` and this site describe every tool, permission and dependency. Change them in the same pull request. The [tools reference](/docs/user/tools) updates itself from the code.
+
+</Step>
+<Step>
+
+**Open a pull request** against `master`, with what changed, why, and how you tested it.
+
+</Step>
+</Steps>
+
+## Adding a tool
+
+A new tool of XIV MCP's own touches these places:
+
+| Where | What |
+|---|---|
+| `XivMcp/Tools/*.cs` | The definition: name, description for the assistant, input schema, `ReadOnly = false` if it changes something, and the handler. |
+| `XivMcp/Plugin.cs` | Registering the tool's class. |
+| `XivMcp.Core/Permissions/PermissionCatalog.cs` | The module it belongs to. Tools that drive one other plugin go into `IntegrationCatalog.cs` instead, with their capabilities. |
+| `XivMcp.Core/Mcp/ToolSummaries.cs` | One sentence for the player, shown in `/xivmcp` and in the tools reference. |
+| `README.md` | The tool table of its area. |
+
+The tests check that every tool has a summary written in the player style, and that every tool in the catalog maps to an existing module.
+
+## Writing for players
+
+Text the player reads, in the plugin and on this site, follows a few rules:
+
+- **Plain words, short sentences.** Say what happens in the game.
+- **No contractions:** "does not", not "doesn't".
+- **Name costs, risks and safety behaviour,** such as "Teleports cost gil" or "never during combat".
+- **No other plugins' names in core tool texts.** Players should not be pointed to plugins they do not use. Integrations may name their own plugin.
+- **Tool summaries** are one sentence (two when the second names a cost or safety behaviour), 100 characters at most. Reading tools start with "Looks at", "Checks", "Lists", "Finds" or "Waits".
+
+Descriptions for the assistant are different: they cover arguments, preconditions and edge cases, and name the tools that come before or after.
+
+## Security
+
+Never commit an access token or a local AI client configuration that contains one. Report security problems privately to the maintainer instead of in a public issue.

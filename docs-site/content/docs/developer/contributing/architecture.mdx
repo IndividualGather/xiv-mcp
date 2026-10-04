@@ -1,0 +1,77 @@
+---
+title: Architecture
+description: How a request travels from the AI app through the server, the permission gate and the game.
+icon: Network
+---
+
+## The path of a tool call
+
+```text
+AI app ──HTTP──▶ McpServer ──▶ ToolRegistry ──▶ ToolGate ──▶ handler ──▶ the game
+                 (localhost,       (core,          (Allow / Ask /     (framework
+                  bearer token)     integrations,   Deny, approval     thread)
+                                    third-party)    window, audit)
+```
+
+1. **`McpServer`** (`XivMcp/Mcp`) implements MCP's Streamable HTTP transport with JSON responses, directly on `HttpListener`, because Dalamud does not ship ASP.NET Core. It only listens on localhost, checks the bearer token, and refuses browser requests from other origins.
+2. **`ToolRegistry`** (`XivMcp.Core/Mcp`) holds every tool: the core ones, the maintained integrations and those third-party plugins register at runtime. It is thread-safe and raises `Changed` when tools come or go, which becomes `notifications/tools/list_changed` for the apps.
+3. **`ToolGate`** (`XivMcp.Core/Permissions`) decides each call from the tool's provider and the player's settings: *Allow*, *Ask* (an approval window in the game) or *Deny*.
+4. **The handler** runs. Game memory is only read on the framework thread; static data sheet lookups run on a background thread.
+5. For third-party tools, **`SideEffects`** compares a snapshot from before and after the call, and the **audit log** records it.
+
+## Providers and trust
+
+Every tool has a `ToolProvider` with a trust level, which decides how its calls are gated:
+
+| Trust | Who | Gated by |
+|---|---|---|
+| `Core` | XIV MCP's own tools | The modules in `PermissionCatalog` |
+| `Maintained` | The integrations in `IntegrationCatalog`, named after the plugin they drive | Their own module; only offered while that plugin is loaded |
+| Third-party | Tools registered over IPC | The plugin's `PluginPolicy`: consent, capabilities, per-tool settings and suspension |
+
+`RegistrationReview` decides when a third-party plugin needs the player's decision again: only when its registration grows.
+
+## The plugin API
+
+`PluginApi` (`XivMcp/Api`) exposes the IPC gates. Plugins cannot share types, so everything crossing the boundary is a JSON string. `ToolDefinition` (`XivMcp.Core/Api`) validates registrations. The contract is described in [Raw IPC](/docs/developer/plugin-api/raw-ipc).
+
+## Background jobs
+
+`Jobs` (`XivMcp/Util`) runs a queue of tool calls one after another, independent of any app connection. A failed or stopped step puts the job into *pending*, waiting for the agent. While an acting step runs, other changing calls are refused; passive steps such as `wait` and `wait_until_arrived` do not block. Placeholders between steps are resolved by `Placeholders` in the core.
+
+## Where things live
+
+<Files>
+  <Folder name="XivMcp" defaultOpen>
+    <Folder name="Api" />
+    <Folder name="Mcp" />
+    <Folder name="Tools" />
+    <Folder name="Util" />
+    <Folder name="Windows" />
+    <File name="Plugin.cs" />
+  </Folder>
+  <Folder name="XivMcp.Core" defaultOpen>
+    <Folder name="Api" />
+    <Folder name="Connect" />
+    <Folder name="Diagnostics" />
+    <Folder name="Integrations" />
+    <Folder name="Jobs" />
+    <Folder name="Maps" />
+    <Folder name="Mcp" />
+    <Folder name="Permissions" />
+  </Folder>
+  <Folder name="XivMcp.Tests" />
+  <Folder name="examples" />
+  <Folder name="branding" />
+  <Folder name="docs-site" />
+</Files>
+
+| Folder | What is in it |
+|---|---|
+| `XivMcp/Tools` | One class per area of tools (`MapTools`, `RetainerTools`, `MarketTools`, …). |
+| `XivMcp/Util` | Game access and helpers: navigation, retainers, lobby login, caches, client setup, bridges to other plugins. |
+| `XivMcp/Windows` | The `/xivmcp` window, the Modules and Third-party panels, the consent and approval windows. |
+| `XivMcp.Core/Connect` | What each AI app needs to connect, and reading whether it is set up. |
+| `XivMcp.Core/Permissions` | Capabilities, the catalog, policies, the gate, side effects, the audit log, module search. |
+| `XivMcp.Core/Maps` | Map and world coordinates, and route plans. |
+| `XivMcp.Core/Diagnostics` | The self-test runner. |

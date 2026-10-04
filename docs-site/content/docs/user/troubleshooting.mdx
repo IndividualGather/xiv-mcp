@@ -1,0 +1,71 @@
+---
+title: Troubleshooting
+description: The self-test, and what to check when your assistant does not see the game.
+icon: LifeBuoy
+---
+
+## Run the self-test
+
+Type `/xivmcp selftest` in the game (the results go to chat), or ask your assistant to run `run_self_test`. It only reads, and checks that:
+
+- every tool's argument schema parses;
+- the integrations match the plugins that are loaded;
+- reading the game works (status, character, gear sets);
+- the side-effect snapshot reads gil, items and currencies;
+- the plugin API answers;
+- the audit log can be written;
+- every third-party plugin answers (enabled ones also answer a read-only call).
+
+## Common problems
+
+<Accordions>
+<Accordion title="My app does not show any XIV MCP tools">
+
+- Is the game running, with you logged in? The server runs inside the game.
+- Is the **Server** switch in the top right of `/xivmcp` on, and does the window say **Running**?
+- Does the app's tile in `/xivmcp` → **Connect** say **Connected**? If not, click its button again.
+- Restart the app after setting it up. ChatGPT (Codex) only reads its settings on start.
+- Did you generate a new token? Then set up every app again.
+
+</Accordion>
+<Accordion title="The app connects, but every call fails with 401 Unauthorized">
+
+The app sends an old token, or none. Set the app up again from the **Connect** tab, so it gets the current token.
+
+</Accordion>
+<Accordion title="My assistant says a tool is blocked in /xivmcp">
+
+The tool's module (or the tool itself) is set to *Deny*. Allow it, or set it to *Ask*, in `/xivmcp` → **Modules**. Your assistant's message names the setting to change.
+
+</Accordion>
+<Accordion title="A tool I expect is missing from the list">
+
+- Its module is switched off in `/xivmcp` → **Modules**. Switch it back on.
+- It is an integration tool, and its plugin is not loaded. Integration tools only exist while their plugin is loaded.
+- It belongs to a third-party plugin that you have not enabled, or that changed its registration and waits for your consent.
+
+</Accordion>
+<Accordion title="A call is refused because a background job is running a step">
+
+While a job runs a step that acts in the game, other tools that change something are refused, so they cannot collide. Wait for the step, or pause the job in `/xivmcp` → **Jobs**.
+
+</Accordion>
+<Accordion title="A third-party plugin was suspended">
+
+One of its calls changed something it did not declare, such as your gil or your items. Its page in `/xivmcp` → **Third-party plugins** shows the reason and the audit log. Lift the suspension there if you trust the plugin.
+
+</Accordion>
+<Accordion title="Retainer or submersible data is old">
+
+The game only sends this data in certain places. Visit a summoning bell or the voyage control panel, or ask your assistant to run `refresh_retainer_inventories` at a bell. See [Caches](/docs/user/caches).
+
+</Accordion>
+</Accordions>
+
+## Logs
+
+`/xllog` shows Dalamud's log. XIV MCP's entries start with `[XivMcp]`.
+
+## Still stuck?
+
+Open an issue on [GitHub](https://github.com/IndividualGather/xiv-mcp/issues) with what you asked, what happened, and the output of `/xivmcp selftest`. Leave out your access token and other players' names.

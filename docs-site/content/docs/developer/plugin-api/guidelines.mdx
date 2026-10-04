@@ -1,0 +1,41 @@
+---
+title: Guidelines
+description: Writing tools that assistants use well, and the rules and limits of the API.
+icon: BookCheck
+---
+
+## Descriptions
+
+Descriptions are what the assistant reads to decide when to call a tool:
+
+- Say what the tool does and when to use it, what it needs, and what can go wrong.
+- Name related tools, and which come before or after.
+- Keep it to a few sentences.
+
+The player sees an abbreviated version in `/xivmcp`, with the full text as a tooltip. A blank line (`\n\n`) starts a paragraph, a line starting with `- ` becomes a bullet, and sentences starting "Requires", "Needs" or "Only available" are set apart.
+
+## Names
+
+- 3 to 64 characters `a-z0-9_`, starting with a letter.
+- Names are global, so **prefix them** with your plugin's name, and start with a verb: `myplugin_set_mode`.
+- XIV MCP's own names and other plugins' names are refused.
+
+## Behaviour
+
+- **Quick tools must be quick.** They run on the framework thread. Anything that waits belongs in `AddLongRunningTool`.
+- **Make cancellation safe.** Finish the fight or close the window first, then stop. XIV MCP waits up to two minutes for that.
+- **Fail with a next step:** "Not at a summoning bell; use navigate_to with destination summoning_bell first."
+- **Read-only means it changes nothing.** It cannot declare acting capabilities.
+- **Keep critical actions rare and explicit.** `discard_items` is asked every time and cannot be allowed permanently.
+
+## Limits
+
+- **One acting step at a time:** while a job step runs, calls that are not read-only are refused. Read-only tools are not blocked by it, but still follow the player's settings.
+- **Size:** results are JSON strings; keep them to a few kilobytes.
+- **Identity:** IPC does not identify the caller, so your owner name is taken as given. Do not register under another plugin's name.
+- **Observation, not a sandbox:** XIV MCP notices changes to gil, currencies, item counts, zone, world, sent chat and logins. Other effects, such as a market listing, still need declaring.
+- **Versioning:** `ApiVersion` only goes up for breaking changes.
+
+<Callout type="warn" title="Terms of service">
+  Automating game actions is against the FFXIV terms of service. Make your tools as careful as a button in your own UI.
+</Callout>

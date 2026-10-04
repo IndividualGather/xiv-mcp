@@ -1,0 +1,54 @@
+---
+title: Third-party plugins
+description: How XIV MCP controls tools that other plugins offer to your assistant.
+icon: Plug
+---
+
+Other plugins can offer their own tools to your assistant. Those tools run that plugin's code, so XIV MCP cannot sandbox them. Instead, it controls when they run and checks what they did. You find them in `/xivmcp` → **Third-party plugins**.
+
+<Screenshot src="third-party.png" alt="The Third-party plugins tab with a violet plugin card marked THIRD-PARTY, its capabilities and their Allow, Ask and Deny settings" caption="Third-party plugins get violet cards with a THIRD-PARTY badge." />
+
+## Off until you decide
+
+When a plugin registers tools, XIV MCP shows a notification naming it and what it asks to do, with **Enable**, **Keep disabled** and **Review…** buttons. Clicking the notification opens the plugin's page, where the same choice is offered.
+
+- Nothing is offered to your assistant until you enable the plugin.
+- *Keep disabled* is remembered: you are not asked again unless the plugin's registration changes.
+
+## Changes need consent again
+
+If a plugin later registers a new tool or a new capability, you are asked again, for just the additions. If the plugin was enabled, its tools are paused (refused and hidden from your assistant) until you consent again. Removing tools never asks.
+
+## Capabilities you decide on
+
+Every tool declares what it may do: use game windows, move the character, fight, move, sell or destroy items, spend gil or other currencies, send chat, log out, change settings, go online.
+
+- For each capability you choose **Allow**, **Ask** or **Deny**.
+- Everything except reading starts at *Ask*.
+- Destroying items cannot be set to *Allow*. It is asked every time.
+
+Each plugin card has an on/off switch, one Allow / Ask / Deny section per declared capability with its risk level, and a Reading section for tools that only read. Expand a section to set its tools on their own, as on the **Modules** tab. A tool that follows its sections uses the strictest of them.
+
+## Checks on what changed
+
+Before and after every call, XIV MCP compares:
+
+- your gil and currencies,
+- your item count,
+- your zone and world,
+- the chat you sent,
+- and whether you are still logged in.
+
+A change the plugin did not declare flags the call. If the call was short (under two minutes), the plugin is **suspended** until you lift it, and you get a chat message. Longer calls are only flagged, since you or another plugin may have acted in the meantime.
+
+## Audit log
+
+Every call, decision and approval is listed under the plugin, with flagged entries highlighted. The full log is in `pluginConfigs/XivMcp/audit.jsonl`.
+
+<Callout type="warn" title="Only trust what you know">
+  Even with all of this, an enabled plugin's code does what it was written to do. Enable plugins you trust, and read the capabilities they ask for.
+</Callout>
+
+## For plugin developers
+
+The plugin API, with a drop-in client and an example plugin, is in the [developer docs](/docs/developer).

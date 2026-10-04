@@ -1,6 +1,6 @@
 # XIV MCP plugin API
 
-Offer your Dalamud plugin's features to AI assistants through XIV MCP: register tools the assistant can call, ask the player for approval at risky moments, and start background jobs. This guide covers **API version 2**. If you only want to use XIV MCP, see the [README](../README.md).
+Offer your Dalamud plugin's features to AI assistants through XIV MCP: register tools the assistant can call, ask the player for approval at risky moments, and start background jobs. This guide covers **API version 2**. If you only want to use XIV MCP, see the [README](../README.md). The same guide, split into pages, is in the [developer docs](https://individualgather.github.io/xiv-mcp/docs/developer/plugin-api/).
 
 - [Quick start](#quick-start)
 - [How to …](#how-to-)

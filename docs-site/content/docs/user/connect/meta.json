@@ -1,0 +1,5 @@
+{
+  "title": "Connecting your AI app",
+  "icon": "Cable",
+  "pages": ["index", "chatgpt", "claude-desktop", "lm-studio", "claude-code", "vs-code", "other-apps", "removing"]
+}

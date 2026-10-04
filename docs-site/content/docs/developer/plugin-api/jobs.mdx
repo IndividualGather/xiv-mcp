@@ -1,0 +1,30 @@
+---
+title: Starting jobs
+description: Run steps one after another, your tools and XIV MCP's own, for as long as they take.
+icon: ListChecks
+---
+
+A job runs steps one after another, each as long as it needs. Steps can be your tools, other plugins' tools or XIV MCP's own.
+
+```csharp
+var job = mcp.StartJob("Farm, then head to a bell",
+    new McpJobStep("myplugin_farm", new { minutes = 90 }, Id: "farm"),
+    new McpJobStep("navigate_to", new { destination = "summoning_bell" }),
+    new McpJobStep("myplugin_report", new { text = "Farmed {{farm.kills}} kills." }));
+```
+
+## Placeholders
+
+- `"{{farm.kills}}"` on its own becomes that value, with its type. Inside a longer string it becomes text.
+- Paths go into objects and arrays: `{{plan.list.id}}`, `{{search.items.0.id}}`.
+- Paths ignore case, so a result `new { Kills = 12 }` (sent as `{"kills": 12}`) is read by `{{farm.kills}}`.
+
+## XIV MCP's own tools
+
+They are listed with their purpose in the [tools reference](/docs/user/tools), and with their arguments in `tools/list`. For example, `new McpJobStep("sell_item", new { retainer = "{{pick.retainer}}", item = "Iron Ore" })` passes your result into one of them.
+
+## Permissions and control
+
+- **Every step is checked** against the player's settings, so a step set to *Ask* waits for the player.
+- **Control:** `GetJob(id)`, `ListJobs()`, `PauseJob`, `ResumeJob` and `CancelJob`.
+- Your jobs show in `/xivmcp` → **Jobs** with your plugin's name.

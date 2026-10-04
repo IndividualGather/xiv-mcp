@@ -1,0 +1,21 @@
+---
+title: Removing XIV MCP from an app
+description: Take XIV MCP out of an app again, or cut off every app at once.
+---
+
+Each app XIV MCP is set up in gets a **Remove XIV MCP from …** section in `/xivmcp` → **Connect**:
+
+| App | How |
+|---|---|
+| **ChatGPT** (Codex) | **Remove from ChatGPT** deletes the entry from `~/.codex/config.toml`, with a backup. Restart ChatGPT. |
+| **Claude Code** | **Remove from Claude Code** runs `claude mcp remove` for the user-wide entry and for every project that has its own. |
+| **Claude Desktop** | **Settings** → **Extensions** → **Final Fantasy XIV (XIV MCP)** → **Uninstall**, or switch it off there. |
+| **VS Code** | Extensions view → **MCP Servers – Installed** → right-click `ffxiv` → **Uninstall**. |
+| **Cursor** | Delete the `ffxiv` entry from `~/.cursor/mcp.json`. |
+| **GitHub Copilot** | **Remove from GitHub Copilot** deletes the entry from `~/.copilot/mcp-config.json`, with a backup. |
+| **Grok Build** | **Remove from Grok Build** deletes the entry from `~/.grok/config.toml`, with a backup. |
+| **LM Studio** | **Remove from LM Studio** deletes the entry from Bionic's server list (or the older app's `mcp.json`), with a backup. |
+
+## Every app at once
+
+Switch off the **Server** in the top right of the `/xivmcp` window, or generate a new access token with the arrows button next to the token in the **Connect** tab. Apps that still have the old token can no longer connect.

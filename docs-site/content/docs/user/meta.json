@@ -1,0 +1,21 @@
+{
+  "title": "User docs",
+  "description": "Install, connect and use XIV MCP",
+  "icon": "Gamepad2",
+  "root": true,
+  "pages": [
+    "index",
+    "install",
+    "connect",
+    "costs",
+    "---Permissions---",
+    "...permissions",
+    "---What it can do---",
+    "...features",
+    "tools",
+    "---Reference---",
+    "caches",
+    "compatibility",
+    "troubleshooting"
+  ]
+}

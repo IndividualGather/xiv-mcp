@@ -1,0 +1,35 @@
+---
+title: Compatibility with other plugins
+description: Which plugins XIV MCP works with, which it pauses, and which it uses.
+icon: Puzzle
+---
+
+XIV MCP detects these plugins automatically. Its settings only mention the ones you have installed, and `/xivmcp` → **Info** → **Compatibility** shows what it found.
+
+## Plugins it pauses
+
+| Plugin | What XIV MCP does |
+|---|---|
+| **AutoRetainer** | AutoRetainer starts processing ventures as soon as a bell opens. While XIV MCP uses the bell, it holds AutoRetainer back through its public interface and releases it a few seconds after the bell is closed. If AutoRetainer is busy or in multi mode, XIV MCP does not touch the bell. |
+| **YesAlready** and **TextAdvance** | Paused while XIV MCP drives game windows, so they do not click for it. |
+| **FCCH** | Handles FC chest transfers. Item moves wait while it works. |
+
+## Plugins it uses
+
+| Plugin | Used for |
+|---|---|
+| **vnavmesh** | Walking, for `navigate_to` |
+| **Lifestream** | Travel, for `navigate_to` and world visits |
+| **Artisan** | Crafting and crafting lists |
+| **GatherBuddy Reborn** | Gathering and gathering lists |
+| **AutoDuty** | Running and looping dungeons. The dungeon tools only exist while it is loaded. |
+| **Item Vendor Location** | Finding vendors. An **Install** button appears under *Market & purchases* when it is missing. |
+| **Penny Pincher** | Its settings decide how much to undercut on the market board. |
+| **WaymarkPresetPlugin** | Its waymark preset library |
+| **FCCH** | FC chest deposits and withdrawals |
+
+None of them is required. Tools that need a missing plugin say so, and the integration tools disappear from your assistant's tool list while their plugin is not loaded.
+
+<Callout type="warn" title="Terms of service">
+  Automating game actions is against the FFXIV terms of service. XIV MCP sends the same requests as manual input, but use it at your own risk.
+</Callout>

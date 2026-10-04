@@ -1,0 +1,13 @@
+{
+  "title": "Developer docs",
+  "description": "The plugin API, and building XIV MCP",
+  "icon": "Puzzle",
+  "root": true,
+  "pages": [
+    "index",
+    "---Plugin API---",
+    "...plugin-api",
+    "---Contributing to XIV MCP---",
+    "...contributing"
+  ]
+}

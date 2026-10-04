@@ -1,0 +1,73 @@
+---
+title: Example plugin
+description: Hello MCP, a small complete Dalamud plugin that uses the client.
+icon: Lightbulb
+---
+
+[`examples/`](https://github.com/IndividualGather/xiv-mcp/tree/master/examples) holds two things:
+
+<Files>
+  <Folder name="examples" defaultOpen>
+    <File name="XivMcpClient.cs" />
+    <Folder name="HelloMcp" defaultOpen>
+      <File name="HelloMcp.csproj" />
+      <File name="HelloMcp.json" />
+      <File name="Plugin.cs" />
+    </Folder>
+  </Folder>
+</Files>
+
+- **`XivMcpClient.cs`** is the drop-in client (API version 2). Copy it into your plugin to offer tools, ask for approvals and start jobs through XIV MCP.
+- **`HelloMcp/`** is a small, complete Dalamud plugin that uses the client. Start from this.
+
+## What Hello MCP shows
+
+| Tool | Kind | Declares | Shows |
+|---|---|---|---|
+| `hellomcp_greet` | quick, read-only | (reading) | Reading game state on the framework thread, an `enum` argument, structured results, `McpToolException` |
+| `hellomcp_print` | quick, acting | `game_ui` | A tool that changes something (prints to the local chat log): not read-only, declares what it does, validates arguments first |
+| `hellomcp_countdown` | long-running | `game_ui` | Replying "pending", `call.Progress(…)`, stopping on `call.Cancellation`, going back to the framework thread |
+| `hellomcp_pretend_purchase` | long-running | `spend_gil` | `mcp.CheckPermission(…)` and `call.RequestApprovalAsync(…)`: asking the player at the risky moment with the real numbers. Nothing is bought. |
+
+The `/hellomcp job` command starts a job: the countdown, then a chat message that uses the countdown's result (`{{count.seconds}}`), then XIV MCP's own `get_game_status`. `/hellomcp jobs` lists the jobs the plugin started.
+
+## Try it
+
+<Steps>
+<Step>
+
+**Build it:**
+
+```sh
+dotnet build examples/HelloMcp/HelloMcp.csproj -c Debug
+```
+
+</Step>
+<Step>
+
+**Load it as a dev plugin.** In the game, open `/xlsettings` → **Experimental** → **Dev Plugin Locations**, add the full path to `examples/HelloMcp/bin/Debug/HelloMcp.dll` and save. Then enable *Hello MCP* in the plugin installer under **Dev Tools**.
+
+</Step>
+<Step>
+
+**Enable it.** A notification says "Hello MCP wants to register with XIV MCP". Click **Enable**, or **Review…** to see its four tools and the capabilities they declare in `/xivmcp` → **Third-party plugins**. Each is set to **Ask** except reading. `/hellomcp status` shows what the plugin sees (`mcp.GetStatus()`).
+
+</Step>
+<Step>
+
+**Use it.**
+
+- Ask your assistant to "greet me with Hello MCP". It runs without asking, because it only reads.
+- Ask it to "print hello in chat with Hello MCP". The approval window asks first. Choose *Approve for this session* and ask again; it does not ask a second time.
+- Ask it to "pretend to buy a Hi-Potion with Hello MCP". The call itself is approved first, then the tool asks again with the price.
+- Type `/hellomcp job` and watch the job in `/xivmcp` → **Jobs**. Pause it while the countdown runs to see cancellation, then resume it.
+- Check the activity list under *Hello MCP*: every call, decision and approval is recorded.
+
+</Step>
+</Steps>
+
+## Tips for your own plugin
+
+- **Start from the client, not the raw IPC gates.** It handles the Ready and Disposing messages, registers again after XIV MCP reloads, and turns exceptions into errors the assistant can read.
+- **Register everything at startup.** A tool or capability added later pauses your plugin until the player consents again.
+- **Show your status.** `mcp.GetStatus()` tells you whether the player has decided, kept you disabled, needs to consent again, or suspended you. Say so in your UI.

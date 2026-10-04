@@ -1,0 +1,23 @@
+---
+title: Claude Code
+description: Add XIV MCP to Claude Code for all your projects.
+---
+
+## One click
+
+In `/xivmcp` → **Connect**, choose **Claude Code** and click the button. XIV MCP runs `claude mcp add` for you, without a console window, for all your projects.
+
+- An earlier user-wide `ffxiv` entry is replaced.
+- Entries that belong to single projects are left alone.
+
+## By hand
+
+```sh
+claude mcp add --scope user --transport http ffxiv http://localhost:37521/mcp --header "Authorization: Bearer <token>"
+```
+
+Replace `<token>` with the token from `/xivmcp` → **Connect**.
+
+## Removing it
+
+**Remove from Claude Code** in the **Connect** tab runs `claude mcp remove` for the user-wide entry and for every project that has its own.

@@ -1,0 +1,53 @@
+---
+title: Client reference
+description: Every member of XivMcpClient and its types.
+icon: Library
+---
+
+## `XivMcpClient`
+
+| Member | Does |
+|---|---|
+| `new XivMcpClient(pluginInterface)` | Connects. Tools are registered again whenever XIV MCP loads. |
+| `AddTool(definition, args => result)` | A tool that answers right away, called on the framework thread. |
+| `AddLongRunningTool(definition, async call => result)` | A tool that may take long; see `McpCall`. |
+| `RemoveTool(name)` | Unregisters one tool. |
+| `GetStatus()` | `McpStatus`: your `State`, `CanRun`, `SuspendReason`, the setting of each declared capability (`Capabilities`) and of each tool as a whole (`Tools`). |
+| `CheckPermission(capability)` | `Allow`, `Ask` or `Deny` for one capability (`Deny` unless enabled). |
+| `StartJob(name, params steps)` | Starts a job; returns it as JSON (`id`, `state`, …). |
+| `GetJob(id)` / `ListJobs()` | A job, or the jobs your plugin started. |
+| `PauseJob(id)` / `ResumeJob(id)` / `CancelJob(id)` | Job control. |
+| `IsAvailable` | XIV MCP is loaded and speaks this API version. |
+| `RegistrationFailed` | Event with XIV MCP's message when a definition is rejected. Log it. |
+| `Dispose()` | Unregisters everything; call it in your plugin's `Dispose`. |
+
+## `McpToolDefinition(Name, Description)`
+
+| Property | Meaning |
+|---|---|
+| `Name` | 3–64 characters `a-z0-9_`, starting with a letter. Prefix it with your plugin's name: `myplugin_…`. |
+| `Description` | What the assistant reads to decide when to call it. |
+| `InputSchema` | JSON schema of the arguments (`"type": "object"`), or null for none. |
+| `ReadOnly` | True if it changes nothing. It runs during jobs and needs no capabilities. |
+| `Destructive` | True if the changes are hard to undo. |
+| `Capabilities` | `McpCapabilities` ids. Required unless `ReadOnly`. |
+
+## `McpCall` (long-running tools)
+
+| Member | Meaning |
+|---|---|
+| `Args` | The arguments (`JsonObject`). |
+| `Cancellation` | Fires when the job is paused or cancelled. |
+| `Progress(text)` | Adds a line to the job log. |
+| `RequestApprovalAsync(capability, summary)` | Asks the player now; `true` if approved. |
+| `Id`, `Tool` | The call's id and tool name. |
+
+## Other types
+
+| Type | What it is |
+|---|---|
+| `McpToolException(message)` | An error the assistant sees as it is. |
+| `McpJobStep(Tool, Args, Id, Note)` | One job step. |
+| `McpPermission` | `Allow`, `Ask` or `Deny`. |
+| `McpPluginState` | `Unavailable`, `Undecided`, `KeptDisabled`, `Enabled`, `AwaitingConsent` or `Suspended`. See [Showing your status](/docs/developer/plugin-api/status). |
+| `McpCapabilities` | The capability ids. See [Capabilities](/docs/developer/plugin-api/capabilities). |

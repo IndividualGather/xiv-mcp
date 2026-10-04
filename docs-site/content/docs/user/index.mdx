@@ -1,0 +1,63 @@
+---
+title: What is XIV MCP?
+description: A Dalamud plugin that lets AI assistants see your game and, when you allow it, act in it.
+icon: Sparkles
+---
+
+XIV MCP is a [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV. It runs a small server inside the game client that speaks the **Model Context Protocol** (MCP), the standard AI apps use to reach tools outside the chat. Once your AI app is connected, you can ask it about your character, and ask it to do things for you in the game.
+
+![XIV MCP: uplink AI assistants to Final Fantasy XIV](/images/banner.png)
+
+## What you can ask
+
+A few examples of what your assistant can answer or do, depending on what you allow:
+
+- "Which of my jobs are below level 100, and how much experience do they need?"
+- "Where are all my Grade 8 Tinctures? Count the ones on my retainers too."
+- "What do I need to craft 20 Rarefied Claro Walnut Spinning Wheels, and what am I missing?"
+- "Send every free retainer on a quick venture."
+- "Put my Iron Ore on the market board, just below the cheapest offer."
+- "Run the latest dungeon with NPC allies until I have 500 more tomestones."
+- "Make a route through these three spots and flag each one when I reach the one before."
+
+The full list of tools your assistant can use is in the [tools reference](/docs/user/tools).
+
+## How it works
+
+<Steps>
+<Step>
+
+**The plugin runs a server on your PC.** It listens at `http://localhost:37521/mcp`, answers only requests from your own PC, and needs an access token that it creates on first start.
+
+</Step>
+<Step>
+
+**Your AI app connects to it.** In `/xivmcp` → **Connect**, most apps are set up with one click. See [Connecting your AI app](/docs/user/connect).
+
+</Step>
+<Step>
+
+**You decide what it may do.** Most reading is allowed from the start. Every tool that acts in the game, edits something or goes online is off until you allow it in `/xivmcp` → **Modules**. You can also have it ask you first. See [Modules and permissions](/docs/user/permissions/modules).
+
+</Step>
+</Steps>
+
+## Safe by default
+
+- **Only your PC.** The server answers on `localhost` only, refuses browser requests from other websites and requires the token.
+- **Reading first.** Out of the box, your assistant can look but not touch. Every setting, reading included, is yours to change: allow, ask or deny, per module and per tool.
+- **You approve the risky moments.** Purchases with anything other than gil, recalling a venture and anything you set to *Ask* wait for your answer in the game. The game's taskbar button flashes while an approval waits.
+- **Other plugins need your consent.** Tools from other plugins stay off until you enable them, and XIV MCP checks what each of their calls changed. See [Third-party plugins](/docs/user/permissions/third-party).
+
+<Callout type="warn" title="Terms of service">
+  Automating game actions is against the FFXIV terms of service. XIV MCP sends the same requests as manual input, but use it at your own risk, and do not share data about other players.
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card title="Install XIV MCP" href="/docs/user/install" description="Add the plugin to the game." />
+  <Card title="Connect your AI app" href="/docs/user/connect" description="ChatGPT, Claude, LM Studio and others." />
+  <Card title="What it costs" href="/docs/user/costs" description="XIV MCP is free; most AI apps are not." />
+  <Card title="Choose what it may do" href="/docs/user/permissions/modules" description="Allow, ask or deny, per module." />
+</Cards>

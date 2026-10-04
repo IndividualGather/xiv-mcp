@@ -1,0 +1,97 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+/* XIV MCP brand: the teal-to-blue gradient of the crystal satellite (branding/README.md), on puni.sh-style near-black surfaces. */
+:root {
+  --xiv-teal: #3befc4;
+  --xiv-blue: #3f7bff;
+  --xiv-gradient: linear-gradient(135deg, var(--xiv-teal), var(--xiv-blue));
+}
+
+@theme {
+  --color-fd-primary: #2457d6;
+  --color-fd-primary-foreground: #ffffff;
+  --color-fd-ring: #3f7bff;
+}
+
+.dark {
+  --color-fd-background: #1a1a1a;
+  --color-fd-foreground: #e0e0e0;
+  --color-fd-muted: #222224;
+  --color-fd-muted-foreground: #a3a3a8;
+  --color-fd-popover: #1f1f21;
+  --color-fd-popover-foreground: #e0e0e0;
+  --color-fd-card: #141518;
+  --color-fd-card-foreground: #ececec;
+  --color-fd-border: rgba(255, 255, 255, 0.08);
+  --color-fd-primary: #3befc4;
+  --color-fd-primary-foreground: #0b1714;
+  --color-fd-secondary: #232326;
+  --color-fd-secondary-foreground: #e0e0e0;
+  --color-fd-accent: rgba(59, 239, 196, 0.1);
+  --color-fd-accent-foreground: #e9fffa;
+  --color-fd-ring: #3befc4;
+}
+
+.dark #nd-sidebar {
+  --color-fd-muted: #202022;
+  --color-fd-secondary: #242427;
+  --color-fd-muted-foreground: #a8a8ad;
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+html > body[data-scroll-locked] {
+  margin-right: 0px !important;
+  --removed-body-scroll-bar-size: 0px !important;
+}
+
+/* The wordmark and gradient text, like the banner. */
+.xiv-wordmark,
+.xiv-gradient-text {
+  background: var(--xiv-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Cards with a thin gradient frame on hover, like the tiles in the plugin. */
+.xiv-card {
+  position: relative;
+  border-radius: 12px;
+  border: 1px solid var(--color-fd-border);
+  background: var(--color-fd-card);
+  transition: border-color 150ms, transform 150ms;
+}
+
+.xiv-card:hover {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--color-fd-card), var(--color-fd-card)) padding-box,
+    var(--xiv-gradient) border-box;
+}
+
+.xiv-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+  border: 1px solid var(--color-fd-border);
+  padding: 1px 8px;
+  font-size: 12px;
+  color: var(--color-fd-muted-foreground);
+}
+
+/* Screenshots of the plugin window. */
+.xiv-shot {
+  border-radius: 12px;
+  border: 1px solid var(--color-fd-border);
+  box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.6);
+}
+
+/* Links and the active sidebar entry in the brand colour. */
+.dark .prose a:not([data-card]) {
+  text-decoration-color: rgba(59, 239, 196, 0.5);
+}

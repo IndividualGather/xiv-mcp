@@ -1,0 +1,68 @@
+---
+title: Quick start
+description: Offer a first tool to AI assistants in five minutes.
+icon: Rocket
+---
+
+This guide covers **API version 2** of the XIV MCP plugin API. If you only want to use XIV MCP, see the [user docs](/docs/user).
+
+<Steps>
+<Step>
+
+### Copy the client
+
+Copy [`examples/XivMcpClient.cs`](https://github.com/IndividualGather/xiv-mcp/blob/master/examples/XivMcpClient.cs) into your plugin. It is one file, needs only Dalamud and `System.Text.Json`, and works whether or not XIV MCP is installed.
+
+</Step>
+<Step>
+
+### Create the client and add a tool
+
+```csharp title="Plugin.cs"
+using XivMcp.Client;
+
+public sealed class Plugin : IDalamudPlugin
+{
+    private readonly XivMcpClient mcp;
+
+    public Plugin(IDalamudPluginInterface pluginInterface)
+    {
+        mcp = new XivMcpClient(pluginInterface);
+        mcp.RegistrationFailed += message => Log.Warning($"XIV MCP rejected a tool: {message}");
+
+        mcp.AddTool(
+            new McpToolDefinition("myplugin_status", "What My Plugin is doing right now: its mode and current target.") { ReadOnly = true },
+            args => new { mode = Mode.ToString(), target = CurrentTarget?.Name });
+    }
+
+    public void Dispose() => mcp.Dispose();
+}
+```
+
+</Step>
+<Step>
+
+### Load your plugin and enable it
+
+The player gets a notification that your plugin wants to register. They click **Enable**, or open `/xivmcp` → **Third-party plugins**.
+
+</Step>
+<Step>
+
+### Ask the assistant
+
+Ask it to "check My Plugin's status". It calls `myplugin_status`.
+
+</Step>
+</Steps>
+
+[Hello MCP](/docs/developer/plugin-api/hello-mcp) is a complete example plugin with a tool of each kind and a job.
+
+## What to read next
+
+<Cards>
+  <Card title="Adding tools" href="/docs/developer/plugin-api/tools" description="Tools that change something, arguments, results and errors." />
+  <Card title="Long-running tools" href="/docs/developer/plugin-api/long-running" description="Tools that take minutes or hours, with progress and cancellation." />
+  <Card title="Capabilities" href="/docs/developer/plugin-api/capabilities" description="What to declare, and how risky each capability is." />
+  <Card title="Client reference" href="/docs/developer/plugin-api/reference" description="Every member of XivMcpClient." />
+</Cards>

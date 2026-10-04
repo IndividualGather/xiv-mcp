@@ -1,0 +1,37 @@
+---
+title: Developer docs
+description: Offer your plugin's features to AI assistants, or help build XIV MCP itself.
+icon: Code
+---
+
+There are two ways to build on XIV MCP.
+
+<Cards>
+  <Card title="Add AI tools to your plugin" href="/docs/developer/plugin-api" description="Register tools assistants can call, ask the player at risky moments, and start background jobs, over Dalamud IPC." />
+  <Card title="Contribute to XIV MCP" href="/docs/developer/contributing" description="Build, test and change XIV MCP itself: its architecture, workflow and this site." />
+</Cards>
+
+## The plugin API in one minute
+
+Your Dalamud plugin can offer tools to AI assistants through XIV MCP. You do not need a server or a reference to XIV MCP, and your plugin keeps working without it.
+
+```csharp
+mcp = new XivMcpClient(pluginInterface);                     // examples/XivMcpClient.cs, copied into your plugin
+mcp.AddTool(new("myplugin_status", "What My Plugin is doing right now.") { ReadOnly = true },
+            args => new { mode = Mode.ToString() });
+mcp.AddTool(new("myplugin_follow", "Follows the current target on foot.") { Capabilities = [McpCapabilities.MoveCharacter] },
+            args => { StartFollowing(); return new { following = true }; });
+```
+
+The player decides what your tools may do. They enable your plugin, and choose *Allow*, *Ask* or *Deny* for every [capability](/docs/developer/plugin-api/capabilities) you declare. XIV MCP checks what each call changed, and suspends plugins whose calls have effects they did not declare.
+
+## Six things to get right
+
+1. **Prefix tool names** with your plugin's name, and start them with a verb: `myplugin_set_mode`.
+2. **Write descriptions for the assistant:** what the tool does, when to use it, what it needs, and what comes before or after.
+3. **Declare every capability**, including indirect ones (a teleport spends gil). Undeclared side effects suspend your plugin.
+4. **Ask at the risky moment, with real numbers:** `call.RequestApprovalAsync(McpCapabilities.SpendGil, "Buy 3 Hi-Potions for 1,200 gil")`.
+5. **Keep quick tools quick.** They run on the framework thread. Anything that waits is a long-running tool.
+6. **Cancel safely:** finish the fight, close the window, then stop.
+
+The details are in [Guidelines](/docs/developer/plugin-api/guidelines).

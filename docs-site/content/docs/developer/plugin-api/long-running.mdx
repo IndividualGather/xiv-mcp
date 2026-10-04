@@ -1,0 +1,43 @@
+---
+title: Long-running tools
+description: Tools that take minutes or hours, with progress, cancellation and reruns.
+icon: Timer
+---
+
+Use `AddLongRunningTool` for anything that waits. The call can run for hours as a job step.
+
+```csharp
+mcp.AddLongRunningTool(
+    new McpToolDefinition("myplugin_farm", "Farms the current zone until the bags are full or 'minutes' have passed.")
+    {
+        Capabilities = [McpCapabilities.MoveCharacter, McpCapabilities.Combat],
+        InputSchema = """{ "type": "object", "properties": { "minutes": { "type": "integer", "minimum": 1, "maximum": 600 } } }""",
+    },
+    async call =>
+    {
+        var until = DateTime.UtcNow.AddMinutes(call.Args["minutes"]?.GetValue<int>() ?? 60);
+        await Framework.RunOnFrameworkThread(StartFarming);
+        try
+        {
+            while (DateTime.UtcNow < until && !await Framework.RunOnFrameworkThread(BagsFull))
+            {
+                await Task.Delay(5000, call.Cancellation);   // throws when the job is paused or cancelled
+                call.Progress($"{Kills} kills");              // shown in the job log
+            }
+            return new { kills = Kills };
+        }
+        finally
+        {
+            await Framework.RunOnFrameworkThread(StopFarmingSafely);  // also runs on cancel
+        }
+    });
+```
+
+## Rules
+
+- **Threads:** the handler starts on the framework thread and continues on the thread pool after its first `await`. Use `Framework.RunOnFrameworkThread` for game access after that.
+- **Cancel safely:** when `call.Cancellation` fires, finish the fight or close the window, then return or throw. XIV MCP waits up to two minutes for you.
+- **Progress:** `call.Progress("Room 2 of 5")` adds a line to the job log. Report milestones, not every frame.
+- **Ending a cancelled call:** let the `OperationCanceledException` from `Task.Delay(…, call.Cancellation)` propagate, or throw it yourself. The client reports "Cancelled."
+- **Pause and resume:** a paused job runs the step again from the start, with the same arguments. Make tools safe to run again: prefer targets ("until 20 ore") over counts ("20 more").
+- **Failing** (throwing) makes a job step *pending*: the job waits for the assistant to retry or change it. Say what is left: "Bags full after 120 kills; 3 Iron Ore still missing."

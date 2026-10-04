@@ -1,0 +1,35 @@
+---
+title: Capabilities
+description: What your tools must declare, and how risky the player sees each capability.
+icon: KeyRound
+---
+
+Declare every capability a tool can use on any path, including indirect costs. `read_game` is added for you.
+
+| Declare | When your tool … | Risk |
+|---|---|---|
+| `McpCapabilities.GameUi` (`game_ui`) | opens, closes or clicks game windows, talks to NPCs | medium |
+| `MoveCharacter` (`move_character`) | walks, mounts, teleports, or changes zone, instance or world | medium |
+| `MoveItems` (`move_items`) | moves items between bags, armoury, saddlebag, retainers or chests | medium |
+| `Network` (`network`) | sends web requests | medium |
+| `Combat` (`combat`) | enters duties or fights | high |
+| `SpendGil` (`spend_gil`) | pays gil, including teleports and repairs | high |
+| `SpendCurrency` (`spend_currency`) | pays tomestones, scrips, seals, MGP or items used as currency | high |
+| `TradeItems` (`trade_items`) | lists on the market board, sells to vendors or trades with players | high |
+| `ChatSend` (`chat_send`) | sends chat or commands others can see | high |
+| `Login` (`login`) | logs out, switches character or closes the game | high |
+| `EditSettings` (`edit_settings`) | changes game, plugin or file settings | high |
+| `DiscardItems` (`discard_items`) | discards or desynthesises, anything that cannot be undone | critical |
+
+Every capability except reading starts at *Ask* for the player. `discard_items` is asked every time and cannot be set to *Allow*.
+
+## Tips
+
+- **Split by risk.** A read-only `myplugin_plan_purchase` plus a `myplugin_buy` that declares `spend_gil` lets the player allow planning freely and approve only purchases.
+- **Declare indirect effects.** Teleporting spends gil, buying with tokens spends a currency, and selling removes items.
+- **Do not over-declare.** Every capability is a line the player must accept, and an unneeded *high* one makes them hesitate.
+- **Buying** needs `SpendGil` or `SpendCurrency`, not `TradeItems`. Items you gain are never a problem; only what leaves the inventory counts.
+
+## What XIV MCP checks
+
+Before and after every call, XIV MCP compares gil, currencies, item counts, zone, world, sent chat and login state. A change your tool did not declare flags the call, and suspends your plugin if the call took less than two minutes. Effects it cannot observe, such as a market listing, still need declaring. See [What the player controls](/docs/developer/plugin-api/player-controls).

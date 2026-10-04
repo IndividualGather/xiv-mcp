@@ -2,11 +2,12 @@
 
 # XIV MCP
 
-A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV that runs a local **Model Context Protocol (MCP) server** inside the game client. It gives AI assistants such as Claude or ChatGPT (Codex) access to the live data of the logged-in character. Reading is always allowed; everything that changes something is opt-in. Other plugins can add their own tools ([for plugin developers](#for-plugin-developers)).
+A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV that runs a local **Model Context Protocol (MCP) server** inside the game client. It gives AI assistants such as Claude or ChatGPT (Codex) access to the live data of the logged-in character. Reading is allowed by default and everything that changes something is opt-in; every setting can be changed. Other plugins can add their own tools ([for plugin developers](#for-plugin-developers)).
 
 - **Transport:** MCP Streamable HTTP (JSON responses) at `http://localhost:37521/mcp`, bound to localhost only
 - **Auth:** bearer token, generated on first start (can be turned off)
 - **Permissions:** every tool that acts in game, edits something or goes online is off until you switch its permission on in `/xivmcp`
+- **Documentation:** [individualgather.github.io/xiv-mcp](https://individualgather.github.io/xiv-mcp/), with a [user guide](https://individualgather.github.io/xiv-mcp/docs/user/), the [developer docs](https://individualgather.github.io/xiv-mcp/docs/developer/) and a tools reference generated from the code (published once the repository is public; the source is in [`docs-site/`](docs-site))
 
 ## Permissions
 
@@ -204,7 +205,7 @@ Undercuts follow **Penny Pincher**'s settings when it is installed (amount, roun
 | `get_crafting_lists` / `set_crafting_list` / `delete_crafting_list` | Artisan's lists and state; create, edit or delete lists |
 | `craft_item` / `crafting_control` | Craft an item N times; start, pause, resume or stop a list |
 | `get_gather_lists` / `set_gather_list` / `delete_gather_list` / `set_auto_gather` | GatherBuddy Reborn's auto-gather lists and auto-gather on/off |
-| `plan_craft` | Plans a project: recipe tree, craft order, stock from bags and retainers, where to get missing materials, bag space and batches, and the stats Artisan will craft with. `"quantity": "fill"` plans as many as fit in the bags; for collectables also no more than can be turned in before the scrip cap, with the scrip per collectability tier *(always available)* |
+| `plan_craft` | Plans a project: recipe tree, craft order, stock from bags and retainers, where to get missing materials, bag space and batches, and the stats Artisan will craft with. `"quantity": "fill"` plans as many as fit in the bags; for collectables also no more than can be turned in before the scrip cap, with the scrip per collectability tier *(Game data)* |
 | `prepare_craft_plan` | Creates the Artisan list in the right order and builds the **Raphael** solution for each recipe ahead of time, with the exact stats Artisan will use |
 | `gather_until` | Gathers until the bags hold the target quantities (your other lists are paused and restored) |
 | `run_crafting_list` | Runs an Artisan list to the end and reports what was crafted |
@@ -250,7 +251,7 @@ MCP's own task mechanism (the Tasks extension) isn't used because no common clie
 
 | Tool | What it does |
 |---|---|
-| `list_plugins` | Installed plugins with internal name, version, load state and flags (always available) |
+| `list_plugins` | Installed plugins with internal name, version, load state and flags (Game data) |
 | `set_plugin_enabled` / `reload_plugin` | Enables, disables or reloads a plugin, like the installer toggle |
 | `list_plugin_config_files` / `get_plugin_config` / `set_plugin_config` | Lists, reads and changes plugin settings by path, with dry run and type checks |
 
@@ -308,6 +309,18 @@ The plugin is written to `XivMcp/bin/Debug/XivMcp.dll`, next to `XivMcp.Core.dll
 | `XivMcp` | The Dalamud plugin: tools, game access, windows. Thin adapters around the core. |
 | `XivMcp.Core` | Everything that doesn't need the game: tool registry and providers, capabilities, policies, the permission gate, side-effect analysis, the audit log, the integration catalog, job placeholders, the plugin API protocol, the self-test runner. No Dalamud reference. |
 | `XivMcp.Tests` | xUnit v3 tests for `XivMcp.Core`. |
+| `docs-site` | The documentation site ([Fumadocs](https://fumadocs.dev) on Next.js, exported as static files). |
+
+### Documentation site
+
+```sh
+cd docs-site
+npm install
+npm run dev      # http://localhost:3000/xiv-mcp
+npm run build    # static site in docs-site/out
+```
+
+Pages are MDX files in `docs-site/content/docs/` with two sections, `user` and `developer`. The tools reference (`content/docs/user/tools.mdx`) is generated before every `dev` and `build` by `scripts/generate-tools.mjs` from `PermissionCatalog.cs`, `IntegrationCatalog.cs`, `ToolSummaries.cs` and the tool definitions, and isn't committed. `.github/workflows/docs.yml` builds the site on every push and pull request, and deploys it to GitHub Pages only while the repository is public.
 
 ## Testing
 

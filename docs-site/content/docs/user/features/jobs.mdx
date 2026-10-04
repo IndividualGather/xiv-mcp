@@ -1,0 +1,38 @@
+---
+title: Background jobs
+description: Queues of steps that XIV MCP runs in the game, one after another, for as long as they take.
+icon: ListChecks
+---
+
+A job is a queue of tool calls that XIV MCP runs in the game, one after another, for as long as they take. It does not depend on the chat or the connection: you can close your AI app and the job keeps going.
+
+| Tool | What it does |
+|---|---|
+| `start_job` | Starts a job with its steps (tool and arguments). Later steps can use earlier results. |
+| `list_jobs` / `get_job` | Jobs with state, progress and the current step; one job's steps, results, errors and log |
+| `update_job` | For a pending or paused job: retries or skips the current step, adds steps or replaces the remaining ones |
+| `pause_job` / `resume_job` / `cancel_job` | Controls a job |
+| `wait` | A step that waits a number of seconds, or until a time |
+
+## In the game
+
+`/xivmcp` → **Jobs** lists every job with its progress, and has **Pause**, **Resume** and **Cancel** buttons. Your standing spending approvals are listed there too.
+
+<Screenshot src="jobs.png" alt="The Jobs tab with a running job, its steps and progress, and pause and cancel buttons" caption="The Jobs tab." />
+
+## How jobs behave
+
+- **Each step needs its own permission.** A step set to *Ask* waits for you. A step whose module is denied fails.
+- **One acting step at a time.** While a step runs, other tool calls that change something are refused, so they cannot collide with the job. Tools that only read are not blocked by a running step, and neither are waiting steps such as routes. They still follow their own settings.
+- **Failures wait for a fix.** When a step fails or is stopped, the job becomes **pending** and waits for your assistant to retry, skip or change it.
+- **Jobs survive reloads.** After a plugin reload, jobs come back paused.
+
+## Passing results along
+
+A string argument `"{{stepId.path}}"` takes the value from an earlier step's result, keeping its type. Inside a longer string, as in `"Made {{craft.crafted}} pies"`, it is replaced by the value as text.
+
+Example: `prepare_craft_plan` (step id `plan`) → `gather_until` for the missing materials → `run_crafting_list` with `"list": "{{plan.list.id}}"`.
+
+## Why not MCP tasks?
+
+MCP has its own task mechanism (the Tasks extension), but no common app supports it yet. Jobs work with every app, through ordinary tools.

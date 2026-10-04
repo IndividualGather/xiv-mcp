@@ -1,0 +1,38 @@
+---
+title: Crafting and gathering
+description: Plan a crafting project, gather what is missing and craft the list, with Artisan and GatherBuddy Reborn.
+icon: Hammer
+---
+
+Planning works on its own. Crafting and gathering go through **Artisan** and **GatherBuddy Reborn**, so their tools are only offered while those plugins are loaded, with their own modules under **Integrations maintained by XIV MCP**.
+
+| Tool | What it does | Module |
+|---|---|---|
+| `plan_craft` | Plans a project: recipe tree, crafting order, stock from bags and retainers, where to get missing materials, bag space and batches, and the stats Artisan will craft with | Game data |
+| `get_crafting_lists` / `set_crafting_list` / `delete_crafting_list` | Artisan's lists and state; creates, edits or deletes lists | Artisan |
+| `craft_item` / `crafting_control` | Crafts an item a number of times; starts, pauses, resumes or stops a list | Artisan |
+| `prepare_craft_plan` | Creates the Artisan list in the right order and works out the **Raphael** solution for each recipe ahead of time, with the exact stats Artisan will use | Artisan |
+| `run_crafting_list` | Runs an Artisan list to the end and reports what was crafted | Artisan |
+| `get_gather_lists` / `set_gather_list` / `delete_gather_list` / `set_auto_gather` | GatherBuddy Reborn's auto-gather lists, and auto-gather on or off | GatherBuddy Reborn |
+| `gather_until` | Gathers until your bags hold the target quantities. Your other lists are paused and restored afterwards. | GatherBuddy Reborn |
+
+## Filling the bags
+
+With `"quantity": "fill"`, `plan_craft` plans as many as fit in your bags. For collectables, it also plans no more than can be turned in before the scrip cap, with the scrips per collectability tier.
+
+## A whole project as one job
+
+> "Craft as many of this collectable as I can turn in before the scrip cap, gather what is missing, and turn them in."
+
+Your assistant can run this as one [background job](/docs/user/features/jobs):
+
+1. `prepare_craft_plan` with `"quantity": "fill"` for a collectable,
+2. `gather_until` or `transfer_retainer_items` for the materials,
+3. `run_crafting_list`,
+4. `turn_in_collectables` (stops before the scrip cap),
+5. `buy_item` with a standing approval, and
+6. `sell_item`.
+
+## Good to know
+
+Neither plugin offers a way to change its lists from outside. So editing a list briefly unloads the plugin, updates its file (with a backup) and loads it again. The Raphael preparation uses Artisan's internals and may need an update after Artisan changes.
