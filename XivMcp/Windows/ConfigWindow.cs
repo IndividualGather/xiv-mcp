@@ -15,7 +15,8 @@ namespace XivMcp.Windows;
 
 internal sealed partial class ConfigWindow : Window
 {
-    internal static readonly Vector4 Gold = new(0.89f, 0.75f, 0.48f, 1);
+    /// <summary>XIV MCP's accent: the middle of the icon's teal-to-blue gradient, a little brighter so it reads as text.</summary>
+    internal static readonly Vector4 Accent = new(0.33f, 0.78f, 0.95f, 1);
     internal static readonly Vector4 Green = new(0.42f, 0.84f, 0.42f, 1);
     internal static readonly Vector4 Red = new(0.88f, 0.42f, 0.42f, 1);
     internal static readonly Vector4 Amber = new(0.91f, 0.70f, 0.29f, 1);
@@ -49,6 +50,10 @@ internal sealed partial class ConfigWindow : Window
         DrawHeader();
         ImGui.Spacing();
 
+        // Tabs in XIV MCP's accent rather than Dalamud's theme colour (which is close to the violet of third-party cards).
+        using var tabColors = ImRaii.PushColor(ImGuiCol.Tab, Accent with { W = 0.16f })
+                                    .Push(ImGuiCol.TabHovered, Accent with { W = 0.55f })
+                                    .Push(ImGuiCol.TabActive, Accent with { W = 0.42f });
         using var tabs = ImRaii.TabBar("##xivmcp-tabs");
         if (!tabs) return;
         Tab(FontAwesomeIcon.Plug, "Connect", DrawConnect);
@@ -130,7 +135,7 @@ internal sealed partial class ConfigWindow : Window
 
         using (ImRaii.Group())
         {
-            ImGui.TextColored(Gold, "XIV MCP");
+            ImGui.TextColored(Accent, "XIV MCP");
             ImGui.SameLine();
             ImGui.TextColored(Muted, $"v{typeof(Plugin).Assembly.GetName().Version?.ToString(3)}  ·  Model Context Protocol server");
 
@@ -177,196 +182,6 @@ internal sealed partial class ConfigWindow : Window
             }
         }
         ImGui.Separator();
-    }
-
-    // ---------------------------------------------------------------- connect
-
-    private static readonly (string Id, string Label)[] ClientChoices = [("claude", "Claude Code"), ("codex", "Codex"), ("other", "Other MCP client")];
-
-    private void DrawConnect()
-    {
-        var config = plugin.Config;
-        var server = plugin.Server;
-        var endpoint = server.Endpoint;
-        var token = config.RequireToken ? config.Token : null;
-        var masked = token is null ? null : "••••••";
-
-        // 1. Which assistant?
-        ImGui.TextColored(Muted, "Which AI assistant do you want to connect?");
-        ImGui.Spacing();
-        foreach (var (id, label) in ClientChoices)
-        {
-            if (Segment(label, config.ConnectClient == id))
-            {
-                config.ConnectClient = id;
-                config.Save();
-            }
-            ImGui.SameLine();
-        }
-        ImGui.NewLine();
-        ImGui.Spacing();
-
-        // 2. Only the steps for that assistant.
-        switch (config.ConnectClient)
-        {
-            case "codex":
-                Steps(token is null
-                    ? ["Copy the command below.", "Run it in a terminal.", "Start Codex."]
-                    : ["Copy the commands below.", "Run them in a terminal (the first line stores your access token).", "Open a new terminal and start Codex."]);
-                CommandBox("codex", CodexCommand(endpoint, masked), CodexCommand(endpoint, token), "Copy commands");
-                ImGui.TextColored(Muted, "Prefer editing ~/.codex/config.toml?");
-                ImGui.SameLine();
-                if (ImGui.SmallButton("Copy config.toml entry")) ImGui.SetClipboardText(CodexToml(endpoint, token));
-                break;
-            case "other":
-                Steps(["Copy the JSON below.", "Add it to your client's MCP server configuration (it needs HTTP server support).", "Restart the client."]);
-                CommandBox("json", JsonConfig(endpoint, masked), JsonConfig(endpoint, token), "Copy JSON");
-                break;
-            default:
-                Steps(["Copy the command below.", "Run it in a terminal.", "Start a new Claude Code session."]);
-                CommandBox("claude", ClaudeCommand(endpoint, masked), ClaudeCommand(endpoint, token), "Copy command");
-                break;
-        }
-
-        // 3. Did it work?
-        ImGui.Spacing();
-        var client = MatchingClient(config.ConnectClient);
-        if (!server.IsRunning)
-        {
-            IconText(FontAwesomeIcon.ExclamationTriangle, Amber);
-            ImGui.SameLine();
-            ImGui.TextColored(Amber, "The server is switched off (top right), so the assistant can't connect.");
-        }
-        else if (client is { } c)
-        {
-            IconText(FontAwesomeIcon.Check, Green);
-            ImGui.SameLine();
-            ImGui.TextColored(Green, $"Connected: {c.Name}, last request {Ago(c.LastSeenUtc)}");
-        }
-        else
-        {
-            IconText(FontAwesomeIcon.Hourglass, Muted);
-            ImGui.SameLine();
-            ImGui.TextColored(Muted, "Waiting for the first connection… ask your assistant something about your character.");
-        }
-
-        // 4. Rarely needed details.
-        ImGui.Spacing();
-        ImGui.Separator();
-        if (ImGui.CollapsingHeader($"{FontAwesomeIcon.Key.ToIconString()}  Server & access token"))
-        {
-            ImGui.Indent();
-            ImGui.SetNextItemWidth(120 * Ui.Scale);
-            ImGui.InputInt("Port", ref portInput);
-            portInput = Math.Clamp(portInput, 1024, 65535);
-            ImGui.SameLine();
-            if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Redo, portInput == config.Port ? "Restart server" : "Apply & restart"))
-            {
-                config.Port = portInput;
-                config.Save();
-                if (config.ServerEnabled) server.Start();
-            }
-            ImGui.TextColored(Muted, $"Address: {endpoint}  ·  only reachable from this PC.");
-
-            ImGui.Spacing();
-            var requireToken = config.RequireToken;
-            if (ImGuiComponents.ToggleButton("##token", ref requireToken))
-            {
-                config.RequireToken = requireToken;
-                config.Save();
-            }
-            ImGui.SameLine();
-            ImGui.TextUnformatted("Require access token");
-            if (!config.RequireToken)
-                ImGui.TextColored(Amber, "Without a token, any program on this PC can use the server.");
-            else
-            {
-                using (Ui.MonoFont())
-                    ImGui.TextUnformatted(showToken ? config.Token : config.Token[..6] + new string('•', 18));
-                ImGui.SameLine();
-                if (ImGuiComponents.IconButton(1, showToken ? FontAwesomeIcon.EyeSlash : FontAwesomeIcon.Eye)) showToken = !showToken;
-                Tooltip(showToken ? "Hide" : "Show");
-                ImGui.SameLine();
-                if (ImGuiComponents.IconButton(2, FontAwesomeIcon.Copy)) ImGui.SetClipboardText(config.Token);
-                Tooltip("Copy token");
-                ImGui.SameLine();
-                if (ImGuiComponents.IconButton(3, FontAwesomeIcon.Sync))
-                {
-                    config.Token = Configuration.NewToken();
-                    config.Save();
-                }
-                Tooltip("Generate a new token. Connected assistants must then be set up again.");
-                ImGui.TextColored(Muted, "The token stays the same across game restarts until you generate a new one.");
-            }
-            ImGui.Unindent();
-        }
-    }
-
-    /// <summary>The most recent client that looks like the chosen assistant.</summary>
-    private Mcp.McpServer.ClientInfo? MatchingClient(string choice) => plugin.Server.Clients().FirstOrDefault(c => choice switch
-    {
-        "claude" => c.Name.Contains("claude", StringComparison.OrdinalIgnoreCase),
-        "codex" => c.Name.Contains("codex", StringComparison.OrdinalIgnoreCase),
-        _ => !c.Name.Contains("claude", StringComparison.OrdinalIgnoreCase) && !c.Name.Contains("codex", StringComparison.OrdinalIgnoreCase),
-    });
-
-    private static bool Segment(string label, bool selected)
-    {
-        using var color = ImRaii.PushColor(ImGuiCol.Button, ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive], selected)
-            .Push(ImGuiCol.Text, Gold, selected);
-        return ImGui.Button($"  {label}  ");
-    }
-
-    private static void Steps(string[] steps)
-    {
-        for (var i = 0; i < steps.Length; i++)
-        {
-            ImGui.TextColored(Gold, $"{i + 1}.");
-            ImGui.SameLine();
-            ImGui.TextUnformatted(steps[i]);
-        }
-        ImGui.Spacing();
-    }
-
-    private static void CommandBox(string id, string preview, string copy, string buttonLabel)
-    {
-        using (ImRaii.PushColor(ImGuiCol.ChildBg, new Vector4(0, 0, 0, 0.25f)))
-        using (ImRaii.Child($"##cmd-{id}", new Vector2(-1, ImGui.GetTextLineHeightWithSpacing() * (preview.Count(ch => ch == '\n') + 2.4f)), true))
-        using (Ui.MonoFont())
-        {
-            ImGui.PushTextWrapPos();
-            ImGui.TextColored(Cyan, preview);
-            ImGui.PopTextWrapPos();
-        }
-        if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Copy, $"{buttonLabel}##{id}"))
-            ImGui.SetClipboardText(copy);
-        ImGui.SameLine();
-        ImGui.TextColored(Muted, "Your token is filled in when copying.");
-    }
-
-    private static string ClaudeCommand(string endpoint, string? token) =>
-        $"claude mcp add --transport http ffxiv {endpoint}" + (token is null ? "" : $" --header \"Authorization: Bearer {token}\"");
-
-    private static string CodexCommand(string endpoint, string? token) => token is null
-        ? $"codex mcp add ffxiv --url {endpoint}"
-        : $"setx XIVMCP_TOKEN \"{token}\"\ncodex mcp add ffxiv --url {endpoint} --bearer-token-env-var XIVMCP_TOKEN";
-
-    private static string CodexToml(string endpoint, string? token) =>
-        $"[mcp_servers.ffxiv]\nurl = \"{endpoint}\"" + (token is null ? "" : $"\nhttp_headers = {{ \"Authorization\" = \"Bearer {token}\" }}");
-
-    private static string JsonConfig(string endpoint, string? token)
-    {
-        var headers = token is null ? "" : $",\n      \"headers\": {{ \"Authorization\": \"Bearer {token}\" }}";
-        return $$"""
-            {
-              "mcpServers": {
-                "ffxiv": {
-                  "type": "http",
-                  "url": "{{endpoint}}"{{headers}}
-                }
-              }
-            }
-            """;
     }
 
     // ---------------------------------------------------------------- permissions
@@ -548,7 +363,7 @@ internal sealed partial class ConfigWindow : Window
             foreach (var a in approvals)
             {
                 using var aid = ImRaii.PushId(a.Id);
-                ImGui.TextColored(Gold, $"{a.Remaining:N0} / {a.MaxAmount:N0} {XivMcp.Util.Items.Name(a.CurrencyId)}");
+                ImGui.TextColored(Accent, $"{a.Remaining:N0} / {a.MaxAmount:N0} {XivMcp.Util.Items.Name(a.CurrencyId)}");
                 ImGui.SameLine();
                 ImGui.TextColored(Muted, $"{a.Purpose} — until {a.ExpiresUtc.ToLocalTime():g}");
                 ImGui.SameLine();
@@ -575,7 +390,7 @@ internal sealed partial class ConfigWindow : Window
         var done = job.Steps.Count(s => s.State is XivMcp.Util.JobManager.StepState.Done or XivMcp.Util.JobManager.StepState.Skipped);
         ImGui.TextColored(JobColors[job.State], job.State.ToString().ToLowerInvariant());
         ImGui.SameLine();
-        ImGui.TextColored(Gold, job.Name);
+        ImGui.TextColored(Accent, job.Name);
         ImGui.SameLine();
         ImGui.TextColored(Muted, $"{done}/{job.Steps.Count} steps");
         if (!job.Finished)
@@ -725,9 +540,9 @@ internal sealed partial class ConfigWindow : Window
 
     internal static void Section(FontAwesomeIcon icon, string title)
     {
-        IconText(icon, Gold);
+        IconText(icon, Accent);
         ImGui.SameLine();
-        ImGui.TextColored(Gold, title);
+        ImGui.TextColored(Accent, title);
     }
 
     internal static void IconText(FontAwesomeIcon icon, Vector4 color)
@@ -759,7 +574,7 @@ internal sealed partial class ConfigWindow : Window
             switch (block.Kind)
             {
                 case XivMcp.Mcp.ToolText.BlockKind.Summary:
-                    ImGui.TextColored(Gold, block.Text);
+                    ImGui.TextColored(Accent, block.Text);
                     break;
                 case XivMcp.Mcp.ToolText.BlockKind.Bullet:
                     ImGui.Bullet();

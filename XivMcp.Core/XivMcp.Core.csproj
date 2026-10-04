@@ -11,4 +11,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="XivMcp.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The stdio bridge packed into the Claude Desktop extension (ClientSetup.WriteMcpb). -->
+    <EmbeddedResource Include="Connect/bridge.js" />
+  </ItemGroup>
 </Project>

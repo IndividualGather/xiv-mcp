@@ -1,8 +1,8 @@
-<img src="XivMcp/images/icon.png" width="96" align="right" alt="XIV MCP icon: an aether crystal wired to three nodes, teal to blue on a dark square">
+<p align="center"><img src="branding/banner.png" width="800" alt="XIV MCP: uplink AI assistants to Final Fantasy XIV. A Dalamud plugin and Model Context Protocol server."></p>
 
 # XIV MCP
 
-A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV that runs a local **Model Context Protocol (MCP) server** inside the game client. It gives AI assistants such as Claude Code or Codex access to the live data of the logged-in character. Reading is always allowed; everything that changes something is opt-in. Other plugins can add their own tools ([for plugin developers](#for-plugin-developers)).
+A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV that runs a local **Model Context Protocol (MCP) server** inside the game client. It gives AI assistants such as Claude or ChatGPT (Codex) access to the live data of the logged-in character. Reading is always allowed; everything that changes something is opt-in. Other plugins can add their own tools ([for plugin developers](#for-plugin-developers)).
 
 - **Transport:** MCP Streamable HTTP (JSON responses) at `http://localhost:37521/mcp`, bound to localhost only
 - **Auth:** bearer token, generated on first start (can be turned off)
@@ -316,19 +316,36 @@ It only reads.
 
 1. In game, open `/xlsettings` → **Experimental** → **Dev Plugin Locations**, add the full path to `XivMcp/bin/Debug/XivMcp.dll`, and save.
 2. Open `/xlplugins` → **Dev Tools** → **Installed Dev Plugins** and enable **XIV MCP**.
-3. Run `/xivmcp` to open the settings window, which shows the server status, port, token and copy-paste client configs.
+3. Run `/xivmcp` to open the settings window. Its **Connect** tab sets up your AI app (see [Connecting a client](#connecting-a-client)).
 
 ## Connecting a client
 
-The **Connect** tab in `/xivmcp` has copy buttons for everything below, with your token already filled in.
+Open `/xivmcp` → **Connect** and pick your app. Most have a one-click button; the rest have copy buttons with your token already filled in. The app tiles show each app's own icon, read from the app installed on your PC. XIV MCP doesn't ship any logos, so apps that aren't installed show a plain symbol. Under each name: **Connected** when XIV MCP is set up in that app (read from the app's own MCP settings), **Installed** when the app is on your PC but XIV MCP isn't set up in it yet, or **Not found**.
+
+| App | What the button does |
+|---|---|
+| **Claude Desktop** | Writes a Claude Desktop extension (`xiv-mcp.mcpb`) and hands it to Claude Desktop, which shows its install screen. The Microsoft Store build doesn't open `.mcpb` files by double-click, so XIV MCP passes the file to its `claude-desktop.exe` alias instead. If neither works, Claude Desktop opens next to a folder with the file selected, to drag in. |
+| **ChatGPT** (Codex) | Adds XIV MCP to `~/.codex/config.toml`, which Codex in the ChatGPT desktop app, the Codex CLI and the IDE extension share. The rest of the file is kept, and the old one is saved as `config.toml.xivmcp-backup`. |
+| **VS Code** (GitHub Copilot) | Opens VS Code's own "install MCP server" prompt, for your user profile. |
+| **Cursor** | Opens Cursor's install prompt. |
+| **LM Studio** | Opens LM Studio's install prompt. |
+| **Claude Code** | Runs `claude mcp add` for you (no console window), for all your projects. An earlier user-wide `ffxiv` entry is replaced. Project entries are left alone. |
+| Other apps | Copy the JSON (below). |
+
+**How the Claude Desktop extension works:**
+- Claude Desktop extensions run a local program instead of connecting over HTTP. So the extension carries a small bridge script, which runs on the Node.js that comes with Claude Desktop and passes everything on to the game.
+- While the game is closed, the extension stays connected with no tools, and the game's tools appear once you start it.
+- The extension contains your access token. If you generate a new token, install it again.
+
+**ChatGPT:** XIV MCP works in Codex, which is part of the ChatGPT desktop app. ChatGPT's Chat mode only connects to MCP servers on the internet, so it can't reach the game.
 
 **Claude Code:**
 
 ```sh
-claude mcp add --transport http ffxiv http://localhost:37521/mcp --header "Authorization: Bearer <token>"
+claude mcp add --scope user --transport http ffxiv http://localhost:37521/mcp --header "Authorization: Bearer <token>"
 ```
 
-**Codex:** Codex reads the token from an environment variable. Open a new terminal after `setx` and before starting Codex:
+**Codex by hand:** Codex reads the token from an environment variable. Open a new terminal after `setx` and before starting Codex:
 
 ```sh
 setx XIVMCP_TOKEN "<token>"
@@ -358,6 +375,32 @@ http_headers = { "Authorization" = "Bearer <token>" }
 ```
 
 **The token** is generated once on first start and saved with the plugin settings. It stays the same across game restarts until you click **Regenerate** in `/xivmcp`.
+
+### Costs
+
+XIV MCP is free, but the AI app you connect it to is usually not:
+
+- **Every request uses tokens.** Each time your assistant reads the game or acts in it, the AI model handles a request. Controlling the game uses many: every tool call is a request, and a job such as a dungeon run can make hundreds of them.
+- **Free plans run out quickly.** Claude, ChatGPT, GitHub Copilot and Cursor include a small amount of use on their free plans. For regular use you need a paid plan.
+- **API keys bill every token.** There is no limit unless you set one with the provider.
+- **LM Studio is the free option.** It runs models on your own PC, but small models handle this many tools poorly.
+
+XIV MCP cannot see how many tokens your assistant uses, so check the usage page of your plan.
+
+### Removing XIV MCP from an app
+
+Each app in the **Connect** tab has a **Remove XIV MCP from …** section:
+
+| App | How |
+|---|---|
+| **ChatGPT** (Codex) | **Remove from ChatGPT** deletes the entry from `~/.codex/config.toml` (with a backup). Restart ChatGPT. |
+| **Claude Code** | **Remove from Claude Code** runs `claude mcp remove` for the user-wide entry and for every project that has its own. |
+| **Claude Desktop** | Settings → Extensions → **Final Fantasy XIV (XIV MCP)** → Uninstall, or switch it off there. |
+| **VS Code** | Extensions view → **MCP Servers – Installed** → right-click `ffxiv` → **Uninstall**. |
+| **Cursor** | Delete the `ffxiv` entry from `~/.cursor/mcp.json`. |
+| **LM Studio** | Program tab → Install → Edit `mcp.json`, and delete the `ffxiv` entry. |
+
+To cut off every app at once, switch off the server in `/xivmcp` or generate a new access token.
 
 ## For plugin developers
 

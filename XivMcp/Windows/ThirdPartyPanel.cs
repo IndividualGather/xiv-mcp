@@ -299,7 +299,7 @@ internal sealed class ThirdPartyPanel(IThirdPartyHost host)
             if (tooltip is not null) Tooltip(tooltip);
             ImGui.SetCursorPos(rowStart);
         }
-        var color = hovered ? Gold : labelColor ?? ImGui.GetStyle().Colors[(int)ImGuiCol.Text];
+        var color = hovered ? Accent : labelColor ?? ImGui.GetStyle().Colors[(int)ImGuiCol.Text];
         if (expandable)
             using (Ui.IconFont())
             {
@@ -399,7 +399,7 @@ internal sealed class ThirdPartyPanel(IThirdPartyHost host)
             ImGui.TableNextColumn();
             ImGui.TextUnformatted((e.Kind == "approval" ? $"{e.Tool} (asked)" : e.Tool) + (showSource && e.ProviderId != "XivMcp" ? $" · {e.ProviderName}" : ""));
             ImGui.TableNextColumn();
-            ImGui.TextColored(e.Decision is "denied" or "blocked" or "refused" ? Red : e.Decision == "allowed" ? Muted : Gold, e.Decision.Replace('_', ' '));
+            ImGui.TextColored(e.Decision is "denied" or "blocked" or "refused" ? Red : e.Decision == "allowed" ? Muted : Accent, e.Decision.Replace('_', ' '));
             ImGui.TableNextColumn();
             if (e.Flagged)
             {

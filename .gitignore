@@ -4,3 +4,6 @@ obj/
 .idea/
 *.user
 *.DotSettings.user
+
+# Local AI client settings (may contain the access token)
+.codex/

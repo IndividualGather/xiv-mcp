@@ -21,7 +21,7 @@ public sealed class Configuration : IPluginConfiguration
     public string Token { get; set; } = NewToken();
 
     /// <summary>The assistant chosen in the Connect tab: "claude", "codex" or "other".</summary>
-    public string ConnectClient { get; set; } = "claude";
+    public string ConnectClient { get; set; } = "claude-desktop";
 
     /// <summary>
     /// Allow / Ask / Deny per permission group (core areas and maintained integrations) and access (read / write) for XIV MCP's own

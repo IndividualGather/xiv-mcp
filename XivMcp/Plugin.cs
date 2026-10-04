@@ -183,6 +183,7 @@ public sealed class Plugin : IDalamudPlugin
         probe.Dispose();
         jobs?.Dispose();
         Server.Dispose();
+        XivMcp.Util.AppIcons.Reset();
         workshop.Dispose();
         retainers.Dispose();
         glamour.Dispose();

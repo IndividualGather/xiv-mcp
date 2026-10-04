@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="XIV MCP">
+  <defs>
+    <linearGradient id="frame" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#3BEFC4"/><stop offset="1" stop-color="#3F7BFF"/></linearGradient>
+    <linearGradient id="ink" x1="90" y1="50" x2="420" y2="470" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#3BEFC4"/><stop offset="1" stop-color="#3F7BFF"/></linearGradient>    <mask id="cuts" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="white"/>
+    <g transform="translate(256 256) scale(0.96) rotate(-35) translate(-256 -256)" fill="none" stroke="black" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="197.92 217.84 256 236.56 314.08 217.84"/>
+      <path d="M256 236.56L256 396"/>
+    </g>
+    </mask>
+  </defs>
+  <g mask="url(#cuts)">
+    <g transform="translate(256 256) scale(0.96) rotate(-35) translate(-256 -256)" fill="none" stroke="url(#ink)" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M186 268H150M326 268H362" stroke-width="22"/>
+      <rect x="36" y="222" width="116" height="92" rx="8" fill="none" stroke-width="22"/>
+      <rect x="360" y="222" width="116" height="92" rx="8" fill="none" stroke-width="22"/>
+      <path d="M94 226V310M40 268H148M418 226V310M364 268H472" stroke-width="15"/>
+      <polygon points="256 140 322 213.84 311.44 344.48 256 424 200.56 344.48 190 213.84" fill="url(#ink)" stroke-width="22"/>
+      <path d="M224.89 104.89 A44 44 0 0 1 287.11 104.89 M195.19 75.19 A86 86 0 0 1 316.81 75.19" stroke-width="22"/>
+    </g>
+  </g>
+</svg>

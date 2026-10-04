@@ -13,7 +13,7 @@ namespace XivMcp.Windows;
 /// <summary>The in-game approval popup for <see cref="Consent"/> requests. Opens itself when a request arrives.</summary>
 internal sealed class ConsentWindow : Window
 {
-    private static readonly Vector4 Gold = new(0.89f, 0.75f, 0.48f, 1);
+    private static readonly Vector4 Accent = ConfigWindow.Accent;
     private static readonly Vector4 Muted = new(0.62f, 0.64f, 0.70f, 1);
     private static readonly Vector4 Amber = new(0.91f, 0.70f, 0.29f, 1);
     private static readonly Vector4 Red = new(0.88f, 0.42f, 0.42f, 1);
@@ -38,7 +38,7 @@ internal sealed class ConsentWindow : Window
         foreach (var request in open)
         {
             using var id = ImRaii.PushId(request.Id.ToString());
-            var color = request.Risk >= RiskLevel.High ? Red : Gold;
+            var color = request.Risk >= RiskLevel.High ? Red : Accent;
             using (Ui.IconFont())
                 ImGui.TextColored(color, (request.Risk >= RiskLevel.High ? FontAwesomeIcon.ExclamationTriangle : FontAwesomeIcon.QuestionCircle).ToIconString());
             ImGui.SameLine();

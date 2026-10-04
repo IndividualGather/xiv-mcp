@@ -216,7 +216,7 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
             Tooltip(open ? "Hide the tools" : $"Set the {mine.Count} tool{(mine.Count == 1 ? "" : "s")} one by one");
             ImGui.SetCursorPos(rowStart);
         }
-        var color = hovered ? Gold : ImGui.GetStyle().Colors[(int)ImGuiCol.Text];
+        var color = hovered ? Accent : ImGui.GetStyle().Colors[(int)ImGuiCol.Text];
         if (mine.Count > 0)
         {
             using (Ui.IconFont())

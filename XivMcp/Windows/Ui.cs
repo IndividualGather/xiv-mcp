@@ -16,4 +16,10 @@ internal static class Ui
     public static IDisposable IconFont() => Svc.PluginInterface.UiBuilder.IconFontHandle.Push();
 
     public static IDisposable MonoFont() => Svc.PluginInterface.UiBuilder.MonoFontHandle.Push();
+
+    /// <summary>Undoes a push when disposed (e.g. <c>ImGui.PopTextWrapPos</c>), for <c>using</c> blocks.</summary>
+    public sealed class Popper(Action pop) : IDisposable
+    {
+        public void Dispose() => pop();
+    }
 }
