@@ -339,6 +339,23 @@ internal sealed partial class ConfigWindow : Window
         ImGui.TextColored(Muted, config.AskAboveGil == 0 ? "0: gil purchases never ask." : $"Gil purchases above {config.AskAboveGil:N0} gil ask first.");
     }
 
+    /// <summary>Gold Saucer options: whether the Fashion Report uses a Gold Saucer VIP Card first.</summary>
+    private void DrawGoldSaucerOptions()
+    {
+        var config = plugin.Config;
+        ImGui.Spacing();
+        var vip = config.FashionReportVipCard;
+        var changed = ImGui.Checkbox("Use a Gold Saucer VIP Card for the Fashion Report##fr-vip", ref vip);
+        if (Controls.Consume("saucy:vip-card") && !changed) { vip = !vip; changed = true; } // press_xivmcp_control (dev builds)
+        if (changed)
+        {
+            config.FashionReportVipCard = vip;
+            config.Save();
+        }
+        Tooltip("Right before presenting to the Masked Rose, XIV MCP uses a Gold Saucer VIP Card from your bags, unless its bonus is already active. " +
+                "The card raises the MGP the Fashion Report pays.");
+    }
+
     /// <summary>Pause between item moves: random within a range (default 500-800 ms) or an exact value.</summary>
     private void DrawMoveDelay()
     {

@@ -27,6 +27,9 @@ internal static class FashionTools
     private const string ReportUrl = "https://fashionreportxiv.com/api/report-state";
     private const uint MaskedRose = 1025176;
 
+    /// <summary>The Gold Saucer VIP Card (item) and the bonus it grants (status).</summary>
+    private const uint VipCardItem = 14947, VipCardStatus = 1079;
+
     /// <summary>The glamour dresser in inn rooms, and the armoire objects (from AutoRetainer's armoire code).</summary>
     private static readonly uint[] GlamourDressers = [2009439];
     private static readonly uint[] Armoires = [2001405, 2001406, 2001407, 2005630, 2007709];
@@ -125,19 +128,22 @@ internal static class FashionTools
             Name = "present_fashion_report",
             Description = "Presents the player's outfit to the Masked Rose at the Gold Saucer for this week's Fashion Report (Friday to the Tuesday " +
                           "reset): puts on the given 'items' first (from the bags or armoury chest), goes to the Masked Rose, chooses to be " +
-                          "judged and confirms, and returns the score. The look counts as worn, including glamours and dyes. Each week has 4 " +
+                          "judged and confirms, and returns the score. Right before talking to her it uses a Gold Saucer VIP Card (more MGP) unless " +
+                          "its bonus is already active, if the setting in /xivmcp says so (on by default) or 'use_vip_card' is true. The look counts as worn, including glamours and dyes. Each week has 4 " +
                           "attempts; the best one counts.",
             InputSchema = """
                 {
                   "type": "object",
                   "properties": {
-                    "items": { "type": "array", "items": { "type": ["string", "integer"] }, "description": "Gear to put on first (names or ids)." }
+                    "items": { "type": "array", "items": { "type": ["string", "integer"] }, "description": "Gear to put on first (names or ids)." },
+                    "use_vip_card": { "type": "boolean", "description": "Use a Gold Saucer VIP Card right before presenting (default: the setting in /xivmcp, on unless turned off)." }
                   }
                 }
                 """,
             ReadOnly = false,
             Handler = async (args, ct) =>
             {
+                var vipCard = args.Node("use_vip_card") is { } v ? v.GetValue<bool>() : config.FashionReportVipCard;
                 if (!FashionSchedule.IsJudgingOpen(DateTime.UtcNow)) throw new ToolException("The Masked Rose only judges from Friday 08:00 UTC until the weekly reset on Tuesday.");
                 var steps = new List<string>();
                 foreach (var item in args.Node("items")?.AsArray().Select(n => n?.ToString() ?? "") ?? [])
@@ -145,7 +151,7 @@ internal static class FashionTools
                     await Equip(item, ct).ConfigureAwait(false);
                     steps.Add($"Put on {item}.");
                 }
-                return await Present(steps, ct).ConfigureAwait(false);
+                return await Present(steps, vipCard, ct).ConfigureAwait(false);
             },
         };
 
@@ -506,12 +512,14 @@ internal static class FashionTools
 
     // ---------------------------------------------------------------- presenting
 
-    private static async Task<object> Present(List<string> steps, CancellationToken ct)
+    private static async Task<object> Present(List<string> steps, bool vipCard, CancellationToken ct)
     {
         var state = await Game.Run(ReportState).ConfigureAwait(false);
         if (state is { Remaining: 0 }) throw new ToolException("No attempts left this week.");
         var rose = TriadData.Locate(MaskedRose, "Masked Rose") ?? throw new ToolException("The Masked Rose was not found in the game data.");
         await NavigationTools.GoToNpc(rose, steps, ct).ConfigureAwait(false);
+        string? vip = null;
+        if (vipCard) vip = await UseVipCard(ct).ConfigureAwait(false);
         await Game.Run(() => Interact(o => o.BaseId == MaskedRose)).ConfigureAwait(false);
         steps.Add("Talking to the Masked Rose.");
 
@@ -551,7 +559,28 @@ internal static class FashionTools
         var score = await Game.Run(() => { unsafe { var m = FashionCheckManager.Instance(); return m == null ? (int?)null : m->EquipEvaluations.Score; } }).ConfigureAwait(false);
         var after = await Game.Run(ReportState).ConfigureAwait(false);
         steps.Add("Judged.");
-        return new { score, highScore = after?.HighScore, attemptsLeft = after?.Remaining, steps };
+        return new { score, highScore = after?.HighScore, attemptsLeft = after?.Remaining, vipCard = vip, steps };
+    }
+
+/// <summary>
+    /// Uses a Gold Saucer VIP Card unless its bonus is already active; returns what happened (for the result). Never throws: a missing
+    /// card only means no bonus.
+    /// </summary>
+    private static async Task<string> UseVipCard(CancellationToken ct)
+    {
+        var state = await Game.Run(() =>
+        {
+            unsafe
+            {
+                if (Svc.Objects.LocalPlayer?.StatusList.Any(s => s.StatusId == VipCardStatus) == true) return "already active";
+                if (InventoryManager.Instance()->GetInventoryItemCount(VipCardItem) == 0) return "none in your bags";
+                FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentInventoryContext.Instance()->UseItem(VipCardItem, InventoryType.Invalid, 0, 0);
+                return "used";
+            }
+        }).ConfigureAwait(false);
+        if (state != "used") return state;
+        var active = await WaitFor(() => Svc.Objects.LocalPlayer?.StatusList.Any(s => s.StatusId == VipCardStatus) == true, TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
+        return active ? "used" : "used, but its bonus did not show up";
     }
 
     // ---------------------------------------------------------------- helpers (framework thread)

@@ -38,6 +38,7 @@ internal sealed partial class ConfigWindow
         {
             "game_navigation" => window.DrawBellPreference,
             "items_retainers" => window.DrawMoveDelay,
+            "saucy" => window.DrawGoldSaucerOptions,
             "market" => () =>
             {
                 window.DrawGilLimit();
