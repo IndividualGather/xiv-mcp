@@ -11,7 +11,7 @@ These tools act in the game, so they need **Game & navigation** changes to be al
 | Tool | What it does |
 |---|---|
 | `list_windows` / `open_window` / `close_window` | Opens main menu windows (Achievements, Saddlebag, Currency and more); `close_window` closes any open window by name |
-| `interact_with_object` | Targets and interacts with a nearby object or NPC, like clicking it: a summoning bell, the company chest, the voyage panel |
+| `interact_with_object` | Targets and interacts with a nearby object or NPC, like clicking it: a summoning bell, the company chest, the voyage panel. When furniture blocks the view, it tries again without the line-of-sight check, then from right next to the object. |
 | `get_menu` / `select_menu_option` | The choice menu the game shows after an interaction; picks an entry or advances dialogue |
 | `load_game_data` | Asks the game to send your achievements or titles without opening their window |
 
@@ -21,7 +21,7 @@ Windows that act instead of opening something (Log Out, Exit Game, Return, Ready
 
 | Tool | What it does |
 |---|---|
-| `navigate_to` | Gets you to a summoning bell, the company chest, the workshop, an inn, your house or apartment, a named object or NPC, or a fishing spot. It walks and travels for you when a navigation plugin is installed, and shows you the way otherwise (see below). |
+| `navigate_to` | Gets you to a summoning bell, the company chest, the workshop, an inn, your house or apartment, a named object or NPC, or a fishing spot (as a Fisher, it walks to the water's edge, facing the water, until you can cast). It walks and travels for you when a navigation plugin is installed, and shows you the way otherwise (see below). |
 | `get_navigation_status` / `stop_navigation` | What is installed and moving; an immediate stop |
 | `get_automation_status` | What XIV MCP detected about AutoRetainer, YesAlready and TextAdvance, and what it is pausing |
 
