@@ -30,6 +30,8 @@ These tools have their own module, **Gold Saucer**, under **Integrations maintai
 
 Right before presenting, XIV MCP uses a **Gold Saucer VIP Card** from your bags (more MGP), unless its bonus is already active. Turn this off in `/xivmcp` → Modules → Gold Saucer → *Use a Gold Saucer VIP Card for the Fashion Report* (on by default), or pass `use_vip_card` to `present_fashion_report`. Without a card in your bags, the job presents anyway.
 
+After the judging, the job puts your gearset back on and **throws away the pieces it bought** (from a vendor or the market board) that are worth 5,000 gil or less: the vendor price, otherwise the lowest market board listing on your world. Pieces you had already, or took from a retainer, the glamour dresser or the armoire, are never thrown away, and neither is a piece whose value is unknown. Turn this off or change the limit in `/xivmcp` → Modules → Gold Saucer → *Discard cheap pieces bought for the Fashion Report*. The gearset's glamour plate can't be applied in the Gold Saucer, so put it on again somewhere else.
+
 The Masked Rose judges from Friday 08:00 UTC until the weekly reset on Tuesday. Outside that, the job only prepares the outfit.
 
 ## Triple Triad

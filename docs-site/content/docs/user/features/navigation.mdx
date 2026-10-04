@@ -54,6 +54,10 @@ The walking plugin is **vnavmesh**, the travel plugin **Lifestream**. Where to g
 | Inn room, house, apartment, workshop (Lifestream) | Takes you inside | Asks you to go in |
 | Another world (Lifestream) | Travels there | Asks you to use World Visit or Data Center Travel |
 
+### Riding
+
+For a walk of 50 yalms or more, XIV MCP gets on a mount first (Mount Roulette), and flies where the zone allows it and you have found its aether currents. It gets off when you arrive. Turn this off in `/xivmcp` → Modules → Game & navigation → *Ride a mount for longer walks*.
+
 The same applies to tools that take you somewhere on the way, such as `buy_item` and `turn_in_collectables`. The wait ends when you arrive, when you stop it with `stop_navigation`, or after the timeout (10 minutes by default). If you do not arrive in time, your assistant is told you did not get there, and why. Which plugins can do which part is listed on [Plugins XIV MCP uses](/docs/user/plugins).
 
 ## Characters, worlds and jobs
