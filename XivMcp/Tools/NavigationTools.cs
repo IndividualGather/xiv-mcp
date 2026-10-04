@@ -27,7 +27,7 @@ internal static partial class NavigationTools
     private static string phase = "idle";
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
-    private static readonly string[] Destinations = ["summoning_bell", "company_chest", "workshop", "inn", "home", "fc_house", "apartment", "object"];
+    private static readonly string[] Destinations = ["summoning_bell", "company_chest", "workshop", "inn", "home", "fc_house", "apartment", "object", "npc"];
 
     public static IEnumerable<McpTool> Create(Configuration config)
     {
@@ -38,15 +38,15 @@ internal static partial class NavigationTools
                           "otherwise XIV MCP shows the player the way and waits: it puts the flag on the map and asks them to walk, names the " +
                           "aetheryte to teleport to, or asks them to enter the inn room or house. Tell the player when that happens. Destinations: " +
                           "summoning_bell (nearby one, otherwise the preferred bell location from /xivmcp, falling back to the inn), company_chest (FC " +
-                          "house), workshop (FC workshop, walks to the voyage control panel), inn, home, fc_house, apartment, or object (by name in the " +
-                          "current zone). Waits until arrived (or the timeout) and returns the steps taken; then use interact_with_object. " +
+                          "house), workshop (FC workshop, walks to the voyage control panel), inn, home, fc_house, apartment, object (by name in the " +
+                          "current zone), or npc (an NPC anywhere in the world by name, from the game data: travels to its zone and walks up to it). Waits until arrived (or the timeout) and returns the steps taken; then use interact_with_object. " +
                           "stop_navigation aborts. Teleports cost gil as usual. Requires 'Game & navigation' in /xivmcp.",
             InputSchema = $$"""
                 {
                   "type": "object",
                   "properties": {
                     "destination": { "type": "string", "enum": [{{string.Join(", ", Destinations.Select(d => $"\"{d}\""))}}] },
-                    "name": { "type": "string", "description": "For destination=object: the object's name (e.g. \"Material Supplier\")." },
+                    "name": { "type": "string", "description": "For destination=object: the object's name (e.g. \"Material Supplier\"). For destination=npc: the NPC's name (e.g. \"Masked Rose\")." },
                     "timeout_seconds": { "type": "integer", "description": "Give up after this long (default 600, max 1800). The player may need a while when they walk or teleport themselves." }
                   },
                   "required": ["destination"]
@@ -60,7 +60,7 @@ internal static partial class NavigationTools
                 var destination = args.String("destination")?.ToLowerInvariant() ?? throw new ToolException("'destination' is required.");
                 if (!Destinations.Contains(destination)) throw new ToolException($"Unknown destination '{destination}'.");
                 var name = args.String("name");
-                if (destination == "object" && name is null) throw new ToolException("destination=object needs 'name'.");
+                if (destination is "object" or "npc" && name is null) throw new ToolException($"destination={destination} needs 'name'.");
 
                 if (!await Gate.WaitAsync(0, ct).ConfigureAwait(false)) throw new ToolException("A navigation is already running; use stop_navigation first.");
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -135,6 +135,14 @@ internal static partial class NavigationTools
     {
         switch (destination)
         {
+            case "npc":
+            {
+                var territory = await Game.Run(() => (uint)Svc.ClientState.TerritoryType).ConfigureAwait(false);
+                var spot = await Task.Run(() => TriadData.FindNpc(name!, territory), ct).ConfigureAwait(false)
+                           ?? throw new ToolException($"No NPC named '{name}' has a place in the game data.");
+                return await GoToNpc(spot, steps, ct).ConfigureAwait(false);
+            }
+
             case "object":
                 return await WalkTo(name!, o => o.Name.TextValue.Equals(name, StringComparison.OrdinalIgnoreCase) || Game.Matches(o.Name.TextValue, name), steps, ct)
                        ?? throw new ToolException($"No object named '{name}' in this zone.");

@@ -38,6 +38,25 @@ internal static class TriadData
         return new NavigationTools.NpcSpot(npcId, name, p.Territory, p.Map, p.Position, true);
     }
 
+    /// <summary>
+    /// An NPC anywhere in the world by name (as the game spells it, ignoring case; a unique part of a name also works), from the
+    /// game data. Prefers one placed in <paramref name="preferTerritory"/>. Off the framework thread is fine.
+    /// </summary>
+    public static NavigationTools.NpcSpot? FindNpc(string name, uint preferTerritory)
+    {
+        var q = name.Trim();
+        var residents = Svc.Data.GetExcelSheet<ENpcResident>();
+        var placed = residents.Where(r => Places.Value.ContainsKey(r.RowId)).Select(r => (Id: r.RowId, Name: r.Singular.ExtractText())).Where(r => r.Name.Length > 0).ToList();
+        var exact = placed.Where(r => r.Name.Equals(q, StringComparison.OrdinalIgnoreCase)).ToList();
+        var matches = exact.Count > 0 ? exact : placed.Where(r => r.Name.Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (matches.Select(m => m.Name.ToLowerInvariant()).Distinct().Count() > 1)
+            throw new Mcp.ToolException($"'{q}' matches several NPCs: {string.Join(", ", matches.Select(m => m.Name).Distinct().Take(8))}. Give the full name.");
+        var best = matches.OrderBy(m => Places.Value[m.Id].Territory == preferTerritory ? 0 : 1).FirstOrDefault();
+        if (best.Id == 0) return null;
+        var display = char.ToUpperInvariant(best.Name[0]) + best.Name[1..];
+        return Locate(best.Id, display);
+    }
+
     private static Dictionary<uint, (uint, uint, Vector3)> BuildPlaces()
     {
         var places = new Dictionary<uint, (uint, uint, Vector3)>();
