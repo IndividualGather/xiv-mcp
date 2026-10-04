@@ -424,20 +424,28 @@ internal static class InventoryActionTools
             EnsureContainerUsable(from);
             var src = Slot(from, fromSlot);
             if (src.IsEmpty) throw new ToolException($"{from}[{fromSlot}] is empty.");
-            if (req.Quantity >= src.Quantity) return ((GameInventoryType, int, int[], uint)?)null;
+            if (req.Quantity >= src.Quantity) return ((List<(GameInventoryType Container, int Slot)> empty, uint ItemId)?)null;
             if (IsCrystalContainer(from)) throw new ToolException("Crystals can only be moved as whole stacks.");
-            var items = Svc.Inventory.GetInventoryItems(from);
-            var emptySlots = new List<int>();
-            for (var i = 0; i < items.Length; i++)
-                if (items[i].IsEmpty) emptySlots.Add(i);
-            var empty = emptySlots.ToArray();
-            if (empty.Length == 0) throw new ToolException($"Splitting needs an empty slot in {from}.");
+            // Check the target first, so a failed move does not leave a split stack behind.
+            EnsureContainerUsable(req.To);
+            if (req.ToSlot is null && FirstEmptySlot(Svc.Inventory.GetInventoryItems(req.To)) is null)
+                throw new ToolException($"{req.To} has no empty slot.");
+            // The split stack goes to an empty slot of the same inventory: for the bags, any of the four pages.
+            var pages = BagPages.Contains(from) ? BagPages : [from];
+            var empty = new List<(GameInventoryType Container, int Slot)>();
+            foreach (var page in pages)
+            {
+                var items = Svc.Inventory.GetInventoryItems(page);
+                for (var i = 0; i < items.Length; i++)
+                    if (items[i].IsEmpty) empty.Add((page, i));
+            }
+            if (empty.Count == 0) throw new ToolException($"Splitting needs an empty slot in {(pages.Length > 1 ? "your bags" : from.ToString())}.");
             unsafe
             {
                 var rc = InventoryManager.Instance()->SplitItem((InventoryType)from, (ushort)fromSlot, req.Quantity!.Value);
                 if (rc != 0) Svc.Log.Debug($"SplitItem returned {rc}");
             }
-            return (from, fromSlot, empty, src.ItemId);
+            return (empty, src.ItemId);
         }).ConfigureAwait(false);
         if (plan is not { } p) return req with { Quantity = null };
 
@@ -445,20 +453,23 @@ internal static class InventoryActionTools
         while (DateTime.UtcNow < deadline)
         {
             await Task.Delay(100, ct).ConfigureAwait(false);
-            var slot = await Svc.Framework.RunOnFrameworkThread<int>(() =>
+            var found = await Svc.Framework.RunOnFrameworkThread<(GameInventoryType, int)?>(() =>
             {
-                if (HasPendingOperation()) return -1;
-                foreach (var i in p.Item3)
+                if (HasPendingOperation()) return null;
+                foreach (var (container, i) in p.empty)
                 {
-                    var item = Slot(p.Item1, i);
-                    if (!item.IsEmpty && item.ItemId == p.Item4 && item.Quantity == req.Quantity) return i;
+                    var item = Slot(container, i);
+                    if (!item.IsEmpty && item.ItemId == p.ItemId && item.Quantity == req.Quantity) return (container, i);
                 }
-                return -1;
+                return null;
             }).ConfigureAwait(false);
-            if (slot >= 0) return req with { From = p.Item1, FromSlot = slot, ItemId = null, Hq = null, Quantity = null };
+            if (found is { } at) return req with { From = at.Item1, FromSlot = at.Item2, ItemId = null, Hq = null, Quantity = null };
         }
         throw new ToolException("The game did not confirm splitting the stack within 4 seconds.");
     }
+
+    private static readonly GameInventoryType[] BagPages =
+        [GameInventoryType.Inventory1, GameInventoryType.Inventory2, GameInventoryType.Inventory3, GameInventoryType.Inventory4];
 
     private static bool IsContainerUsable(GameInventoryType t)
     {

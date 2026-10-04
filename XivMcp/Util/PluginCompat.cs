@@ -133,7 +133,8 @@ internal sealed class PluginCompat : IDisposable
         var atBell = Svc.Condition[ConditionFlag.OccupiedSummoningBell] || RetainerUi.RetainerListOpen || RetainerUi.InventoryOpen;
         if (atBell) { bellLeftSince = DateTime.MaxValue; return; }
         if (bellLeftSince == DateTime.MaxValue) bellLeftSince = DateTime.UtcNow;
-        else if (DateTime.UtcNow - bellLeftSince > TimeSpan.FromSeconds(3)) ReleaseBell("bell closed");
+        // A grace period: an interaction that is retried, or a retainer being switched, leaves the bell for a moment.
+        else if (DateTime.UtcNow - bellLeftSince > TimeSpan.FromSeconds(10)) ReleaseBell("bell closed");
     }
 
     public sealed record Info(bool AutoRetainer, bool? AutoRetainerBusy, bool? AutoRetainerSuppressed, bool SuppressedByUs,

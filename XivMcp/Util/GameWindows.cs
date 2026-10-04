@@ -103,18 +103,20 @@ internal static class GameWindows
 
     /// <summary>
     /// Moves gil with the open Gil Transfer window: switches it to deposit or withdraw, enters the amount and confirms, as AutoRetainer
-    /// drives the same window (callbacks: 2 switches the direction, 3 sets the amount, 0 confirms).
+    /// drives the same window (callbacks: 2 switches the direction, 3 sets the amount, 0 confirms). The window does not show its
+    /// direction in a way that can be read, and it opens differently: in withdraw mode at a retainer, in deposit mode at the
+    /// company chest (<paramref name="opensDepositing"/>).
     /// </summary>
-    public static async Task Bank(bool deposit, long amount, CancellationToken ct)
+    public static async Task Bank(bool deposit, long amount, bool opensDepositing, CancellationToken ct)
     {
         if (!await WaitFor(() => Ready("Bank"), TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
             throw new ToolException("The Gil Transfer window did not open.");
         await Task.Delay(300, ct).ConfigureAwait(false);
-        if (await Game.Run(BankDeposits).ConfigureAwait(false) != deposit)
+        if ((await Game.Run(BankDeposits).ConfigureAwait(false) ?? opensDepositing) != deposit)
         {
             await Game.Run(() => FireBank(2, null)).ConfigureAwait(false);
             await Task.Delay(400, ct).ConfigureAwait(false);
-            if (await Game.Run(BankDeposits).ConfigureAwait(false) == !deposit)
+            if (await Game.Run(BankDeposits).ConfigureAwait(false) is { } now && now != deposit)
                 throw new ToolException($"The Gil Transfer window did not switch to {(deposit ? "deposit" : "withdraw")}.");
         }
         await Game.Run(() => FireBank(3, (uint)amount)).ConfigureAwait(false);

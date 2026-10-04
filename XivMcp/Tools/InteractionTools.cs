@@ -167,22 +167,33 @@ internal static class InteractionTools
                     if (distance > MaxInteractDistance)
                         throw new ToolException($"{obj.Name.TextValue} is {distance:0.#} yalms away; walk within ~{MaxInteractDistance} yalms first.");
                     var isBell = IsSummoningBell(obj);
+                    if (isBell && Svc.Condition[ConditionFlag.OccupiedSummoningBell])
+                        throw new ToolException("The summoning bell is already open: use open_retainer, get_retainers or move_gil.");
                     if (isBell) compat.AcquireBell();
                     var before = VisibleAddons();
                     var conditionsBefore = Svc.Condition.AsReadOnlySet().ToHashSet();
-                    ulong result;
-                    unsafe
-                    {
-                        var native = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)obj.Address;
-                        TargetSystem.Instance()->SetHardTarget(native, false, false, 0);
-                        result = TargetSystem.Instance()->InteractWithObject(native, true);
-                    }
-                    return (Name: obj.Name.TextValue, Distance: distance, IsBell: isBell, Before: before, ConditionsBefore: conditionsBefore, Result: result);
+                    var result = Interact(obj.Address, lineOfSight: true);
+                    return (Name: obj.Name.TextValue, Distance: distance, IsBell: isBell, Before: before, ConditionsBefore: conditionsBefore, Result: result,
+                            Address: obj.Address, Position: obj.Position);
                 }).ConfigureAwait(false);
 
                 // Report what the interaction opened.
                 bool Reacted() => VisibleAddons().Except(target.Before).Any() || !Svc.Condition.AsReadOnlySet().SetEquals(target.ConditionsBefore);
                 var reacted = await WaitFor(Reacted, TimeSpan.FromSeconds(3), ct).ConfigureAwait(false);
+                // Furniture and counters can block the game's line-of-sight check although the object is in reach: try without it,
+                // then from right next to the object.
+                if (!reacted)
+                {
+                    await Game.Run(() => { if (target.IsBell) compat.AcquireBell(); return Interact(target.Address, lineOfSight: false); }).ConfigureAwait(false);
+                    reacted = await WaitFor(Reacted, TimeSpan.FromSeconds(3), ct).ConfigureAwait(false);
+                }
+                if (!reacted && await Game.Run(() => Navigation.VnavmeshLoaded).ConfigureAwait(false))
+                {
+                    await Game.Run(() => Navigation.MoveCloseTo(target.Position, 1.2f)).ConfigureAwait(false);
+                    await WaitFor(() => !Navigation.PathRunning, TimeSpan.FromSeconds(8), ct).ConfigureAwait(false);
+                    await Game.Run(() => { Navigation.StopMoving(); if (target.IsBell) compat.AcquireBell(); return Interact(target.Address, lineOfSight: false); }).ConfigureAwait(false);
+                    reacted = await WaitFor(Reacted, TimeSpan.FromSeconds(3), ct).ConfigureAwait(false);
+                }
                 await Task.Delay(300, ct).ConfigureAwait(false);
                 if (!reacted)
                     throw new ToolException($"The game did not react to interacting with {target.Name} ({target.Distance:0.#} yalms away, result {target.Result}). " +
@@ -397,6 +408,14 @@ internal static class InteractionTools
         var bell = names.GetRowOrDefault(2000401)?.Singular.ExtractText();
         return bell is null ? [2000401] : names.Where(e => e.Singular.ExtractText().Equals(bell, StringComparison.OrdinalIgnoreCase)).Select(e => e.RowId).ToHashSet();
     });
+
+    /// <summary>Targets an object and interacts with it like a click. Returns the game's result (0: refused). Framework thread.</summary>
+    private static unsafe ulong Interact(nint address, bool lineOfSight)
+    {
+        var native = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)address;
+        TargetSystem.Instance()->SetHardTarget(native, false, false, 0);
+        return TargetSystem.Instance()->InteractWithObject(native, lineOfSight);
+    }
 
     public static bool IsSummoningBell(IGameObject obj) => BellIds.Value.Contains(obj.BaseId);
 

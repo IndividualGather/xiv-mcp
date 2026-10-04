@@ -83,7 +83,7 @@ internal static class GilTools
         var amount = Amount(deposit, amountText, player, stored);
         if (!await Game.Run(() => RetainerUi.SelectMenuEntry(EntrustGilEntry)).ConfigureAwait(false))
             throw new ToolException($"{retainer}'s menu has no entry for entrusting gil.");
-        await GameWindows.Bank(deposit, amount, ct).ConfigureAwait(false);
+        await GameWindows.Bank(deposit, amount, opensDepositing: false, ct).ConfigureAwait(false);
         return await Confirm(deposit, amount, player, stored, retainer, chest: false, ct).ConfigureAwait(false);
     }
 
@@ -98,19 +98,22 @@ internal static class GilTools
         }).ConfigureAwait(false);
         await PluginCompat.WaitForFcch(TimeSpan.FromMinutes(2), ct).ConfigureAwait(false);
 
-        // The Gil tab first: the chest only knows its gil once that tab was shown.
-        await Game.Run(PressGilTab).ConfigureAwait(false);
-        await Task.Delay(600, ct).ConfigureAwait(false);
+        // The Gil tab opens the Gil Transfer window (the same one retainers use). Older layouts had Deposit and Withdraw buttons
+        // on the tab instead, so those are pressed if the window does not open by itself.
+        if (!await Game.Run(() => GameWindows.Ready("Bank")).ConfigureAwait(false))
+        {
+            await Game.Run(PressGilTab).ConfigureAwait(false);
+            if (!await GameWindows.WaitFor(() => GameWindows.Ready("Bank") || GameWindows.Ready("InputNumeric"), TimeSpan.FromSeconds(3), ct).ConfigureAwait(false)
+                && !await Game.Run(() => PressChestButton(deposit)).ConfigureAwait(false))
+                throw new ToolException("The company chest's Gil tab did not open the Gil Transfer window (your rank may not allow it).");
+        }
+        await GameWindows.WaitFor(() => GameWindows.Ready("Bank") || GameWindows.Ready("InputNumeric"), TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
         var (player, stored) = await Game.Run(Balances(chest: true)).ConfigureAwait(false);
         var amount = Amount(deposit, amountText, player, stored);
-
-        if (!await Game.Run(() => PressChestButton(deposit)).ConfigureAwait(false))
-            throw new ToolException($"The company chest's Gil tab has no {(deposit ? "Deposit" : "Withdraw")} button (your rank may not allow it).");
-        if (await GameWindows.WaitFor(() => GameWindows.Ready("Bank") || GameWindows.Ready("InputNumeric"), TimeSpan.FromSeconds(5), ct).ConfigureAwait(false)
-            && await Game.Run(() => GameWindows.Ready("InputNumeric")).ConfigureAwait(false))
+        if (await Game.Run(() => GameWindows.Ready("InputNumeric")).ConfigureAwait(false))
             await Game.Run(() => GameWindows.EnterNumber((int)amount)).ConfigureAwait(false);
         else
-            await GameWindows.Bank(deposit, amount, ct).ConfigureAwait(false);
+            await GameWindows.Bank(deposit, amount, opensDepositing: true, ct).ConfigureAwait(false);
         return await Confirm(deposit, amount, player, stored, "the company chest", chest: true, ct).ConfigureAwait(false);
     }
 
@@ -149,6 +152,8 @@ internal static class GilTools
         if (!moved)
         {
             await GameWindows.CancelBank().ConfigureAwait(false);
+            if (nowPlayer == (deposit ? player + amount : player - amount))
+                throw new ToolException($"The gil moved the wrong way: {amount:N0} gil were {(deposit ? "withdrawn" : "deposited")} instead (you have {nowPlayer:N0}, {where} {nowStored:N0}). Move it back with direction {(deposit ? "deposit" : "withdraw")} twice.");
             throw new ToolException($"The game did not move the gil (you have {nowPlayer:N0}, {where} {nowStored:N0}). Nothing may have changed; check the window.");
         }
         return new

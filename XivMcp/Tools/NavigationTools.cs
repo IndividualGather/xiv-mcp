@@ -162,12 +162,12 @@ internal static partial class NavigationTools
                 if (await WalkTo("Summoning Bell", InteractionTools.IsSummoningBell, steps, ct) is { } here) return here;
                 var preference = config.PreferredBellLocation;
                 await TravelTo(preference, steps, ct).ConfigureAwait(false);
-                if (await WalkTo("Summoning Bell", InteractionTools.IsSummoningBell, steps, ct) is { } bell) return bell;
+                if (await WalkToWhenLoaded("Summoning Bell", InteractionTools.IsSummoningBell, steps, ct) is { } bell) return bell;
                 if (preference != "inn")
                 {
                     steps.Add("No summoning bell at that property; going to the inn instead.");
                     await TravelTo("inn", steps, ct).ConfigureAwait(false);
-                    if (await WalkTo("Summoning Bell", InteractionTools.IsSummoningBell, steps, ct) is { } innBell) return innBell;
+                    if (await WalkToWhenLoaded("Summoning Bell", InteractionTools.IsSummoningBell, steps, ct) is { } innBell) return innBell;
                 }
                 throw new ToolException("No summoning bell found at the destination.");
             }
@@ -176,7 +176,7 @@ internal static partial class NavigationTools
             {
                 if (await WalkTo("Company Chest", IsObject(CompanyChestIds), steps, ct) is { } here) return here;
                 await TravelTo("fc", steps, ct).ConfigureAwait(false);
-                return await WalkTo("Company Chest", IsObject(CompanyChestIds), steps, ct)
+                return await WalkToWhenLoaded("Company Chest", IsObject(CompanyChestIds), steps, ct)
                        ?? throw new ToolException("Arrived at the FC house, but no company chest was found.");
             }
 
@@ -184,7 +184,7 @@ internal static partial class NavigationTools
             {
                 if (await WalkTo("Voyage Control Panel", IsObject(VoyagePanelIds), steps, ct) is { } here) return here;
                 await TravelTo("workshop", steps, ct).ConfigureAwait(false);
-                return await WalkTo("Voyage Control Panel", IsObject(VoyagePanelIds), steps, ct)
+                return await WalkToWhenLoaded("Voyage Control Panel", IsObject(VoyagePanelIds), steps, ct)
                        ?? throw new ToolException("Arrived at the workshop, but no voyage control panel was found.");
             }
 
@@ -247,6 +247,21 @@ internal static partial class NavigationTools
             else if (stableSince == DateTime.MaxValue) stableSince = DateTime.UtcNow;
             else if (DateTime.UtcNow - stableSince > TimeSpan.FromSeconds(2)) return;
             await Task.Delay(250, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// <see cref="WalkTo"/> right after arriving somewhere: the zone's objects appear a moment after it has loaded, so it looks for
+    /// a few seconds before giving up.
+    /// </summary>
+    private static async Task<object?> WalkToWhenLoaded(string label, Func<IGameObject, bool> match, List<string> steps, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(8);
+        while (true)
+        {
+            if (await WalkTo(label, match, steps, ct).ConfigureAwait(false) is { } found) return found;
+            if (DateTime.UtcNow > deadline) return null;
+            await Task.Delay(500, ct).ConfigureAwait(false);
         }
     }
 

@@ -92,7 +92,7 @@ internal static class AutoHookTools
                     "fish": { "type": "string", "description": "The fish's name or item id." },
                     "quantity": { "type": "integer", "minimum": 1, "maximum": 999, "description": "How many to catch (default 1)." },
                     "spot": { "type": "string", "description": "The fishing spot's name or id (default: the best one)." },
-                    "bait_quantity": { "type": "integer", "minimum": 0, "maximum": 999, "description": "How much bait to buy if the bags have none (default 99; 0: do not buy)." },
+                    "bait_quantity": { "type": "integer", "minimum": 0, "maximum": 999, "description": "How much bait to buy if the bags have none (default 10 per fish, at most 99; 0: do not buy)." },
                     "timeout_minutes": { "type": "integer", "minimum": 1, "maximum": 1440, "description": "How long fish_until may take, waiting for the window included (default 240)." }
                   },
                   "required": ["fish"]
@@ -104,7 +104,8 @@ internal static class AutoHookTools
                 var (guide, _) = await Prepare(args, config, ct, preferCurrentZone: false).ConfigureAwait(false);
                 var fishName = Items.Name(guide.Fish);
                 var quantity = args.Int("quantity", 1, 1, 999);
-                var baitQuantity = args.Int("bait_quantity", 99, 0, 999);
+                // Ten casts' worth per fish wanted: some baits cost hundreds of gil.
+                var baitQuantity = args.Int("bait_quantity", Math.Clamp(quantity * 10, 10, 99), 0, 999);
                 var (haveBait, isFisher) = await Game.Run(() => (Items.CountInBags(guide.FirstBait) > 0, Svc.Objects.LocalPlayer?.ClassJob.RowId == NavigationTools.FisherJob))
                                                      .ConfigureAwait(false);
 

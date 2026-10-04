@@ -46,8 +46,7 @@ internal static partial class NavigationTools
     internal static async Task<object> GoToFishingSpot(FishingPlace place, List<string> steps, CancellationToken ct)
     {
         await Game.RunLoggedIn(() => { EnsureCanTravel(); return true; }).ConfigureAwait(false);
-        bool Here() => Svc.ClientState.TerritoryType == place.Territory && Svc.Objects.LocalPlayer is { } p &&
-                       (CanCast() || Vector2.Distance(new(p.Position.X, p.Position.Z), new(place.Centre.X, place.Centre.Z)) <= place.Radius);
+        bool Here() => AtSpot(place);
 
         if (!await Game.Run(Here).ConfigureAwait(false))
         {
@@ -68,7 +67,7 @@ internal static partial class NavigationTools
                 await Task.Delay(500, ct).ConfigureAwait(false);
                 while (await Game.Run(() => PathRunning).ConfigureAwait(false))
                 {
-                    if (await Game.Run(CanCast).ConfigureAwait(false)) break;
+                    if (await Game.Run(() => AtSpot(place)).ConfigureAwait(false)) break;
                     await Task.Delay(250, ct).ConfigureAwait(false);
                 }
                 await Game.Run(() => { StopMoving(); return true; }).ConfigureAwait(false);
@@ -76,16 +75,69 @@ internal static partial class NavigationTools
             }
         }
 
+        // Near the spot but not at the water: find the shore and walk to it, facing the water.
+        if (VnavmeshLoaded && !await Game.Run(Here).ConfigureAwait(false) && await Game.Run(() => Svc.Objects.LocalPlayer?.ClassJob.RowId == FisherJob).ConfigureAwait(false))
+            await WalkToShore(place, steps, ct).ConfigureAwait(false);
+
         return await Game.Run(() => new
         {
             spot = new { id = place.Spot, name = place.Name },
             zone = TerritoryName(place.Territory),
-            canCast = CanCast(),
-            hint = CanCast() ? null : Svc.Objects.LocalPlayer?.ClassJob.RowId == FisherJob
+            canCast = AtSpot(place),
+            hint = AtSpot(place) ? null : Svc.Objects.LocalPlayer?.ClassJob.RowId == FisherJob
                 ? "Cast cannot be used here yet: step closer to the water and face it."
                 : "Switch to Fisher (switch_gearset) to fish here.",
         }).ConfigureAwait(false);
     }
 
+    /// <summary>Near this spot (casting elsewhere fishes another spot), and as a Fisher, able to cast. Framework thread.</summary>
+    internal static bool AtSpot(FishingPlace place) =>
+        Svc.ClientState.TerritoryType == place.Territory && Svc.Objects.LocalPlayer is { } p &&
+        Vector2.Distance(new(p.Position.X, p.Position.Z), new(place.Centre.X, place.Centre.Z)) <= (p.ClassJob.RowId == FisherJob ? ShoreSearch : place.Radius) &&
+        (p.ClassJob.RowId != FisherJob || CanCast());
+
     private static float PlayerHeight() => Svc.Objects.LocalPlayer?.Position.Y ?? 0;
+
+    /// <summary>How far from a spot's centre to look for its shore, in yalms.</summary>
+    private const float ShoreSearch = 40;
+
+    /// <summary>
+    /// Tries the shore points around the spot, nearest first: walks to a point a few yalms inland, then out to the edge, so the
+    /// character faces the water, until Cast can be used.
+    /// </summary>
+    private static async Task WalkToShore(FishingPlace place, List<string> steps, CancellationToken ct)
+    {
+        var candidates = await Game.Run(() =>
+        {
+            var p = Svc.Objects.LocalPlayer!.Position;
+            bool Walkable(double x, double z) =>
+                Ipc<Vector3, float, bool, bool>("vnavmesh.Query.Mesh.IsPointOnMesh", new Vector3((float)x, p.Y, (float)z), 15f, false);
+            return XivMcp.Fishing.ShoreFinder.Candidates(place.Centre.X, place.Centre.Z, ShoreSearch, Walkable, p.X, p.Z);
+        }).ConfigureAwait(false);
+        foreach (var shore in candidates.Take(6))
+        {
+            ct.ThrowIfCancellationRequested();
+            phase = $"looking for the water at {place.Name}";
+            var height = await Game.Run(PlayerHeight).ConfigureAwait(false);
+            foreach (var (x, z) in new[] { (shore.InlandX, shore.InlandZ), (shore.X, shore.Z) })
+            {
+                if (!await Game.Run(() => MoveCloseTo(new Vector3((float)x, height, (float)z), 0.5f)).ConfigureAwait(false)) break;
+                await Task.Delay(300, ct).ConfigureAwait(false);
+                var until = DateTime.UtcNow.AddSeconds(15);
+                while (await Game.Run(() => PathRunning).ConfigureAwait(false) && DateTime.UtcNow < until)
+                {
+                    if (await Game.Run(() => AtSpot(place)).ConfigureAwait(false)) break;
+                    await Task.Delay(150, ct).ConfigureAwait(false);
+                }
+                await Game.Run(() => { StopMoving(); return true; }).ConfigureAwait(false);
+            }
+            await Task.Delay(400, ct).ConfigureAwait(false);
+            if (await Game.Run(() => AtSpot(place)).ConfigureAwait(false))
+            {
+                steps.Add($"vnavmesh: walked to the water's edge at {place.Name}.");
+                return;
+            }
+        }
+        steps.Add($"Could not find a place to cast at {place.Name}; step to the water and face it.");
+    }
 }
