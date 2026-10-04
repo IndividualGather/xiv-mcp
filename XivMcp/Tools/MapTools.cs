@@ -255,7 +255,13 @@ internal static class MapTools
             var candidates = sheet.Where(t => t.Map.RowId != 0 && Excel.Name(t.PlaceName) is { Length: > 0 }).ToList();
             static int Rank(TerritoryType t) => t.TerritoryIntendedUse.RowId switch { 0 or 1 => 0, _ => 1 };
             var exact = candidates.Where(t => string.Equals(Excel.Name(t.PlaceName), zone, StringComparison.OrdinalIgnoreCase)).OrderBy(Rank).ThenBy(t => t.RowId).ToList();
-            if (exact.Count > 0) found = exact[0];
+            // A city's name ("Limsa Lominsa", "Gridania", "Ishgard") is the zone name of its districts: its first district, unless
+            // a town or field zone itself has that name.
+            var city = candidates.Where(t => t.TerritoryIntendedUse.RowId == 0 && string.Equals(Excel.Name(t.PlaceNameZone), zone, StringComparison.OrdinalIgnoreCase))
+                                 .OrderBy(t => t.RowId).ToList();
+            if (exact.Count > 0 && Rank(exact[0]) == 0) found = exact[0];
+            else if (city.Count > 0) found = city[0];
+            else if (exact.Count > 0) found = exact[0];
             else
             {
                 var partial = candidates.Where(t => Excel.Name(t.PlaceName)!.Contains(zone, StringComparison.OrdinalIgnoreCase))

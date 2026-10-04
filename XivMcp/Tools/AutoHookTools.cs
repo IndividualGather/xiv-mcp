@@ -240,13 +240,14 @@ internal static class AutoHookTools
         if (spotTerritory != 0 && spotTerritory != territory)
             throw new ToolException($"{FishingTools.SpotName(guide.Spot)} is in {NavigationTools.TerritoryName(spotTerritory)}. Go there first (navigate_to with destination fishing_spot).");
 
-        var rates = FishingTools.Rates(spotTerritory);
-        var anyTime = guide.Conditions.AnyTime || rates.Count == 0;
-        if (!anyTime && FishWindows.Next(guide.Conditions, rates, DateTimeOffset.UtcNow, 1, TimeSpan.FromDays(30)).Count == 0)
+        // The game's forecast for the whole run and the 30 days after it.
+        var weather = await Game.Run(() => FishingTools.WeatherSource(spotTerritory, timeout + TimeSpan.FromDays(31))).ConfigureAwait(false);
+        var anyTime = guide.Conditions.AnyTime || !weather.Known;
+        if (!anyTime && FishWindows.Next(guide.Conditions, weather.At, DateTimeOffset.UtcNow, 1, TimeSpan.FromDays(30)).Count == 0)
             throw new ToolException($"{fishName} has no window in the next 30 days.");
         var run = new FishingRun(new FishGuideNames(fishName, Items.Name(guide.FirstBait), FishingTools.SpotName(guide.Spot)), quantity,
             DateTimeOffset.UtcNow, timeout, stopWithWindow,
-            now => anyTime ? null : FishWindows.Next(guide.Conditions, rates, now, 1, TimeSpan.FromDays(30)).FirstOrDefault());
+            now => anyTime ? null : FishWindows.Next(guide.Conditions, weather.At, now, 1, TimeSpan.FromDays(30)).FirstOrDefault());
 
         var log = new List<string>();
         var selected = await Select(guide).ConfigureAwait(false);

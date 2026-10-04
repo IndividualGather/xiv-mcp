@@ -43,14 +43,21 @@ public static class WeatherForecast
     public static uint WeatherAt(IReadOnlyList<WeatherRate> rates, DateTimeOffset t) => Pick(rates, Target(t));
 
     /// <summary><paramref name="count"/> weather periods, starting with the one running at <paramref name="from"/>.</summary>
-    public static IReadOnlyList<WeatherPeriod> Periods(IReadOnlyList<WeatherRate> rates, DateTimeOffset from, int count)
+    public static IReadOnlyList<WeatherPeriod> Periods(IReadOnlyList<WeatherRate> rates, DateTimeOffset from, int count) =>
+        Periods(t => WeatherAt(rates, t), from, count);
+
+    /// <summary>
+    /// <paramref name="count"/> weather periods from a weather source: the weather of the period starting at a moment (the game's
+    /// own forecast, or <see cref="WeatherAt"/>).
+    /// </summary>
+    public static IReadOnlyList<WeatherPeriod> Periods(Func<DateTimeOffset, uint> weatherAt, DateTimeOffset from, int count)
     {
         var list = new List<WeatherPeriod>(count);
         var start = EorzeaTime.PeriodStart(from);
-        var previous = WeatherAt(rates, start.AddSeconds(-EorzeaTime.PeriodSeconds));
+        var previous = weatherAt(start.AddSeconds(-EorzeaTime.PeriodSeconds));
         for (var i = 0; i < count; i++)
         {
-            var weather = WeatherAt(rates, start);
+            var weather = weatherAt(start);
             var end = start.AddSeconds(EorzeaTime.PeriodSeconds);
             list.Add(new WeatherPeriod(start, end, weather, previous));
             previous = weather;

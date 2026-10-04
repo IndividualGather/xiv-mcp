@@ -72,6 +72,34 @@ public class WeatherForecastTests
     }
 }
 
+public class WeatherSourceTests
+{
+    private static DateTimeOffset At(long unix) => DateTimeOffset.FromUnixTimeSeconds(unix);
+
+    [Fact]
+    public void Periods_can_come_from_any_weather_source()
+    {
+        // A source that alternates Rain and Clouds by period, as the game's own forecast could.
+        uint Source(DateTimeOffset start) => start.ToUnixTimeSeconds() / EorzeaTime.PeriodSeconds % 2 == 0 ? 7u : 3u;
+        var periods = WeatherForecast.Periods(Source, At(1400 * 10 + 5), 3);
+        Assert.Equal([7u, 3u, 7u], periods.Select(p => p.Weather));
+        Assert.Equal(3u, periods[0].Previous);
+        Assert.Equal(7u, periods[1].Previous);
+    }
+
+    [Fact]
+    public void Fish_windows_follow_the_weather_source()
+    {
+        uint Source(DateTimeOffset start) => start.ToUnixTimeSeconds() / EorzeaTime.PeriodSeconds % 2 == 0 ? 7u : 3u;
+        // Rain after Clouds: every even period. The one running now is open already.
+        var w = FishWindows.Next(new FishConditions(0, 24, [3], [7]), Source, At(1400 * 10 + 5), 2, TimeSpan.FromDays(1));
+        Assert.Equal(At(1400 * 10 + 5), w[0].Start);
+        Assert.Equal(At(1400 * 11), w[0].End);
+        Assert.Equal(At(1400 * 12), w[1].Start);
+        Assert.Equal(TimeSpan.FromSeconds(1400), w[1].Length);
+    }
+}
+
 public class FishWindowTests
 {
     private static DateTimeOffset At(long unix) => DateTimeOffset.FromUnixTimeSeconds(unix);

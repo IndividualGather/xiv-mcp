@@ -51,15 +51,18 @@ internal static class FishingTools
                 var guide = await Guide(fish, spot, data, ct).ConfigureAwait(false);
                 var baits = Baits(guide);
                 var bags = await Game.Run(() => baits.ToDictionary(b => b, Items.CountInBags)).ConfigureAwait(false);
-                return await Task.Run(() => Describe(guide, data, args.Int("windows", 3, 1, 10), bags), ct).ConfigureAwait(false);
+                var territory = SpotTerritory(guide.Spot);
+                var weather = await Game.Run(() => WeatherSource(territory, TimeSpan.FromDays(30))).ConfigureAwait(false);
+                return await Task.Run(() => Describe(guide, data, args.Int("windows", 3, 1, 10), bags, weather), ct).ConfigureAwait(false);
             },
         };
 
         yield return new McpTool
         {
             Name = "get_weather_forecast",
-            Description = "The weather forecast of a zone (default: the current one), computed from the game's own data like the game does: " +
-                          "the current Eorzean time, and the next weather periods (each lasts 8 Eorzean hours, about 23 real minutes) with " +
+            Description = "The weather forecast of a zone (default: the current one), from the game's own forecast (what the Skywatcher NPCs " +
+                          "show), worked out from the game's data when the game cannot answer: the current Eorzean time, the weather on " +
+                          "screen when you are in that zone, and the next weather periods (each lasts 8 Eorzean hours, about 23 real minutes) with " +
                           "their real start time and the weather before. With 'weather', also when that weather comes next. For a fish's " +
                           "windows (time and weather together), use find_fish.",
             InputSchema = """
@@ -76,23 +79,26 @@ internal static class FishingTools
             {
                 var (territory, _) = MapTools.ResolveZone(args.String("zone"));
                 var rates = Rates(territory.RowId);
-                if (rates.Count == 0) throw new ToolException($"{Excel.Name(territory.PlaceName)} has no weather of its own.");
                 var now = DateTimeOffset.UtcNow;
-                var periods = WeatherForecast.Periods(rates, now, args.Int("count", 6, 1, 24));
+                var weather = WeatherSource(territory.RowId, TimeSpan.FromDays(5));
+                if (!weather.Known) throw new ToolException($"{Excel.Name(territory.PlaceName)} has no weather of its own.");
+                var periods = WeatherForecast.Periods(weather.At, now, args.Int("count", 6, 1, 24));
                 object? next = null;
                 if (args.String("weather") is { } wanted)
                 {
                     var match = rates.Select(r => r.Weather).Distinct().FirstOrDefault(w => Game.Matches(WeatherName(w), wanted));
                     if (match == 0)
                         throw new ToolException($"{Excel.Name(territory.PlaceName)} never has '{wanted}'. Its weathers: {string.Join(", ", rates.Select(r => WeatherName(r.Weather)).Distinct())}.");
-                    next = WeatherForecast.Periods(rates, now, 300).Where(p => p.Weather == match).Take(3).Select(p => Period(p, now)).ToList();
+                    next = WeatherForecast.Periods(weather.At, now, 300).Where(p => p.Weather == match).Take(3).Select(p => Period(p, now)).ToList();
                 }
                 return new
                 {
                     zone = new { id = territory.RowId, name = Excel.Name(territory.PlaceName) },
                     eorzeaTime = EorzeaTime.Format(EorzeaTime.Hour(now)),
                     chances = rates.Where(r => r.Rate > 0).Select(r => new { weather = WeatherName(r.Weather), percent = r.Rate }),
+                    onScreen = OnScreen(territory.RowId),
                     periods = periods.Select(p => Period(p, now)),
+                    source = weather.FromGame ? "the game's own forecast" : "worked out from the game's data",
                     next,
                 };
             }),
@@ -119,14 +125,12 @@ internal static class FishingTools
     internal static IReadOnlyList<uint> Baits(FishGuide g) =>
         g.Path.Concat(g.PredatorCasts).Where(s => !s.Mooch).Select(s => s.Bait).Distinct().ToList();
 
-    internal static object Describe(FishGuide g, FishingSources.Data data, int windows, IReadOnlyDictionary<uint, int> bags)
+    internal static object Describe(FishGuide g, FishingSources.Data data, int windows, IReadOnlyDictionary<uint, int> bags, ZoneWeather weather)
     {
-        var spot = Svc.Data.GetExcelSheet<FishingSpot>().GetRowOrDefault(g.Spot);
-        var territory = spot?.TerritoryType.RowId ?? 0;
+        var territory = SpotTerritory(g.Spot);
         data.Spots.TryGetValue(g.Spot, out var info);
-        var rates = Rates(territory);
         var now = DateTimeOffset.UtcNow;
-        var next = rates.Count == 0 ? [] : FishWindows.Next(g.Conditions, rates, now, windows, TimeSpan.FromDays(30));
+        var next = weather.Known ? FishWindows.Next(g.Conditions, weather.At, now, windows, TimeSpan.FromDays(30)) : [];
         var advice = FishingAdvice.For(g, Items.Name, WeatherName, f => data.Folklore.GetValueOrDefault(f) ?? Items.Name(f));
         var tracker = data.Tracker.GetValueOrDefault(g.Fish);
 
@@ -258,6 +262,53 @@ internal static class FishingTools
             if (row.Rate[i] > 0) list.Add(new WeatherRate(row.Weather[i].RowId, row.Rate[i]));
         return list;
     }
+
+    /// <summary>
+    /// A zone's weather over time: the game's own forecast where the game gives one, otherwise worked out from the zone's weather
+    /// rates. The game's forecast is the one the Skywatcher NPCs show; it agrees with the rates everywhere except a few zones, such as
+    /// the Empyreum housing district, whose weather the game decides differently.
+    /// </summary>
+    internal sealed class ZoneWeather(uint[]? game, DateTimeOffset gameStart, IReadOnlyList<WeatherRate> rates)
+    {
+        public bool FromGame => game is not null;
+
+        /// <summary>Whether anything is known about the zone's weather.</summary>
+        public bool Known => game is not null || rates.Count > 0;
+
+        /// <summary>The weather of the period starting at <paramref name="periodStart"/>.</summary>
+        public uint At(DateTimeOffset periodStart)
+        {
+            var index = (int)Math.Floor((EorzeaTime.PeriodStart(periodStart) - gameStart).TotalSeconds / EorzeaTime.PeriodSeconds);
+            // The game's forecast only runs forward: the period before now comes from the rates.
+            if (game is not null && index >= 0 && index < game.Length && game[index] != 0) return game[index];
+            return rates.Count > 0 ? WeatherForecast.WeatherAt(rates, periodStart) : 0;
+        }
+    }
+
+    /// <summary>
+    /// The weather of a zone from now to <paramref name="horizon"/> ahead: the game's forecast (WeatherManager.GetWeatherForHour,
+    /// 8 Eorzean hours per period) fetched in one go, with the rates as the fallback. Framework thread.
+    /// </summary>
+    internal static unsafe ZoneWeather WeatherSource(uint territory, TimeSpan horizon)
+    {
+        var rates = Rates(territory);
+        var start = EorzeaTime.PeriodStart(DateTimeOffset.UtcNow);
+        var wm = FFXIVClientStructs.FFXIV.Client.Game.WeatherManager.Instance();
+        if (wm == null || territory == 0 || !Svc.ClientState.IsLoggedIn) return new ZoneWeather(null, start, rates);
+        var count = (int)Math.Ceiling(horizon.TotalSeconds / EorzeaTime.PeriodSeconds) + 2;
+        var game = new uint[count];
+        for (var i = 0; i < count; i++) game[i] = wm->GetWeatherForHour((ushort)territory, i * 8);
+        return game.All(w => w == 0) ? new ZoneWeather(null, start, rates) : new ZoneWeather(game, start, rates);
+    }
+
+    /// <summary>The weather on screen, when the player is in that zone. Framework thread.</summary>
+    private static unsafe string? OnScreen(uint territory)
+    {
+        var wm = FFXIVClientStructs.FFXIV.Client.Game.WeatherManager.Instance();
+        return wm != null && Svc.ClientState.TerritoryType == territory ? WeatherName(wm->GetCurrentWeather()) : null;
+    }
+
+    internal static uint SpotTerritory(uint spot) => Svc.Data.GetExcelSheet<FishingSpot>().GetRowOrDefault(spot)?.TerritoryType.RowId ?? 0;
 
     internal static string WeatherName(uint weather) => Excel.NameOf<Weather>(weather) ?? $"weather {weather}";
 
