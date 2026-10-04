@@ -167,9 +167,6 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
     /// <summary>Rows (group id + access) whose tool list is expanded.</summary>
     private readonly HashSet<string> expanded = [];
 
-    /// <summary>The Reading / Changes label under the mouse last frame.</summary>
-    private string? hoveredLabel;
-
     /// <summary>
     /// "▸ Reading  [Allow][Ask][Deny]": an arrow that expands the row's tools, the label in a fixed column, then three equal buttons
     /// filling the rest of the card. Expanded, every tool of the row is listed with a short description and its own setting.
@@ -180,30 +177,34 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
         var key = $"{g.Id}:{access}";
         var mine = tools.Where(t => PermissionCatalog.AccessOf(t) == access).ToList();
         var open = expanded.Contains(key);
+        var frame = ImGui.GetFrameHeight();
+        var rowStart = ImGui.GetCursorPos();
+        var hovered = false;
         if (mine.Count > 0)
         {
-            if (ImGui.ArrowButton("##expand", open ? ImGuiDir.Down : ImGuiDir.Right))
-                if (!expanded.Remove(key)) expanded.Add(key);
+            // Arrow and label are one clickable area: hovering either turns both gold, clicking either toggles the tool list.
+            // (No cursor change: Dalamud draws ImGui cursors as an extra icon next to the game's own.)
+            var labelEnd = frame + ImGui.GetStyle().ItemSpacing.X + ImGui.CalcTextSize(label).X;
+            if (ImGui.InvisibleButton("##toggle", new Vector2(labelEnd, frame)) && !expanded.Remove(key)) expanded.Add(key);
+            hovered = ImGui.IsItemHovered();
             Tooltip(open ? "Hide the tools" : $"Set the {mine.Count} tool{(mine.Count == 1 ? "" : "s")} one by one");
+            ImGui.SetCursorPos(rowStart);
         }
-        else ImGui.Dummy(new Vector2(ImGui.GetFrameHeight(), ImGui.GetFrameHeight()));
-        ImGui.SameLine();
+        var color = hovered ? Gold : ImGui.GetStyle().Colors[(int)ImGuiCol.Text];
+        if (mine.Count > 0)
+        {
+            using (Ui.IconFont())
+            {
+                var icon = (open ? FontAwesomeIcon.CaretDown : FontAwesomeIcon.CaretRight).ToIconString();
+                // Centre the caret in a frame-sized square, where the arrow button used to be.
+                var size = ImGui.CalcTextSize(icon);
+                ImGui.SetCursorPos(rowStart + new Vector2((frame - size.X) / 2, (frame - size.Y) / 2));
+                ImGui.TextColored(color, icon);
+            }
+        }
+        ImGui.SetCursorPos(rowStart + new Vector2(frame + ImGui.GetStyle().ItemSpacing.X, 0));
         ImGui.AlignTextToFramePadding();
-        if (mine.Count > 0)
-        {
-            // Highlight the clickable label on hover (last frame's hover state, so the colour is set before drawing).
-            var hovered = hoveredLabel == key;
-            using (ImRaii.PushColor(ImGuiCol.Text, Gold, hovered)) ImGui.TextUnformatted(label);
-            if (ImGui.IsItemHovered()) hoveredLabel = key;
-            else if (hovered) hoveredLabel = null;
-        }
-        else ImGui.TextUnformatted(label);
-        if (mine.Count > 0)
-        {
-            // The label toggles the tool list too, not just the arrow.
-            // No cursor change: Dalamud draws ImGui cursors as an extra icon next to the game's own. Hovering highlights the label instead.
-            if (ImGui.IsItemClicked() && !expanded.Remove(key)) expanded.Add(key);
-        }
+        ImGui.TextColored(color, label);
         ImGui.SameLine();
         ImGui.SetCursorPosX(left + labelWidth);
         if (!g.Has(access))
