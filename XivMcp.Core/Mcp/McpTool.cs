@@ -98,6 +98,16 @@ public sealed class ToolArgs(JsonObject? args)
 
     public JsonNode? Node(string name) => args[name];
 
+    /// <summary>An array argument; also one sent as a JSON string (clients whose copy of the schema predates the parameter do that).</summary>
+    public JsonArray? Array(string name)
+    {
+        var node = args[name];
+        if (node is JsonArray array) return array;
+        if (node is not JsonValue v || !v.TryGetValue<string>(out var text) || !text.TrimStart().StartsWith("[")) return null;
+        try { return JsonNode.Parse(text) as JsonArray; }
+        catch (System.Text.Json.JsonException) { return null; }
+    }
+
     public string? String(string name)
     {
         var node = args[name];

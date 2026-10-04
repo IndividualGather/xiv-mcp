@@ -149,13 +149,13 @@ internal static class FashionTools
                 var vipCard = args.Node("use_vip_card") is { } v ? v.GetValue<bool>() : config.FashionReportVipCard;
                 if (!FashionSchedule.IsJudgingOpen(DateTime.UtcNow)) throw new ToolException("The Masked Rose only judges from Friday 08:00 UTC until the weekly reset on Tuesday.");
                 var steps = new List<string>();
-                foreach (var item in args.Node("items")?.AsArray().Select(n => n?.ToString() ?? "") ?? [])
+                foreach (var item in args.Array("items")?.Select(n => n?.ToString() ?? "") ?? [])
                 {
                     await Equip(item, ct).ConfigureAwait(false);
                     steps.Add($"Put on {item}.");
                 }
                 var discard = config.FashionReportDiscard
-                    ? args.Node("discard")?.AsArray().Select(n => n?.GetValue<uint>() ?? 0).Where(i => i != 0).Distinct().ToList() ?? []
+                    ? args.Array("discard")?.Select(n => n?.GetValue<uint>() ?? 0).Where(i => i != 0).Distinct().ToList() ?? []
                     : [];
                 return await Present(steps, vipCard, discard, config.FashionReportDiscardMaxValue, config.AllowOnlineData, ct).ConfigureAwait(false);
             },
