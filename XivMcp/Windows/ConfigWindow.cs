@@ -52,7 +52,7 @@ internal sealed partial class ConfigWindow : Window
         using var tabs = ImRaii.TabBar("##xivmcp-tabs");
         if (!tabs) return;
         Tab(FontAwesomeIcon.Plug, "Connect", DrawConnect);
-        Tab(FontAwesomeIcon.ShieldAlt, "Permissions", DrawPermissions);
+        Tab(FontAwesomeIcon.Cubes, "Modules", DrawPermissions);
         Tab(FontAwesomeIcon.UserShield, ThirdPartyTabLabel(), DrawThirdParty);
         var activeJobs = plugin.Jobs?.All().Count(j => !j.Finished) ?? 0;
         Tab(FontAwesomeIcon.Tasks, activeJobs > 0 ? $"Jobs ({activeJobs})" : "Jobs", DrawJobs);

@@ -13,7 +13,7 @@ using XivMcp.Util;
 namespace XivMcp.Windows;
 
 /// <summary>
-/// Tools that don't come from XIV MCP's core: the integrations XIV MCP maintains (shown under Permissions, gated by the core switches)
+/// Tools that don't come from XIV MCP's core: the integrations XIV MCP maintains (shown under Modules, gated by the core switches)
 /// and third-party plugins (their own tab, see <see cref="ThirdPartyPanel"/>).
 /// </summary>
 internal sealed partial class ConfigWindow

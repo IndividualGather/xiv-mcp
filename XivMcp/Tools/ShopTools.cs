@@ -279,7 +279,7 @@ internal static class ShopTools
     private static void RequireVendorPlugin()
     {
         if (!ItemVendorLocationLoaded)
-            throw new ToolException("Finding vendors needs the Item Vendor Location plugin, which is not installed or not enabled. Install it from /xivmcp → Permissions → Purchases.");
+            throw new ToolException("Finding vendors needs the Item Vendor Location plugin, which is not installed or not enabled. Install it from /xivmcp → Modules → Market & purchases.");
     }
 
     /// <summary>Vendors of an item from Item Vendor Location: gil vendors first, then the current zone, then the rest. Framework thread.</summary>

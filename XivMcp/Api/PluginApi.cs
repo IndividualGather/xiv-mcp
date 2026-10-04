@@ -237,7 +237,11 @@ internal sealed class PluginApi : IDisposable
             ["state"] = PluginStatus.Id(status.State),
             ["canRun"] = status.CanRun,
             ["suspendReason"] = status.SuspendReason,
-            ["tools"] = new JsonArray(mine.Select(t => (JsonNode)JsonValue.Create(t.Name)).ToArray()),
+            // What each tool is set to as a whole: its own setting ("own"), else its strictest capability.
+            ["tools"] = new JsonArray(mine.Select(t => (JsonNode)new JsonObject
+            {
+                ["name"] = t.Name, ["mode"] = gate.CheckTool(t).ToString().ToLowerInvariant(), ["own"] = policy.ToolMode(t.Name) is not null,
+            }).ToArray()),
             ["capabilities"] = new JsonArray(mine.SelectMany(t => t.Capabilities).Distinct().Select(c => (JsonNode)new JsonObject
             {
                 ["id"] = c, ["mode"] = gate.Check(provider, c).ToString().ToLowerInvariant(),

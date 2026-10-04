@@ -86,7 +86,9 @@ public enum McpPluginState
 }
 
 /// <summary>Your plugin's status and the player's setting for each capability you declared.</summary>
-public sealed record McpStatus(McpPluginState State, string? SuspendReason, IReadOnlyDictionary<string, McpPermission> Capabilities)
+/// <remarks><see cref="Tools"/>: what each of your tools is set to as a whole (the player can set a tool on its own; otherwise its strictest capability).</remarks>
+public sealed record McpStatus(McpPluginState State, string? SuspendReason, IReadOnlyDictionary<string, McpPermission> Capabilities,
+                               IReadOnlyDictionary<string, McpPermission> Tools)
 {
     public bool CanRun => State == McpPluginState.Enabled;
 }
@@ -216,7 +218,7 @@ public sealed class XivMcpClient : IDisposable
     /// </summary>
     public McpStatus GetStatus()
     {
-        if (!IsAvailable) return new McpStatus(McpPluginState.Unavailable, null, new Dictionary<string, McpPermission>());
+        if (!IsAvailable) return new McpStatus(McpPluginState.Unavailable, null, new Dictionary<string, McpPermission>(), new Dictionary<string, McpPermission>());
         var reply = Call(Prefix + "GetStatus", owner);
         var state = reply["state"]?.GetValue<string>() switch
         {
@@ -230,7 +232,10 @@ public sealed class XivMcpClient : IDisposable
         var caps = new Dictionary<string, McpPermission>();
         foreach (var c in reply["capabilities"]?.AsArray() ?? [])
             if (c?["id"]?.GetValue<string>() is { } id) caps[id] = Permission(c["mode"]?.GetValue<string>());
-        return new McpStatus(state, reply["suspendReason"]?.GetValue<string>(), caps);
+        var toolModes = new Dictionary<string, McpPermission>();
+        foreach (var t in reply["tools"]?.AsArray() ?? [])
+            if (t?["name"]?.GetValue<string>() is { } name) toolModes[name] = Permission(t["mode"]?.GetValue<string>());
+        return new McpStatus(state, reply["suspendReason"]?.GetValue<string>(), caps, toolModes);
     }
 
     private static McpPermission Permission(string? mode) => mode switch

@@ -138,7 +138,7 @@ public class ToolGateTests
     }
 
     [Fact]
-    public async Task Always_allow_sets_the_policy_and_stops_asking()
+    public async Task Always_allow_allows_just_that_tool_and_stops_asking()
     {
         var saves = 0;
         var savingStore = new InMemoryPolicyStore(save: () => saves++);
@@ -148,27 +148,66 @@ public class ToolGateTests
         var g = new ToolGate(savingStore, gate, probe, audit, notifier, () => now);
 
         await g.InvokeAsync(Tool([Capabilities.MoveCharacter, Capabilities.SpendGil]), Args(), default);
-        Assert.Equal(PolicyMode.Allow, p.ModeFor(Capabilities.MoveCharacter));
-        Assert.Equal(PolicyMode.Allow, p.ModeFor(Capabilities.SpendGil));
+        Assert.Equal(PolicyMode.Allow, p.ToolMode("hellomcp_do"));
+        Assert.Equal(PolicyMode.Ask, p.ModeFor(Capabilities.SpendGil)); // the capability (and so other tools) keeps its setting
         Assert.True(saves > 0);
         Assert.Equal("approved_always", audit.Recent()[0].Decision);
 
-        await g.InvokeAsync(Tool([Capabilities.MoveCharacter]), Args(), default);
+        await g.InvokeAsync(Tool([Capabilities.MoveCharacter, Capabilities.SpendGil]), Args(), default);
         Assert.Single(gate.Requests);
     }
 
     [Fact]
-    public async Task Always_allow_never_applies_to_critical_capabilities()
+    public async Task Always_allow_never_applies_to_tools_with_critical_capabilities()
     {
         Enable();
         gate.Answer = ApprovalDecision.AlwaysAllow;
         var g = Gate();
         await g.InvokeAsync(Tool([Capabilities.DiscardItems, Capabilities.GameUi]), Args(), default);
-        var p = store.Get(Third.Id);
-        Assert.Equal(PolicyMode.Ask, p.ModeFor(Capabilities.DiscardItems));
-        Assert.Equal(PolicyMode.Allow, p.ModeFor(Capabilities.GameUi));
-        await g.InvokeAsync(Tool([Capabilities.DiscardItems]), Args(), default);
+        Assert.Null(store.Get(Third.Id).ToolMode("hellomcp_do"));
+        await g.InvokeAsync(Tool([Capabilities.DiscardItems, Capabilities.GameUi]), Args(), default);
         Assert.Equal(2, gate.Requests.Count);
+    }
+
+    [Fact]
+    public async Task A_tool_set_to_deny_is_blocked_even_when_its_capabilities_are_allowed()
+    {
+        Enable(p => { p.Modes[Capabilities.GameUi] = PolicyMode.Allow; p.SetTool("hellomcp_do", PolicyMode.Deny); });
+        var ex = await Assert.ThrowsAsync<ToolException>(() => Gate().InvokeAsync(Tool([Capabilities.GameUi]), Args(), default));
+        Assert.Contains("hellomcp_do", ex.Message);
+        Assert.Equal("blocked", audit.Recent()[0].Decision);
+    }
+
+    [Fact]
+    public async Task A_tool_set_to_allow_runs_even_when_its_capability_is_denied_and_is_still_audited()
+    {
+        Enable(p => { p.Modes[Capabilities.SpendGil] = PolicyMode.Deny; p.SetTool("hellomcp_do", PolicyMode.Allow); });
+        var tool = Tool([Capabilities.SpendGil], () => { probe.Current = probe.Current with { Gil = 10 }; return Task.FromResult<object?>("ok"); });
+        Assert.Equal("ok", await Gate().InvokeAsync(tool, Args(), default));
+        Assert.Empty(gate.Requests);
+        var entry = audit.Recent()[0];
+        Assert.Equal("spent_gil", Assert.Single(entry.SideEffects).Effect);
+        Assert.False(entry.Flagged);
+    }
+
+    [Fact]
+    public async Task A_tool_allowed_on_its_own_is_still_suspended_for_undeclared_side_effects()
+    {
+        Enable(p => p.SetTool("hellomcp_do", PolicyMode.Allow));
+        var tool = Tool([Capabilities.GameUi], () => { probe.Current = probe.Current with { Gil = 10 }; return Task.FromResult<object?>("ok"); });
+        await Gate().InvokeAsync(tool, Args(), default);
+        Assert.True(store.Get(Third.Id).Suspended);
+    }
+
+    [Fact]
+    public async Task A_read_only_tool_set_to_ask_asks_and_can_be_approved_for_the_session()
+    {
+        Enable(p => p.SetTool("hellomcp_do", PolicyMode.Ask));
+        gate.Answer = ApprovalDecision.ApprovedForSession;
+        var g = Gate();
+        await g.InvokeAsync(Tool([], readOnly: true), Args(), default);
+        await g.InvokeAsync(Tool([], readOnly: true), Args(), default);
+        Assert.Equal(Capabilities.ReadGame, Assert.Single(Assert.Single(gate.Requests).Capabilities).Id);
     }
 
     [Fact]
@@ -179,7 +218,7 @@ public class ToolGateTests
         var g = Gate();
         var tool = Tool([Capabilities.SpendGil]);
         Assert.True(await g.RequestRuntimeApprovalAsync(tool, Capabilities.SpendGil, "Buy it", default));
-        Assert.Equal(PolicyMode.Allow, store.Get(Third.Id).ModeFor(Capabilities.SpendGil));
+        Assert.Equal(PolicyMode.Allow, store.Get(Third.Id).ToolMode("hellomcp_do"));
         Assert.True(await g.RequestRuntimeApprovalAsync(tool, Capabilities.SpendGil, "Buy it again", default));
         Assert.Single(gate.Requests);
     }

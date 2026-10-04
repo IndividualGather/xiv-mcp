@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using XivMcp.Mcp;
 
 namespace XivMcp.Permissions;
 
@@ -36,6 +38,54 @@ public sealed class PluginPolicy
         var mode = Modes.TryGetValue(capabilityId, out var m) ? m : Capabilities.DefaultMode(cap.Risk);
         return Capabilities.IsModeAllowed(cap.Risk, mode) ? mode : PolicyMode.Ask;
     }
+
+    /// <summary>Per-tool settings that override the tool's capabilities (by tool name). Tools not listed follow their capabilities.</summary>
+    public Dictionary<string, PolicyMode> Tools { get; set; } = new();
+
+    public PolicyMode? ToolMode(string tool) => Tools.TryGetValue(tool, out var m) ? m : null;
+
+    /// <summary>Sets a tool's own mode, or (null) lets it follow its capabilities again.</summary>
+    public void SetTool(string tool, PolicyMode? mode)
+    {
+        if (mode is { } m) Tools[tool] = m;
+        else Tools.Remove(tool);
+    }
+
+    /// <summary>
+    /// The sections a tool is listed under: the capabilities it declares beyond reading, or reading alone for tools that only read.
+    /// Its mode follows the strictest of these.
+    /// </summary>
+    public static IReadOnlyList<string> Sections(McpTool tool)
+    {
+        var acting = tool.Capabilities.Where(c => c != Capabilities.ReadGame).Distinct().ToList();
+        return acting.Count > 0 ? acting : [Capabilities.ReadGame];
+    }
+
+    /// <summary>
+    /// The effective mode of a whole call: the tool's own setting, else the strictest of its <see cref="Sections"/>. A tool that declares a
+    /// critical capability is never more than Ask, and one that declares an unknown capability is denied.
+    /// </summary>
+    public PolicyMode ModeForTool(McpTool tool)
+    {
+        if (tool.Capabilities.Any(c => Capabilities.Find(c) is null)) return PolicyMode.Deny;
+        return ToolMode(tool.Name) is { } own ? Clamp(tool, own) : SectionMode(tool);
+    }
+
+    /// <summary>What a tool follows when it has no setting of its own: the strictest of its sections (never more than Ask if critical).</summary>
+    public PolicyMode SectionMode(McpTool tool) => Clamp(tool, Sections(tool).Select(ModeFor).Max());
+
+    /// <summary>The mode for a request during a call (XivMcp.RequestApproval): the tool's own setting, else the capability's.</summary>
+    public PolicyMode RuntimeMode(McpTool tool, string capabilityId)
+    {
+        if (Capabilities.Find(capabilityId) is not { } cap) return PolicyMode.Deny;
+        var mode = ToolMode(tool.Name) ?? ModeFor(capabilityId);
+        return Capabilities.IsModeAllowed(cap.Risk, mode) ? mode : PolicyMode.Ask;
+    }
+
+    /// <summary>Whether a tool declares something that must be asked every time (and so can't be allowed for the session or always).</summary>
+    public static bool IsCritical(McpTool tool) => tool.Capabilities.Any(c => Capabilities.Find(c)?.Risk == RiskLevel.Critical);
+
+    private static PolicyMode Clamp(McpTool tool, PolicyMode mode) => mode == PolicyMode.Allow && IsCritical(tool) ? PolicyMode.Ask : mode;
 
     public void Suspend(string reason, DateTime utc)
     {

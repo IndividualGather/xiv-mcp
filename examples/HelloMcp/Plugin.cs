@@ -165,7 +165,7 @@ public sealed class Plugin : IDalamudPlugin
                         McpPluginState.KeptDisabled => "You kept Hello MCP disabled in XIV MCP.",
                         McpPluginState.AwaitingConsent => "Hello MCP changed its tools; XIV MCP waits for your consent in /xivmcp → Third-party plugins.",
                         McpPluginState.Suspended => $"XIV MCP suspended Hello MCP: {status.SuspendReason}",
-                        _ => "Enabled in XIV MCP. " + string.Join(", ", status.Capabilities.Select(c => $"{c.Key}: {c.Value}")),
+                        _ => "Enabled in XIV MCP. " + string.Join(", ", status.Tools.Select(t => $"{t.Key}: {t.Value}")),
                     }, "Hello MCP");
                     break;
             }

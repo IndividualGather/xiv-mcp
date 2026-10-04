@@ -80,6 +80,22 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
         return !policy.Enabled || policy.Suspended || policy.AwaitingConsent ? PolicyMode.Deny : policy.ModeFor(capability);
     }
 
+    /// <summary>The mode a capability has for one of the provider's tools right now: the tool's own setting first, then the capability's.</summary>
+    public PolicyMode Check(ToolProvider provider, string capability, McpTool tool)
+    {
+        if (provider.Trust != ProviderTrust.ThirdParty) return PolicyMode.Allow;
+        var policy = store.Get(provider.Id);
+        return !policy.Enabled || policy.Suspended || policy.AwaitingConsent ? PolicyMode.Deny : policy.RuntimeMode(tool, capability);
+    }
+
+    /// <summary>The mode of a whole call to one of the provider's tools right now (disabled or suspended plugins: Deny).</summary>
+    public PolicyMode CheckTool(McpTool tool)
+    {
+        if (tool.Provider.Trust != ProviderTrust.ThirdParty) return CheckBuiltIn(tool);
+        var policy = store.Get(tool.Provider.Id);
+        return !policy.Enabled || policy.Suspended || policy.AwaitingConsent ? PolicyMode.Deny : policy.ModeForTool(tool);
+    }
+
     public async Task<object?> InvokeAsync(McpTool tool, ToolArgs args, CancellationToken ct, bool inJob = false)
     {
         if (tool.Provider.Trust != ProviderTrust.ThirdParty) return await InvokeBuiltInAsync(tool, args, ct, inJob).ConfigureAwait(false);
@@ -110,26 +126,35 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
             audit.Add(Entry("blocked") with { Error = "Plugin suspended." });
             throw new ToolException($"{provider.DisplayName} is suspended by XIV MCP ({policy.SuspendReason}). Only the player can lift that, in /xivmcp → Third-party plugins.");
         }
-        if (caps.FirstOrDefault(c => policy.ModeFor(c.Id) == PolicyMode.Deny) is { } denied)
+        var mode = policy.ModeForTool(tool);
+        if (mode == PolicyMode.Deny)
         {
-            audit.Add(Entry("blocked") with { Error = $"{denied.Title} is denied." });
-            throw new ToolException($"\"{denied.Title}\" is blocked for {provider.DisplayName} in /xivmcp, so {tool.Name} can't run.");
+            var own = policy.ToolMode(tool.Name) == PolicyMode.Deny;
+            var denied = caps.FirstOrDefault(c => policy.ModeFor(c.Id) == PolicyMode.Deny && PluginPolicy.Sections(tool).Contains(c.Id));
+            audit.Add(Entry("blocked") with { Error = own ? "Tool denied." : denied is not null ? $"{denied.Title} is denied." : "Unknown capability." });
+            throw new ToolException(own
+                ? $"{tool.Name} is set to Deny for {provider.DisplayName} in /xivmcp, so it can't run. The player can change it there."
+                : $"\"{denied?.Title ?? "An unknown capability"}\" is blocked for {provider.DisplayName} in /xivmcp, so {tool.Name} can't run.");
         }
 
         var decision = "allowed";
-        var ask = caps.Where(c => policy.ModeFor(c.Id) == PolicyMode.Ask && !SessionCovers(provider, tool.Name, c)).ToList();
-        if (ask.Count > 0)
+        if (mode == PolicyMode.Ask)
         {
-            var answer = await gate.RequestAsync(new ApprovalRequest(provider, tool.Name, ask, FirstSentence(tool.Description), preview), ct).ConfigureAwait(false);
-            if (answer == ApprovalDecision.Denied)
+            if (SessionCovers(provider, tool)) decision = "approved_session";
+            else
             {
-                audit.Add(Entry("denied"));
-                throw new ToolException($"The player declined {tool.Name} ({string.Join(", ", ask.Select(c => c.Title))}).");
+                var asked = PluginPolicy.Sections(tool).Select(Capabilities.Find).OfType<Capability>().ToList();
+                var answer = await gate.RequestAsync(new ApprovalRequest(provider, tool.Name, asked, FirstSentence(tool.Description), preview, Write: !tool.ReadOnly), ct)
+                                       .ConfigureAwait(false);
+                if (answer == ApprovalDecision.Denied)
+                {
+                    audit.Add(Entry("denied"));
+                    throw new ToolException($"The player declined {tool.Name} ({string.Join(", ", asked.Select(c => c.Title))}).");
+                }
+                Remember(provider, tool, WholeCall, answer, policy);
+                decision = Decision(answer);
             }
-            Remember(provider, tool.Name, ask, answer, policy);
-            decision = Decision(answer);
         }
-        else if (caps.Any(c => policy.ModeFor(c.Id) == PolicyMode.Ask)) decision = "approved_session";
 
         var before = probe.Capture();
         var started = now();
@@ -185,7 +210,7 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
             notifier.Flagged(provider, tool.Name, [new SideEffect("undeclared_request", $"Asked to \"{cap?.Title ?? capabilityId}\": {summary}", [capabilityId], true)], false);
             return false;
         }
-        switch (Check(provider, capabilityId))
+        switch (Check(provider, capabilityId, tool))
         {
             case PolicyMode.Deny:
                 audit.Add(Entry("blocked"));
@@ -194,13 +219,13 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
                 audit.Add(Entry("allowed"));
                 return true;
         }
-        if (SessionCovers(provider, tool.Name, cap))
+        if (cap.Risk != RiskLevel.Critical && (SessionCovers(provider, tool) || Sessions.Has(provider.Id, tool.Name, cap.Id)))
         {
             audit.Add(Entry("approved_session"));
             return true;
         }
         var answer = await gate.RequestAsync(new ApprovalRequest(provider, tool.Name, [cap], summary, null), ct).ConfigureAwait(false);
-        if (answer != ApprovalDecision.Denied) Remember(provider, tool.Name, [cap], answer, store.Get(provider.Id));
+        if (answer != ApprovalDecision.Denied) Remember(provider, tool, cap.Id, answer, store.Get(provider.Id));
         audit.Add(Entry(Decision(answer)));
         return answer != ApprovalDecision.Denied;
     }
@@ -244,15 +269,15 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
         if (!IsListed(tool))
         {
             audit.Add(Entry("blocked") with { Error = $"{area} is turned off." });
-            throw new ToolException($"{area} is turned off in /xivmcp → Permissions, so {tool.Name} isn't available. The player can turn it on there.");
+            throw new ToolException($"{area} is turned off in /xivmcp → Modules, so {tool.Name} isn't available. The player can turn it on there.");
         }
 
         if (mode == PolicyMode.Deny)
         {
             audit.Add(Entry("blocked") with { Error = $"{area} {(access == Access.Read ? "reading" : "changes")} denied." });
             throw new ToolException(store.Core.ToolMode(tool.Name) is not null
-                ? $"{tool.Name} is set to Deny in /xivmcp → Permissions ({area}), so it can't run. The player can change it there."
-                : $"{area} is set to Deny for {(access == Access.Read ? "reading" : "changes")}, so {tool.Name} can't run. The player can change it in /xivmcp → Permissions.");
+                ? $"{tool.Name} is set to Deny in /xivmcp → Modules ({area}), so it can't run. The player can change it there."
+                : $"{area} is set to Deny for {(access == Access.Read ? "reading" : "changes")}, so {tool.Name} can't run. The player can change it in /xivmcp → Modules.");
         }
 
         var decision = "allowed";
@@ -295,15 +320,20 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
         }
     }
 
-    /// <summary>Keeps a "for this session" or "always" answer (never for critical capabilities, which are asked every time).</summary>
-    private void Remember(ToolProvider provider, string tool, IReadOnlyList<Capability> caps, ApprovalDecision answer, PluginPolicy policy)
+    /// <summary>The session key for approving a whole call (rather than one request during it).</summary>
+    private const string WholeCall = "*call";
+
+    /// <summary>
+    /// Keeps a "for this session" answer (the whole call, or one capability during it) or an "always" answer (the tool on its own is set
+    /// to Allow; its capabilities and other tools keep their settings). Never for tools with a critical capability: those ask every time.
+    /// </summary>
+    private void Remember(ToolProvider provider, McpTool tool, string scope, ApprovalDecision answer, PluginPolicy policy)
     {
-        var lasting = caps.Where(c => c.Risk != RiskLevel.Critical).ToList();
-        if (answer == ApprovalDecision.ApprovedForSession)
-            foreach (var c in lasting) Sessions.Add(provider.Id, tool, c.Id);
-        else if (answer == ApprovalDecision.AlwaysAllow && lasting.Count > 0)
+        if (PluginPolicy.IsCritical(tool)) return;
+        if (answer == ApprovalDecision.ApprovedForSession) Sessions.Add(provider.Id, tool.Name, scope);
+        else if (answer == ApprovalDecision.AlwaysAllow)
         {
-            foreach (var c in lasting) policy.Modes[c.Id] = PolicyMode.Allow;
+            policy.SetTool(tool.Name, PolicyMode.Allow);
             store.Save();
         }
     }
@@ -318,8 +348,7 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
 
     private static string FirstSentence(string text) => ToolText.Truncate(ToolText.FirstSentence(text), 160);
 
-    private bool SessionCovers(ToolProvider provider, string tool, Capability cap) =>
-        cap.Risk != RiskLevel.Critical && Sessions.Has(provider.Id, tool, cap.Id);
+    private bool SessionCovers(ToolProvider provider, McpTool tool) => !PluginPolicy.IsCritical(tool) && Sessions.Has(provider.Id, tool.Name, WholeCall);
 
     private static string Preview(string json) => json.Length <= 300 ? json : json[..297] + "...";
 }

@@ -85,7 +85,7 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
     }
 
     /// <summary>Two columns when there's room (one in a narrow window).</summary>
-    private static void CardGrid(string id, List<PermissionGroup> groups, Action<PermissionGroup> draw)
+    internal static void CardGrid<T>(string id, List<T> groups, Action<T> draw)
     {
         var columns = ImGui.GetContentRegionAvail().X >= 540 * Ui.Scale ? 2 : 1;
         using var table = ImRaii.Table($"##{id}", columns, ImGuiTableFlags.SizingStretchSame);
@@ -145,14 +145,15 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
             // A turned-off group shows nothing to set: its tools aren't offered at all.
             if (on)
             {
-                ImGui.Dummy(new Vector2(0, 2 * scale));
+                Divider(inner, Lines);
                 var labelWidth = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemSpacing.X + Math.Max(ImGui.CalcTextSize("Reading").X, ImGui.CalcTextSize("Changes").X) + 12 * scale;
                 Segmented(g, Access.Read, "Reading", tools, left, labelWidth, inner);
+                Divider(inner, Lines);
                 Segmented(g, Access.Write, "Changes", tools, left, labelWidth, inner);
 
                 if (host.Options(g.Id) is { } options && write is not null and not PolicyMode.Deny)
                 {
-                    ImGui.Dummy(new Vector2(0, 2 * scale));
+                    Divider(inner, Lines);
                     ImGui.TextColored(Muted, "Options");
                     ImGui.PushTextWrapPos(left + inner);
                     options();
@@ -248,8 +249,34 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
         using var indent = ImRaii.PushIndent(ImGui.GetFrameHeight() + ImGui.GetStyle().ItemSpacing.X, false);
         var toolLeft = ImGui.GetCursorPosX();
         var toolInner = inner - (toolLeft - left);
-        foreach (var t in mine) DrawTool(t, current, toolLeft, toolInner);
+        var top = ImGui.GetCursorScreenPos();
+        for (var i = 0; i < mine.Count; i++)
+        {
+            if (i > 0) ImGui.Dummy(new Vector2(0, 4 * Ui.Scale));
+            DrawTool(mine[i], current, toolLeft, toolInner);
+        }
+        GuideLine(top, ImGui.GetFrameHeight() + ImGui.GetStyle().ItemSpacing.X, Lines with { W = 0.3f });
         ImGui.Dummy(new Vector2(0, 2 * Ui.Scale));
+    }
+
+    /// <summary>Built-in cards draw their dividers and guide lines in neutral grey; third-party cards use their violet.</summary>
+    private static readonly Vector4 Lines = new(1, 1, 1, 0.13f);
+
+    /// <summary>Space, a faint line across the card, and space: keeps the sections of a card apart.</summary>
+    internal static void Divider(float inner, Vector4 color)
+    {
+        var scale = Ui.Scale;
+        ImGui.Dummy(new Vector2(0, 5 * scale));
+        var pos = ImGui.GetCursorScreenPos();
+        ImGui.GetWindowDrawList().AddLine(pos, pos + new Vector2(inner, 0), ImGui.GetColorU32(color), 1.5f * scale);
+        ImGui.Dummy(new Vector2(0, 6 * scale));
+    }
+
+    /// <summary>A vertical line from <paramref name="top"/> to the last item, half an indent to its left: marks an expanded tool list as part of its row.</summary>
+    internal static void GuideLine(Vector2 top, float indent, Vector4 color)
+    {
+        var x = top.X - indent / 2;
+        ImGui.GetWindowDrawList().AddLine(new Vector2(x, top.Y + 2 * Ui.Scale), new Vector2(x, ImGui.GetItemRectMax().Y), ImGui.GetColorU32(color), 2 * Ui.Scale);
     }
 
     /// <summary>One tool: its name, a short description, and Group / Allow / Ask / Deny (Group = follow the group's setting).</summary>
@@ -283,8 +310,8 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
     /// A row of equal buttons, the active one filled in its colour. A null option means "follow the group": it is filled in the group's
     /// colour, dimmed, when active.
     /// </summary>
-    private static void ModeButtons(float width, (string? Label, PolicyMode? Mode)[] options, PolicyMode? current, Action<PolicyMode?> set,
-                                    PolicyMode? inherited = null, bool small = false)
+    internal static void ModeButtons(float width, (string? Label, PolicyMode? Mode)[] options, PolicyMode? current, Action<PolicyMode?> set,
+                                    PolicyMode? inherited = null, bool small = false, string followTip = "Follow the group's setting (now {0}).")
     {
         var gap = 2 * Ui.Scale;
         var buttonWidth = MathF.Floor((width - (options.Length - 1) * gap) / options.Length);
@@ -301,13 +328,12 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
                                      .Push(ImGuiCol.ButtonActive, color)
                                      .Push(ImGuiCol.Text, active ? new Vector4(1, 1, 1, 1) : Muted);
             if (ImGui.Button(label ?? mode.ToString(), new Vector2(buttonWidth, 0)) && !active) set(mode);
-            if (mode is null && inherited is { } inh) Tooltip($"Follow the group's setting (now {inh}).");
+            if (mode is null && inherited is { } inh) Tooltip(string.Format(followTip, inh));
         }
     }
 
-    private static Vector4 ModeColor(PolicyMode m) => m switch { PolicyMode.Allow => AllowColor, PolicyMode.Ask => AskColor, _ => DenyColor };
+    internal static Vector4 ModeColor(PolicyMode m) => m switch { PolicyMode.Allow => AllowColor, PolicyMode.Ask => AskColor, _ => DenyColor };
 
-    /// <summary>The first sentence of a tool's description, at most ~120 characters.</summary>
     /// <summary>The first sentence of a tool's description, cut at a word after ~110 characters; the full text is the tooltip.</summary>
     private static string ShortDescription(string description) => ToolText.Truncate(ToolText.FirstSentence(description), 110);
 

@@ -1,4 +1,4 @@
-<img src="XivMcp/images/icon.png" width="96" align="right" alt="XIV MCP icon: a brass mammet with an aether crystal antenna">
+<img src="XivMcp/images/icon.png" width="96" align="right" alt="XIV MCP icon: an aether crystal wired to three nodes, teal to blue on a dark square">
 
 # XIV MCP
 
@@ -14,8 +14,10 @@ XIV MCP has two permission screens, because there are two kinds of tools:
 
 | | What | Where | How it's controlled |
 |---|---|---|---|
-| **XIV MCP's own tools** | The core tools, plus the integrations XIV MCP maintains for other plugins (AutoDuty, Artisan, GatherBuddy Reborn, Lifestream, Item Vendor Location, FCCH) | `/xivmcp` → **Permissions** | Per group, reading and changes separately: allow, ask or deny, with an activity log |
-| **Third-party tools** | Tools other plugins register through the [plugin API](#for-plugin-developers) | `/xivmcp` → **Third-party plugins** | Per plugin and capability: allow, ask or deny, with consent to registrations, an audit log and automatic suspension |
+| **XIV MCP's own tools** | The core tools, plus the integrations XIV MCP maintains for other plugins (AutoDuty, Artisan, GatherBuddy Reborn, Lifestream, Item Vendor Location, FCCH) | `/xivmcp` → **Modules** | Per group, reading and changes separately: allow, ask or deny, with an activity log |
+| **Third-party tools** | Tools other plugins register through the [plugin API](#for-plugin-developers) | `/xivmcp` → **Third-party plugins** | Per plugin, capability and tool: allow, ask or deny, with consent to registrations, an audit log and automatic suspension |
+
+The two tabs share one card layout, but third-party plugins look different: violet cards with a **THIRD-PARTY** badge and a plug icon. Each card has an on/off switch, one Allow / Ask / Deny section per declared capability with its risk level, plus a Reading section for tools that only read. Expand a section to set its tools on their own, as on the Modules tab. A tool that follows its sections uses the strictest of them. Tools that can destroy items always ask. The checks on what a call actually did (undeclared gil, item, zone or login changes suspend the plugin) apply either way.
 
 Both use the same approval window and the same audit log. While an approval waits, the game's taskbar button flashes, so you notice it even when you're in another window.
 

@@ -5,9 +5,9 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Components;
-using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using XivMcp.Api;
+using XivMcp.Mcp;
 using XivMcp.Permissions;
 using static XivMcp.Windows.ConfigWindow;
 
@@ -31,15 +31,22 @@ internal interface IThirdPartyHost
 }
 
 /// <summary>
-/// The "Third-party plugins" tab: per plugin the on/off switch, a suspension notice, the policy for each declared capability, its tools,
-/// session approvals and the audit log of its recent calls.
+/// The "Third-party plugins" tab, laid out like the Modules cards but marked as external: a violet accent, a THIRD-PARTY badge and
+/// a plug icon. Per plugin: an on/off switch, the decision or suspension notice when there is one, one row per declared capability
+/// (risk, Allow / Ask / Deny, expandable to the tools using it), session approvals and recent activity.
 /// </summary>
 internal sealed class ThirdPartyPanel(IThirdPartyHost host)
 {
-    private static readonly string[] ModeLabels = ["Allow", "Ask", "Deny"];
+    private static readonly Vector4 External = new(0.62f, 0.48f, 0.90f, 1);   // violet: never used by XIV MCP's own cards
+    private static readonly Vector4 Waiting = new(0.72f, 0.56f, 0.24f, 1);
+    private static readonly Vector4 Problem = new(0.72f, 0.30f, 0.30f, 1);
+    private static readonly Vector4 Off = new(0.45f, 0.46f, 0.50f, 1);
 
-    /// <summary>A plugin to expand and scroll to on the next frame.</summary>
+    /// <summary>A plugin to scroll to on the next frame (from the registration notification).</summary>
     private string? focus;
+
+    /// <summary>Expanded rows: "plugin:capability" for tool lists, "plugin:activity" for the activity list.</summary>
+    private readonly HashSet<string> expanded = [];
 
     public void Focus(string pluginId) => focus = pluginId;
 
@@ -52,15 +59,10 @@ internal sealed class ThirdPartyPanel(IThirdPartyHost host)
 
     public void Draw()
     {
-        var plugins = host.Plugins();
-        ImGui.PushTextWrapPos();
-        ImGui.TextColored(Muted,
-            "Other plugins can offer tools to your assistant through XIV MCP. They run that plugin's own code, so XIV MCP can't sandbox them, but it " +
-            "controls when they run: each plugin is off until you enable it, every capability it declares is allowed, asked or denied as you set it " +
-            "here, and XIV MCP checks what each call actually changed. A plugin whose call does something it didn't declare is suspended.");
-        ImGui.PopTextWrapPos();
+        DrawTrustBanner();
         ImGui.Spacing();
 
+        var plugins = host.Plugins();
         if (plugins.Count == 0)
         {
             IconText(FontAwesomeIcon.InfoCircle, Muted);
@@ -68,165 +70,320 @@ internal sealed class ThirdPartyPanel(IThirdPartyHost host)
             ImGui.TextColored(Muted, "No third-party plugin has registered tools yet.");
             return;
         }
-
-        foreach (var p in plugins) DrawPlugin(p);
+        PermissionsPanel.CardGrid("thirdparty", plugins, DrawCard);
         ImGui.Spacing();
         ImGui.TextColored(Muted, "Full audit log: pluginConfigs/XivMcp/audit.jsonl");
     }
 
-    private void DrawPlugin(PluginApi.PluginInfo p)
+    /// <summary>A violet strip that says what these plugins are and how far XIV MCP can protect you.</summary>
+    private static void DrawTrustBanner()
+    {
+        var scale = Ui.Scale;
+        var start = ImGui.GetCursorScreenPos();
+        var width = ImGui.GetContentRegionAvail().X;
+        ImGui.Indent(12 * scale);
+        ImGui.Dummy(new Vector2(0, 4 * scale));
+        IconText(FontAwesomeIcon.Plug, External);
+        ImGui.SameLine();
+        ImGui.TextColored(External, "External plugins");
+        ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + width - 24 * scale);
+        ImGui.TextColored(Muted, "These plugins are made by others and run their own code. XIV MCP can't sandbox them, but it decides when they run: " +
+                                 "each one is off until you enable it, each capability (or single tool) is allowed, asked or denied as you set it, and a plugin that does " +
+                                 "something it didn't declare is suspended. Only enable plugins you trust.");
+        ImGui.PopTextWrapPos();
+        ImGui.Unindent(12 * scale);
+        var end = new Vector2(start.X + width, ImGui.GetItemRectMax().Y + 6 * scale);
+        var dl = ImGui.GetWindowDrawList();
+        dl.AddRectFilled(start, end, ImGui.GetColorU32(External with { W = 0.08f }), 6 * scale);
+        dl.AddRectFilled(start, new Vector2(start.X + 4 * scale, end.Y), ImGui.GetColorU32(External), 6 * scale, ImDrawFlags.RoundCornersLeft);
+        ImGui.SetCursorScreenPos(new Vector2(start.X, end.Y + 4 * scale));
+        ImGui.Dummy(Vector2.Zero);
+    }
+
+    private void DrawCard(PluginApi.PluginInfo p)
     {
         using var id = ImRaii.PushId($"tp-{p.InternalName}");
+        var scale = Ui.Scale;
         var policy = p.Policy;
-        var flagged = host.Gate.Audit.Recent(p.InternalName, 200).Count(e => e.Flagged && !e.BuiltIn);
-
+        var status = PluginStatus.Of(policy);
         var pending = host.Pending(p.InternalName);
-        var enabled = policy.Enabled && !policy.AwaitingConsent;
-        if (ImGuiComponents.ToggleButton("##enabled", ref enabled)) host.Decide(p.InternalName, enabled);
-        Tooltip(enabled ? "Enabled: its tools are offered to your assistant."
-                : policy.AwaitingConsent ? "Paused: it changed its registration and waits for your consent."
-                : "Off: its tools are hidden and refused.");
-        ImGui.SameLine();
-        var focused = string.Equals(focus, p.InternalName, StringComparison.OrdinalIgnoreCase);
-        if (focused) ImGui.SetNextItemOpen(true);
-        var open = ImGui.CollapsingHeader($"{p.DisplayName}###hdr");
-        if (focused)
+        var accent = status.State switch
+        {
+            PluginState.Suspended => Problem,
+            PluginState.AwaitingConsent or PluginState.Undecided => Waiting,
+            PluginState.Enabled => External,
+            _ => Off,
+        };
+
+        var pad = 10 * scale;
+        var bar = 4 * scale;
+        var width = ImGui.GetContentRegionAvail().X - 2 * scale;
+        var inner = width - 2 * pad - bar;
+        var start = ImGui.GetCursorScreenPos();
+        if (string.Equals(focus, p.InternalName, StringComparison.OrdinalIgnoreCase))
         {
             ImGui.SetScrollHereY(0);
             focus = null;
         }
-        ImGui.SameLine();
-        if (policy.Suspended) ImGui.TextColored(Red, "suspended");
-        else if (policy.AwaitingConsent) ImGui.TextColored(Gold, "changed: waiting for your consent");
-        else if (!p.Loaded) ImGui.TextColored(Muted, "not loaded");
-        else ImGui.TextColored(enabled ? Green : Muted, $"{p.Tools.Count} tool{(p.Tools.Count == 1 ? "" : "s")}{(enabled ? "" : " · off")}");
-        if (flagged > 0)
-        {
-            ImGui.SameLine();
-            ImGui.TextColored(Amber, $"{flagged} flagged");
-        }
 
-        if (policy.Suspended) DrawSuspension(policy);
-        if (pending.What != RegistrationReview.Kind.None && p.Tools.Count > 0) DrawDecision(p, policy, pending);
-        if (!open) return;
-
-        using var indent = ImRaii.PushIndent();
-        DrawCapabilityPolicies(p, policy);
-        ImGui.Spacing();
-        DrawTools(p);
-        ImGui.Spacing();
-        var sessions = host.Gate.Sessions.Count(p.InternalName);
-        ImGui.TextColored(Muted, sessions == 0 ? "No session approvals." : $"{sessions} approval(s) for this session.");
-        if (sessions > 0)
+        ImGui.Indent(pad + bar);
+        ImGui.Dummy(new Vector2(0, pad - ImGui.GetStyle().ItemSpacing.Y));
+        var left = ImGui.GetCursorPosX();
+        var headerY = ImGui.GetCursorPosY();
+        using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, p.Loaded && status.State != PluginState.KeptDisabled ? 1f : 0.6f))
         {
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Clear")) host.Gate.Sessions.Clear(p.InternalName);
+            // Header: plug icon, name with the THIRD-PARTY badge, and a one-line summary.
+            using (Ui.IconFont())
+            {
+                ImGui.SetWindowFontScale(1.45f);
+                ImGui.TextColored(accent, FontAwesomeIcon.Plug.ToIconString());
+                ImGui.SetWindowFontScale(1f);
+            }
+            ImGui.SameLine(0, 10 * scale);
+            using (ImRaii.Group())
+            {
+                ImGui.TextUnformatted(p.DisplayName);
+                ImGui.SameLine();
+                Badge("THIRD-PARTY", External);
+                ImGui.TextColored(Muted, Summary(p, status));
+            }
+
+            if (status.State == PluginState.Suspended) Notice(FontAwesomeIcon.ExclamationTriangle, Problem, $"Suspended: {policy.SuspendReason ?? "it did something it didn't declare."}",
+                left, inner, ("Lift suspension", () => { policy.Lift(); host.Policies.Save(); }, "Only lift it if you know why it happened, e.g. you spent gil yourself while the call ran."));
+            if (pending.What != RegistrationReview.Kind.None && p.Tools.Count > 0)
+                Notice(FontAwesomeIcon.QuestionCircle, Waiting, DecisionText(p, policy, pending), left, inner,
+                    ("Enable", () => host.Decide(p.InternalName, true), "Offer its tools to your assistant, under the settings below."),
+                    ("Keep disabled", () => host.Decide(p.InternalName, false), "Keep it off. You won't be asked again unless its registration changes."));
+
+            // One section per declared capability, riskiest first, and reading (for tools that only read) last.
+            var sections = p.Tools.SelectMany(PluginPolicy.Sections).Distinct().Select(Capabilities.Find).OfType<Capability>()
+                            .OrderBy(c => c.Id == Capabilities.ReadGame).ThenByDescending(c => c.Risk).ThenBy(c => c.Title).ToList();
+            ImGui.Dummy(new Vector2(0, 2 * scale));
+            for (var i = 0; i < sections.Count; i++)
+            {
+                if (i > 0) PermissionsPanel.Divider(inner, External with { W = 0.28f });
+                CapabilityRow(p, policy, sections[i], left, inner);
+            }
+
+            // Footer: session approvals and recent activity.
+            PermissionsPanel.Divider(inner, External with { W = 0.28f });
+            var sessions = host.Gate.Sessions.Count(p.InternalName);
+            ImGui.TextColored(Muted, sessions == 0 ? "No approvals for this session." : $"{sessions} approval(s) for this session.");
+            if (sessions > 0)
+            {
+                ImGui.SameLine();
+                if (ImGui.SmallButton("Clear")) host.Gate.Sessions.Clear(p.InternalName);
+            }
+            var activity = host.Gate.Audit.Recent(p.InternalName, 300).Where(e => !e.BuiltIn).Take(25).ToList();
+            var flagged = activity.Count(e => e.Flagged);
+            if (Toggle($"{p.InternalName}:activity", activity.Count == 0 ? "Activity: no calls yet" : $"Activity ({activity.Count}{(flagged > 0 ? $", {flagged} flagged" : "")})",
+                       activity.Count > 0, flagged > 0 ? Problem : null))
+                DrawAuditTable(activity, showSource: false);
         }
-        ImGui.Spacing();
-        DrawAudit(p.InternalName);
-        ImGui.Spacing();
+        var contentBottom = ImGui.GetItemRectMax().Y;
+
+        // The on/off switch: enabling consents to the current registration, off keeps it disabled.
+        var afterContent = ImGui.GetCursorPos();
+        ImGui.SetCursorPos(new Vector2(left + inner - ImGui.GetFrameHeight() * 1.55f, headerY));
+        var isOn = policy.Enabled && !policy.AwaitingConsent;
+        if (ImGuiComponents.ToggleButton("##enabled", ref isOn)) host.Decide(p.InternalName, isOn);
+        Tooltip(isOn ? "Enabled: its tools are offered to your assistant." : policy.AwaitingConsent ? "Paused: it changed its tools and waits for your consent." : "Off: its tools are not offered.");
+        ImGui.SetCursorPos(afterContent);
+        ImGui.Unindent(pad + bar);
+
+        // Frame: violet (or state) tint, border and accent bar, plus a thin top line that built-in cards don't have.
+        var end = new Vector2(start.X + width, contentBottom + pad);
+        var dl = ImGui.GetWindowDrawList();
+        var rounding = 6 * scale;
+        dl.AddRectFilled(start, end, ImGui.GetColorU32(accent with { W = 0.07f }), rounding);
+        dl.AddRect(start, end, ImGui.GetColorU32(accent with { W = 0.5f }), rounding);
+        dl.AddRectFilled(start, new Vector2(start.X + bar, end.Y), ImGui.GetColorU32(accent), rounding, ImDrawFlags.RoundCornersLeft);
+        dl.AddLine(new Vector2(start.X + rounding, start.Y + 1), new Vector2(end.X - rounding, start.Y + 1), ImGui.GetColorU32(accent with { W = 0.8f }), 2 * scale);
+        ImGui.SetCursorScreenPos(new Vector2(start.X, end.Y + 8 * scale));
+        ImGui.Dummy(Vector2.Zero);
     }
 
-    /// <summary>A registration that needs the player's decision: enable it, or keep it disabled (remembered until it changes again).</summary>
-    private void DrawDecision(PluginApi.PluginInfo p, PluginPolicy policy, RegistrationReview.Result pending)
+    /// <summary>One capability: caret, title and risk; Allow / Ask / Deny (critical ones can't be always allowed); expandable to its tools.</summary>
+    private void CapabilityRow(PluginApi.PluginInfo p, PluginPolicy policy, Capability cap, float left, float inner)
     {
-        using var bg = ImRaii.PushColor(ImGuiCol.ChildBg, new Vector4(0.89f, 0.75f, 0.48f, 0.12f));
-        using var child = ImRaii.Child("##decision", new Vector2(-1, ImGui.GetTextLineHeightWithSpacing() * 3.6f + 12 * Ui.Scale), true);
-        IconText(FontAwesomeIcon.QuestionCircle, Gold);
+        using var id = ImRaii.PushId(cap.Id);
+        var key = $"{p.InternalName}:{cap.Id}";
+        var tools = p.Tools.Where(t => PluginPolicy.Sections(t).Contains(cap.Id)).OrderBy(t => t.Name).ToList();
+        var reading = cap.Id == Capabilities.ReadGame;
+        var label = reading ? "Reading" : cap.Title;
+        var owned = tools.Count(t => policy.ToolMode(t.Name) is not null);
+        var open = Toggle(key, owned > 0 ? $"{label} · {owned} set on their own" : label, tools.Count > 0, null, () =>
+        {
+            ImGui.SameLine();
+            Badge(cap.Risk.ToString().ToUpperInvariant(), RiskColor(cap.Risk));
+        }, reading ? "Tools that only read game state: your character, inventory, zone and other game data. They change nothing." : cap.Description);
+
+        var mode = policy.ModeFor(cap.Id);
+        ImGui.SetCursorPosX(left);
+        var options = Capabilities.IsModeAllowed(cap.Risk, PolicyMode.Allow)
+            ? new (string?, PolicyMode?)[] { (null, PolicyMode.Allow), (null, PolicyMode.Ask), (null, PolicyMode.Deny) }
+            : [("Always ask", PolicyMode.Ask), (null, PolicyMode.Deny)];
+        PermissionsPanel.ModeButtons(inner, options, mode, m =>
+        {
+            policy.Modes[cap.Id] = m!.Value;
+            if (m != PolicyMode.Ask) host.Gate.Sessions.Clear(p.InternalName);
+            host.Policies.Save();
+        });
+
+        if (!open) return;
+        var step = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemSpacing.X;
+        using var indent = ImRaii.PushIndent(step, false);
+        var top = ImGui.GetCursorScreenPos();
+        for (var i = 0; i < tools.Count; i++)
+        {
+            if (i > 0) ImGui.Dummy(new Vector2(0, 4 * Ui.Scale));
+            DrawTool(p, policy, tools[i], cap.Id, left + step, inner - step);
+        }
+        PermissionsPanel.GuideLine(top, step, External with { W = 0.4f });
+        ImGui.Dummy(new Vector2(0, 2 * Ui.Scale));
+    }
+
+    /// <summary>
+    /// One tool: name, its own setting if any, the other sections it is listed under, a short description (full text on hover) and
+    /// Follow / Allow / Ask / Deny. Tools with a critical capability can't be set to Allow.
+    /// </summary>
+    private void DrawTool(PluginApi.PluginInfo p, PluginPolicy policy, McpTool t, string section, float left, float inner)
+    {
+        using var id = ImRaii.PushId(t.Name);
+        ImGui.Dummy(new Vector2(0, 2 * Ui.Scale));
+        var own = policy.ToolMode(t.Name);
+        using (Ui.MonoFont()) ImGui.TextUnformatted(t.Name);
         ImGui.SameLine();
-        ImGui.TextColored(Gold, pending.What == RegistrationReview.Kind.NewPlugin ? $"{p.DisplayName} wants to register with XIV MCP"
-                               : policy.AwaitingConsent ? $"{p.DisplayName} changed its registration; its tools are paused" : $"{p.DisplayName} changed its registration");
-        ImGui.PushTextWrapPos();
+        ImGui.TextColored(t.ReadOnly ? PermissionsPanel.ModeColor(PolicyMode.Allow) : Muted, t.ReadOnly ? "reads" : t.Destructive ? "hard to undo" : "acts");
+        if (own is { } o)
+        {
+            ImGui.SameLine();
+            ImGui.TextColored(PermissionsPanel.ModeColor(o), $"set to {o}");
+        }
+        var others = PluginPolicy.Sections(t).Where(c => c != section).Select(c => Capabilities.Find(c)?.Title ?? c).ToList();
+        ImGui.PushTextWrapPos(left + inner);
+        if (others.Count > 0) ImGui.TextColored(Muted, $"Also listed under: {string.Join(", ", others)} (one setting for all)");
+        ImGui.TextColored(Muted, ToolText.Truncate(ToolText.FirstSentence(t.Description), 110));
+        ImGui.PopTextWrapPos();
+        DescriptionTooltip(t.Description, $"Declares: {string.Join(", ", PluginPolicy.Sections(t).Select(c => Capabilities.Find(c)?.Title ?? c))}");
+
+        var critical = PluginPolicy.IsCritical(t);
+        (string?, PolicyMode?)[] options = critical
+            ? [("Follow", null), ("Always ask", PolicyMode.Ask), (null, PolicyMode.Deny)]
+            : [("Follow", null), (null, PolicyMode.Allow), (null, PolicyMode.Ask), (null, PolicyMode.Deny)];
+        ImGui.SetCursorPosX(left);
+        PermissionsPanel.ModeButtons(inner, options, own, mode =>
+        {
+            policy.SetTool(t.Name, mode);
+            if (mode != PolicyMode.Ask) host.Gate.Sessions.Clear(p.InternalName);
+            host.Policies.Save();
+        }, policy.SectionMode(t), small: true,
+           followTip: others.Count > 0 ? "Follow the strictest of its sections (now {0})." : "Follow this section's setting (now {0}).");
+    }
+
+    /// <summary>
+    /// A caret plus label as one clickable area (hover turns both gold). Returns whether the row is expanded. <paramref name="after"/>
+    /// draws extra items on the same line (a badge).
+    /// </summary>
+    private bool Toggle(string key, string label, bool expandable, Vector4? labelColor = null, Action? after = null, string? tooltip = null)
+    {
+        var open = expandable && expanded.Contains(key);
+        var frame = ImGui.GetFrameHeight();
+        var rowStart = ImGui.GetCursorPos();
+        var hovered = false;
+        if (expandable)
+        {
+            var width = frame + ImGui.GetStyle().ItemSpacing.X + ImGui.CalcTextSize(label).X;
+            if (ImGui.InvisibleButton($"##t-{key}", new Vector2(width, frame)) && !expanded.Remove(key)) expanded.Add(key);
+            hovered = ImGui.IsItemHovered();
+            if (tooltip is not null) Tooltip(tooltip);
+            ImGui.SetCursorPos(rowStart);
+        }
+        var color = hovered ? Gold : labelColor ?? ImGui.GetStyle().Colors[(int)ImGuiCol.Text];
+        if (expandable)
+            using (Ui.IconFont())
+            {
+                var icon = (open ? FontAwesomeIcon.CaretDown : FontAwesomeIcon.CaretRight).ToIconString();
+                var size = ImGui.CalcTextSize(icon);
+                ImGui.SetCursorPos(rowStart + new Vector2((frame - size.X) / 2, (frame - size.Y) / 2));
+                ImGui.TextColored(color, icon);
+            }
+        ImGui.SetCursorPos(rowStart + new Vector2(frame + ImGui.GetStyle().ItemSpacing.X, 0));
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextColored(color, label);
+        if (!expandable && tooltip is not null) Tooltip(tooltip);
+        after?.Invoke();
+        return open;
+    }
+
+    /// <summary>A small filled label, e.g. THIRD-PARTY or HIGH.</summary>
+    private static void Badge(string text, Vector4 color)
+    {
+        var scale = Ui.Scale;
+        var size = ImGui.CalcTextSize(text) * 0.8f;
+        var pos = ImGui.GetCursorScreenPos() + new Vector2(0, (ImGui.GetTextLineHeight() - size.Y) / 2);
+        var padding = new Vector2(5 * scale, 1 * scale);
+        ImGui.GetWindowDrawList().AddRectFilled(pos - new Vector2(0, padding.Y), pos + size + padding * 2 - new Vector2(0, padding.Y),
+            ImGui.GetColorU32(color with { W = 0.85f }), 3 * scale);
+        ImGui.SetWindowFontScale(0.8f);
+        ImGui.SetCursorScreenPos(pos + new Vector2(padding.X, 0));
+        ImGui.TextColored(new Vector4(1, 1, 1, 1), text);
+        ImGui.SetWindowFontScale(1f);
+        ImGui.SameLine(0, padding.X + 4 * scale);
+        ImGui.Dummy(Vector2.Zero);
+    }
+
+    /// <summary>A coloured notice inside the card with up to two buttons.</summary>
+    private static void Notice(FontAwesomeIcon icon, Vector4 color, string text, float left, float inner, params (string Label, Action Click, string Tip)[] buttons)
+    {
+        ImGui.Dummy(new Vector2(0, 2 * Ui.Scale));
+        IconText(icon, color);
+        ImGui.SameLine();
+        ImGui.PushTextWrapPos(left + inner);
+        ImGui.TextColored(color, text);
+        ImGui.PopTextWrapPos();
+        for (var i = 0; i < buttons.Length; i++)
+        {
+            if (i > 0) ImGui.SameLine();
+            if (ImGui.SmallButton(buttons[i].Label)) buttons[i].Click();
+            Tooltip(buttons[i].Tip);
+        }
+    }
+
+    private static string DecisionText(PluginApi.PluginInfo p, PluginPolicy policy, RegistrationReview.Result pending)
+    {
         var parts = new List<string>();
         if (pending.NewTools.Count > 0) parts.Add($"{(pending.What == RegistrationReview.Kind.NewPlugin ? "Tools" : "New tools")}: {string.Join(", ", pending.NewTools)}.");
         if (pending.New.Count > 0) parts.Add($"{(pending.What == RegistrationReview.Kind.NewPlugin ? "It asks to" : "Newly asks to")}: {string.Join(", ", pending.New.Select(c => c.Title.ToLowerInvariant()))}.");
-        ImGui.TextUnformatted(string.Join(" ", parts));
-        ImGui.PopTextWrapPos();
-        if (ImGui.SmallButton("Enable")) host.Decide(p.InternalName, true);
-        Tooltip("Offer its tools to your assistant. Each capability then follows the policy below.");
-        ImGui.SameLine();
-        if (ImGui.SmallButton("Keep disabled")) host.Decide(p.InternalName, false);
-        Tooltip("Keep it off. XIV MCP won't ask again unless its registration changes.");
+        var head = pending.What == RegistrationReview.Kind.NewPlugin ? "Wants to register with XIV MCP."
+                 : policy.AwaitingConsent ? "Changed its registration; its tools are paused." : "Changed its registration.";
+        return $"{head} {string.Join(" ", parts)}";
     }
 
-    private void DrawSuspension(PluginPolicy policy)
+    private string Summary(PluginApi.PluginInfo p, PluginStatus status)
     {
-        using var bg = ImRaii.PushColor(ImGuiCol.ChildBg, new Vector4(0.6f, 0.15f, 0.15f, 0.22f));
-        using var child = ImRaii.Child("##suspended", new Vector2(-1, ImGui.GetTextLineHeightWithSpacing() * 3.4f + 12 * Ui.Scale), true);
-        IconText(FontAwesomeIcon.ExclamationTriangle, Red);
-        ImGui.SameLine();
-        ImGui.TextColored(Red, $"Suspended {(policy.SuspendedUtc is { } t ? t.ToLocalTime().ToString("g") : "")}");
-        ImGui.PushTextWrapPos();
-        ImGui.TextUnformatted(policy.SuspendReason ?? "It did something it didn't declare.");
-        ImGui.PopTextWrapPos();
-        if (ImGui.SmallButton("Lift suspension"))
+        if (!p.Loaded) return "Not loaded";
+        var tools = $"{p.Tools.Count} tool{(p.Tools.Count == 1 ? "" : "s")}";
+        return status.State switch
         {
-            policy.Lift();
-            host.Policies.Save();
-        }
-        Tooltip("Only lift it if you know why it happened, e.g. you spent gil yourself while the call ran.");
+            PluginState.Undecided => $"Waiting for your decision · {tools}",
+            PluginState.KeptDisabled => $"Kept disabled · {tools}",
+            PluginState.AwaitingConsent => $"Paused: waiting for your consent · {tools}",
+            PluginState.Suspended => $"Suspended · {tools}",
+            _ => $"Enabled · {tools}{AskSummary(p)}",
+        };
     }
 
-    private void DrawCapabilityPolicies(PluginApi.PluginInfo p, PluginPolicy policy)
+    private static string AskSummary(PluginApi.PluginInfo p)
     {
-        var declared = p.DeclaredCapabilities.Select(Capabilities.Find).OfType<Capability>().OrderByDescending(c => c.Risk).ThenBy(c => c.Title).ToList();
-        if (declared.Count == 0) return;
-        using var table = ImRaii.Table("##caps", 3, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp);
-        if (!table) return;
-        ImGui.TableSetupColumn("What it may do", ImGuiTableColumnFlags.WidthStretch, 2.2f);
-        ImGui.TableSetupColumn("Risk", ImGuiTableColumnFlags.WidthStretch, 0.7f);
-        ImGui.TableSetupColumn("Policy", ImGuiTableColumnFlags.WidthStretch, 1.1f);
-        ImGui.TableHeadersRow();
-        foreach (var cap in declared)
-        {
-            ImGui.TableNextRow();
-            ImGui.TableNextColumn();
-            ImGui.TextUnformatted(cap.Title);
-            Tooltip($"{cap.Description}\n\nUsed by: {string.Join(", ", p.Tools.Where(t => t.Capabilities.Contains(cap.Id)).Select(t => t.Name))}");
-            ImGui.TableNextColumn();
-            ImGui.TextColored(RiskColor(cap.Risk), cap.Risk.ToString().ToLowerInvariant());
-            ImGui.TableNextColumn();
-            var mode = policy.ModeFor(cap.Id);
-            ImGui.SetNextItemWidth(-1);
-            using var combo = ImRaii.Combo($"##{cap.Id}", ModeLabels[(int)mode]);
-            if (!combo) continue;
-            foreach (var m in Enum.GetValues<PolicyMode>())
-            {
-                if (!Capabilities.IsModeAllowed(cap.Risk, m)) continue;
-                if (!ImGui.Selectable(ModeLabels[(int)m], m == mode)) continue;
-                policy.Modes[cap.Id] = m;
-                if (m != PolicyMode.Ask) host.Gate.Sessions.Clear(p.InternalName);
-                host.Policies.Save();
-            }
-        }
+        var asks = p.Tools.Count(t => p.Policy.ModeForTool(t) == PolicyMode.Ask);
+        var denied = p.Tools.Count(t => p.Policy.ModeForTool(t) == PolicyMode.Deny);
+        return (asks > 0 ? $" · {asks} ask first" : "") + (denied > 0 ? $" · {denied} denied" : "");
     }
-
-    private static void DrawTools(PluginApi.PluginInfo p)
-    {
-        if (p.Tools.Count == 0)
-        {
-            ImGui.TextColored(Muted, p.Loaded ? "No tools registered right now." : "Not loaded: no tools.");
-            return;
-        }
-        foreach (var t in p.Tools)
-        {
-            using (Ui.MonoFont()) ImGui.TextUnformatted(t.Name);
-            ImGui.SameLine();
-            ImGui.TextColored(t.ReadOnly ? Green : t.Destructive ? Red : Amber, t.ReadOnly ? "reads" : t.Destructive ? "hard to undo" : "acts");
-            DescriptionTooltip(t.Description, $"Declares: {string.Join(", ", t.Capabilities.Select(c => Capabilities.Find(c)?.Title ?? c))}");
-        }
-    }
-
-    private void DrawAudit(string pluginId) => DrawAuditTable(host.Gate.Audit.Recent(pluginId, 300).Where(e => !e.BuiltIn).Take(25).ToList(), showSource: false);
 
     /// <summary>Audit entries as a table: time, tool (and source), decision, result; details as tooltip.</summary>
     public static void DrawAuditTable(IReadOnlyList<AuditEntry> entries, bool showSource)
     {
-        if (entries.Count == 0)
-        {
-            ImGui.TextColored(Muted, "No calls yet.");
-            return;
-        }
         using var table = ImRaii.Table("##audit", 4, ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.SizingStretchProp);
         if (!table) return;
         ImGui.TableSetupColumn("When", ImGuiTableColumnFlags.WidthStretch, 0.8f);
@@ -266,8 +423,9 @@ internal sealed class ThirdPartyPanel(IThirdPartyHost host)
 
     private static Vector4 RiskColor(RiskLevel r) => r switch
     {
-        RiskLevel.Low => Green,
-        RiskLevel.Medium => Amber,
-        _ => Red,
+        RiskLevel.Low => PermissionsPanel.ModeColor(PolicyMode.Allow),
+        RiskLevel.Medium => Waiting,
+        RiskLevel.High => Problem,
+        _ => new Vector4(0.55f, 0.15f, 0.15f, 1),
     };
 }

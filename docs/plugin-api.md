@@ -138,7 +138,7 @@ if (!await call.RequestApprovalAsync(McpCapabilities.SpendGil, $"Buy {basket.Sum
     throw new McpToolException("The player declined the purchase; nothing was bought.");
 ```
 
-- Returns `true` right away if the player allows the capability, `false` if it's denied, and otherwise shows an approval window and waits (two minutes, then `false`).
+- Returns `true` right away if the player allows the capability (or set this tool to *Allow* on its own), `false` if it's denied, and otherwise shows an approval window and waits (two minutes, then `false`).
 - **For a capability set to *Ask*, the player is asked twice:** before the call, and again here. The exception is if they chose *Approve for this session* or *Always allow* the first time. So only ask here when your question adds something, like the price.
 - **A "no" is final for this call.** Throw and say what wasn't done. If the assistant calls again, the player is asked again, and can set the capability to *Deny* to stop that.
 - You can only ask for capabilities the tool declared. Anything else returns `false` and is flagged.
@@ -218,6 +218,7 @@ You don't configure any of this, but it decides how your code must behave:
 | was asked again because your registration grew (a new tool or capability) | All your tools pause (not offered, refused) until they consent. Removing tools never asks. | **Register every tool at startup**, with every capability it may need. |
 | set a capability to *Deny* | Calls of tools declaring it are refused before your code runs. | Offer a fallback, or say so in your UI. |
 | set a capability to *Ask* | An approval window before each call (or once per session). Critical ones (`discard_items`) are always asked. | Expect waits in jobs. |
+| set one of your tools on its own | That tool ignores its capabilities' settings: *Allow*, *Ask* or *Deny* for the whole call (critical tools still ask every time). *Always allow* in the approval window sets just that tool. Undeclared side effects still suspend your plugin. | Read it from `GetStatus().Tools`. |
 | got a call that changed gil, currencies, items, zone, chat or login state without declaring it | If the call took under two minutes, your plugin is suspended: still listed, but every call is refused. Longer calls are only flagged, since the player may have acted meanwhile. | Declare honestly; the player lifts suspensions. |
 
 Every call, decision and approval is listed under your plugin in `/xivmcp` → **Third-party plugins**, and in `pluginConfigs/XivMcp/audit.jsonl`.
@@ -232,7 +233,7 @@ Every call, decision and approval is listed under your plugin in `/xivmcp` → *
 | `AddTool(definition, args => result)` | A tool that answers right away, called on the framework thread. |
 | `AddLongRunningTool(definition, async call => result)` | A tool that may take long; see `McpCall`. |
 | `RemoveTool(name)` | Unregisters one tool. |
-| `GetStatus()` | `McpStatus`: your `State`, `CanRun`, `SuspendReason`, and the setting of each declared capability. |
+| `GetStatus()` | `McpStatus`: your `State`, `CanRun`, `SuspendReason`, the setting of each declared capability (`Capabilities`) and of each tool as a whole (`Tools`). |
 | `CheckPermission(capability)` | `Allow`, `Ask` or `Deny` for one capability (`Deny` unless enabled). |
 | `StartJob(name, params steps)` | Starts a job; returns it as JSON (`id`, `state`, …). |
 | `GetJob(id)` / `ListJobs()` | A job, or the jobs your plugin started. |
@@ -330,7 +331,7 @@ For plugins that don't use `XivMcpClient.cs`. XIV MCP's gates are named `XivMcp.
 | `RegisterTool` | `Func<string owner, string definitionJson, string>` | `{"name","enabled","awaitingConsent","state","capabilities":[{"id","mode"}]}` |
 | `UnregisterTool` | `Func<string owner, string name, string>` | `{"removed": bool}` |
 | `UnregisterAll` | `Func<string owner, string>` | `{"removed": count}` |
-| `GetStatus` | `Func<string owner, string>` | `{"state","canRun","suspendReason","tools","capabilities":[{"id","mode"}]}` |
+| `GetStatus` | `Func<string owner, string>` | `{"state","canRun","suspendReason","tools":[{"name","mode","own"}],"capabilities":[{"id","mode"}]}` |
 | `CheckPermission` | `Func<string owner, string capability, string>` | `{"mode":"allow"\|"ask"\|"deny","enabled","suspended","state"}` |
 | `RequestApproval` | `Func<string callId, string requestJson, string>` | Request `{"capability","summary"}`; returns `{"approvalId","state"}` |
 | `GetApproval` | `Func<string approvalId, string>` | `{"state":"pending"\|"approved"\|"denied"}` |
@@ -382,9 +383,3 @@ you → XivMcp   CompleteCall("c1", "{\"kills\":31}")             (the result it
 ```
 
 XIV MCP has no time limit of its own on pending calls. Approval windows decline after two minutes, and after a `Cancel` XIV MCP waits up to two minutes for your `CompleteCall` or `FailCall`.
-
-### Upgrading from version 1
-
-- Declare `capabilities` on every tool that isn't read-only.
-- The player now consents to your registration, and again when it grows.
-- New gates: `ListCapabilities`, `CheckPermission`, `GetStatus`, `RequestApproval` and `GetApproval`.

@@ -304,7 +304,7 @@ internal static class CraftPlanTools
             switch (ShopTools.SoldByVendor(id))
             {
                 case true: options.Add(new { how = "buy", from = "NPC vendor", tool = "find_vendors / buy_item" }); break;
-                case null: options.Add(new { how = "buy?", hint = "install Item Vendor Location to see vendors (/xivmcp → Permissions → Market & purchases)" }); break;
+                case null: options.Add(new { how = "buy?", hint = "install Item Vendor Location to see vendors (/xivmcp → Modules → Market & purchases)" }); break;
             }
             if (Ventured.Value.Contains(id))
                 options.Add(new { how = "venture", tool = "find_ventures / assign_venture" });

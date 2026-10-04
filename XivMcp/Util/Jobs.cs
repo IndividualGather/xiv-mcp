@@ -361,7 +361,7 @@ internal sealed class JobManager : IDisposable, ICache
             if (!tools.TryGet(s.Tool, out var stepTool)) throw new ToolException($"Unknown tool '{s.Tool}' in a step.");
             if (ControlTools.Contains(s.Tool)) throw new ToolException($"'{s.Tool}' can't be a job step.");
             if (!stepTool.IsAvailable) throw new ToolException($"'{s.Tool}' is not available right now (the plugin it needs is not loaded).");
-            if (!gate.IsListed(stepTool)) throw new ToolException($"'{s.Tool}' is turned off in /xivmcp → Permissions.");
+            if (!gate.IsListed(stepTool)) throw new ToolException($"'{s.Tool}' is turned off in /xivmcp → Modules.");
             if (string.IsNullOrWhiteSpace(s.Id)) s.Id = $"s{++n}";
             if (!used.Add(s.Id)) throw new ToolException($"Duplicate step id '{s.Id}'.");
         }
