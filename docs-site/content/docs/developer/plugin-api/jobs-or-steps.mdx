@@ -28,7 +28,7 @@ The assistant calls a tool, reads the result, and picks the next call.
 
 - It adapts to every result: full bags, a missing NPC, a price that moved.
 - It is expensive. Each call is a model request, and waiting means asking again and again.
-- Each call has to finish within the AI app's time limit, and the chat has to stay open.
+- Each call has to finish within the AI app's [time limit](#how-long-one-call-may-take), often a minute, and the chat has to stay open.
 
 ## As a job
 
@@ -74,6 +74,23 @@ The assistant sends the whole list once. XIV MCP runs the steps, passes results 
 | **The chat** | Must stay open | Can be closed |
 
 Both follow the same permission settings.
+
+## How long one call may take
+
+AI apps stop waiting for a tool call after a while and cancel it. XIV MCP answers a call only when it is done, so this limit applies to the whole call. Job steps are not affected: they run inside XIV MCP, without a request held open.
+
+| App | Limit for one call | Can you change it? |
+|---|---|---|
+| **ChatGPT** (Codex) | 60 seconds | Yes: `tool_timeout_sec` in XIV MCP's entry in `~/.codex/config.toml` |
+| **Claude Code** | 60 seconds | Yes: a `timeout` in milliseconds in XIV MCP's server entry, or the `MCP_TOOL_TIMEOUT` environment variable |
+| **Claude Desktop** | About 60 seconds | No. Users report that the limit is fixed and timeout settings are ignored. |
+
+```toml title="~/.codex/config.toml"
+[mcp_servers.ffxiv]
+tool_timeout_sec = 600   # ten minutes
+```
+
+The values are from the apps' documentation and user reports as of October 2026, and may change. Claude Code waits at least 60 seconds for the first byte of an answer, and longer only when a longer timeout is set. A minute is plenty for reading the game and for most single actions. Anything that may take longer, such as a dungeon run, gathering or a whole crafting list, belongs in a job.
 
 ## Which one to use
 

@@ -39,7 +39,7 @@ Your assistant can get a task with several steps done in two ways:
 |---|---|---|
 | **Tokens** | Every call and every result costs tokens. Waiting costs the most: to know whether something has happened, the assistant keeps asking. | Starting costs one call. The steps cost nothing. |
 | **Surprises** | Handled as they come: full bags, a missing NPC, a price that moved. The assistant sees every result and adapts. | The job follows its plan. Something unexpected stops the step, and the job waits as *pending* until your assistant fixes it. |
-| **Long tasks** | Each call has to finish within your app's time limit. | Steps can take hours. |
+| **Long tasks** | Each call has to finish within your app's [time limit](/docs/developer/plugin-api/jobs-or-steps#how-long-one-call-may-take), often a minute. | Steps can take hours. |
 | **The chat** | Has to stay open. | Can be closed. |
 
 Your settings in `/xivmcp` apply the same way to both.

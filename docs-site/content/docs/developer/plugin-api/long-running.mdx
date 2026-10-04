@@ -36,7 +36,7 @@ A long-running tool is one tool. A [job](/docs/developer/plugin-api/jobs) is a w
 />
 
 - **As a job step,** the usual way, the tool can run for hours. The assistant (or your plugin, with `StartJob`) puts it into a job, and the job waits until it is done before starting the next step.
-- **Called directly,** it works too, but only within the AI app's own time limit for a request, which XIV MCP does not control. XIV MCP sends nothing while it waits, and when the app gives up, the call is cancelled.
+- **Called directly,** it works too, but only within the AI app's own [time limit](/docs/developer/plugin-api/jobs-or-steps#how-long-one-call-may-take) for a request, often a minute, which XIV MCP does not control. XIV MCP sends nothing while it waits, and when the app gives up, the call is cancelled.
 - **Cancelling comes from the job.** Pausing or cancelling the job fires `call.Cancellation`, and so does an app that aborts a direct call.
 - **Progress goes to the job log,** shown in `/xivmcp` → **Jobs** and in `get_job`.
 - **Failing makes the job wait.** The step becomes *pending* until the assistant retries, skips or changes it.
