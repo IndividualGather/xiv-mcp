@@ -47,7 +47,9 @@ Open [http://localhost:3000/xiv-mcp](http://localhost:3000/xiv-mcp). Pages reloa
 | `XivMcp.Core/Mcp/ToolSummaries.cs` | The sentence for the player |
 | `XivMcp/**/*.cs` | Whether a tool changes something (`ReadOnly = false`) |
 
-It warns when a tool has no summary or no definition. If one of these files changes its format, the script stops with an error instead of writing an empty page.
+The same script writes `content/docs/developer/plugin-api/tool-requirements.mdx` (also not committed) from `XivMcp.Core/Integrations/PluginCatalog.cs`, `ToolRequirements.cs` and `IntegrationCatalog.cs`.
+
+It warns when a tool has no summary or no definition, or uses a plugin that is not in the catalog. If one of these files changes its format, the script stops with an error instead of writing an empty page.
 
 ## Build and publish
 

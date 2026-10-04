@@ -1,0 +1,163 @@
+---
+title: "Example: a job across plugins"
+description: A complete plugin whose job uses its own tool, XIV MCP's tools and another plugin's tool.
+icon: Route
+---
+
+This page builds **Restock Helper**, a small plugin that keeps a list of consumables topped up. It does only the part that is its own, deciding what is short, and leaves everything else to tools that already exist:
+
+| Step | Tool | From | Needs |
+|---|---|---|---|
+| 1. Decide what to buy | `restock_plan` | Restock Helper | Nothing |
+| 2. Buy it | `buy_item` | XIV MCP | Item Vendor Location, vnavmesh, Lifestream |
+| 3. Walk back to a bell | `navigate_to` | XIV MCP | vnavmesh, Lifestream |
+| 4. Tell the free company | `chatbridge_post` | Chat Bridge, another plugin | Chat Bridge 2.1.0 or newer |
+
+Chat Bridge is made up for this example. Swap in any plugin that offers its tools through XIV MCP.
+
+## The plugin
+
+Start from [`XivMcpClient.cs`](/docs/developer/plugin-api), copied into the plugin.
+
+```csharp title="Plugin.cs"
+using System.Linq;
+using Dalamud.Game.Command;
+using Dalamud.IoC;
+using Dalamud.Plugin;
+using Dalamud.Plugin.Services;
+using XivMcp.Client;
+
+namespace RestockHelper;
+
+public sealed class Plugin : IDalamudPlugin
+{
+    [PluginService]
+    private static IChatGui Chat { get; set; } = null!;
+
+    [PluginService]
+    private static ICommandManager Commands { get; set; } = null!;
+
+    private readonly XivMcpClient mcp;
+
+    public Plugin(IDalamudPluginInterface pluginInterface)
+    {
+        mcp = new XivMcpClient(pluginInterface);
+
+        // 1. Our own part: what is short. It only reads, so it needs
+        //    no capabilities and runs without asking.
+        mcp.AddTool(
+            new McpToolDefinition(
+                "restock_plan",
+                "Which consumable on the player's restock list is " +
+                "shortest, and how many to buy to fill it up.")
+            {
+                ReadOnly = true,
+            },
+            args => Shortest());
+
+        // 2. The tools our job uses that are not ours.
+        mcp.UsesTools(
+            McpDependency.BuiltIn("buy_item"),
+            McpDependency.BuiltIn("navigate_to"),
+            McpDependency.FromPlugin(
+                tool: "chatbridge_post",
+                plugin: "ChatBridge",
+                pluginName: "Chat Bridge",
+                repo: "https://example.com/chatbridge/repo.json",
+                minVersion: "2.1.0"));
+
+        Commands.AddHandler("/restock", new CommandInfo(OnRestock)
+        {
+            HelpMessage = "Buy what is short, then go back to a bell.",
+        });
+    }
+
+    private void OnRestock(string command, string arguments)
+    {
+        // 3. Check first, so the player learns what is missing here
+        //    instead of from a refused job.
+        var missing = mcp.GetStatus().Dependencies
+            .Where(d => !d.Ok).ToList();
+        if (missing.Count > 0)
+        {
+            foreach (var d in missing)
+                Chat.PrintError($"{d.Tool}: {d.Message}", "Restock Helper");
+            Chat.Print("See /xivmcp → Third-party plugins.",
+                "Restock Helper");
+            return;
+        }
+
+        // 4. One job across three plugins. Results flow between steps.
+        try
+        {
+            var job = mcp.StartJob("Restock",
+                new McpJobStep("restock_plan", Id: "plan"),
+                new McpJobStep("buy_item", new
+                {
+                    item = "{{plan.item}}",
+                    quantity = "{{plan.quantity}}",
+                }),
+                new McpJobStep("navigate_to",
+                    new { destination = "summoning_bell" }),
+                new McpJobStep("chatbridge_post", new
+                {
+                    channel = "fc",
+                    text = "Restocked {{plan.quantity}} {{plan.item}}.",
+                }));
+            Chat.Print($"Started job {job["id"]}.", "Restock Helper");
+        }
+        catch (McpToolException ex)
+        {
+            Chat.PrintError(ex.Message, "Restock Helper");
+        }
+    }
+
+    private static object Shortest() =>
+        new { item = "Grade 8 Tincture of Strength", quantity = 20 };
+
+    public void Dispose()
+    {
+        Commands.RemoveHandler("/restock");
+        mcp.Dispose();
+    }
+}
+```
+
+## What happens
+
+<Steps>
+<Step>
+
+**At startup** the plugin registers `restock_plan` and declares its three other tools. The player gets the usual notification and enables Restock Helper in `/xivmcp` → **Third-party plugins**.
+
+</Step>
+<Step>
+
+**On its card**, under **Tools its jobs use**, the player sees all three. Say vnavmesh is missing and Chat Bridge is not installed. Then `buy_item` and `navigate_to` show errors naming vnavmesh, with its repository and buttons to add it. `chatbridge_post` shows an error with Chat Bridge's repository and version. The tab label says that something is missing.
+
+</Step>
+<Step>
+
+**`/restock`** checks `GetStatus().Dependencies` first and prints what is missing in chat, instead of starting a job that would be refused.
+
+</Step>
+<Step>
+
+**Once everything is there,** `/restock` starts the job. Each step is checked against its own tool's settings:
+
+- `restock_plan` reads, under Restock Helper's *Reading*.
+- `buy_item` follows *Market & purchases*; anything not paid in gil also asks in the game.
+- `navigate_to` follows *Game & navigation*.
+- `chatbridge_post` follows Chat Bridge's own capabilities, such as *Send chat*.
+
+</Step>
+<Step>
+
+**Results flow:** `{{plan.item}}` and `{{plan.quantity}}` carry the plan into `buy_item` and into Chat Bridge's message. `"{{plan.quantity}}"` on its own keeps its type, so `buy_item` gets the number `20`.
+
+</Step>
+</Steps>
+
+## Trying the same thing with Hello MCP
+
+[Hello MCP](/docs/developer/plugin-api/hello-mcp) declares `get_game_status` and `navigate_to`. `/hellomcp bell` starts a job that walks to a summoning bell with `navigate_to`, then prints the result with its own `hellomcp_print`. Disable vnavmesh in the plugin installer, and Hello MCP's card shows the error and the button to enable it again.

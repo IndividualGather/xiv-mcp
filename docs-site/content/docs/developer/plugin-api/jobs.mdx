@@ -4,13 +4,14 @@ description: Run steps one after another, your tools and XIV MCP's own, for as l
 icon: ListChecks
 ---
 
-A job runs steps one after another, each as long as it needs. Steps can be your tools, other plugins' tools or XIV MCP's own.
+A job runs steps one after another, each as long as it needs. Steps can be your tools, other plugins' tools or XIV MCP's own. Steps that take a while are [long-running tools](/docs/developer/plugin-api/long-running): the job is what lets them run for hours, stops them when it is paused or cancelled, and keeps their progress in its log.
 
 ```csharp
 var job = mcp.StartJob("Farm, then head to a bell",
     new McpJobStep("myplugin_farm", new { minutes = 90 }, Id: "farm"),
     new McpJobStep("navigate_to", new { destination = "summoning_bell" }),
-    new McpJobStep("myplugin_report", new { text = "Farmed {{farm.kills}} kills." }));
+    new McpJobStep("myplugin_report",
+        new { text = "Farmed {{farm.kills}} kills." }));
 ```
 
 ## Placeholders
@@ -19,9 +20,13 @@ var job = mcp.StartJob("Farm, then head to a bell",
 - Paths go into objects and arrays: `{{plan.list.id}}`, `{{search.items.0.id}}`.
 - Paths ignore case, so a result `new { Kills = 12 }` (sent as `{"kills": 12}`) is read by `{{farm.kills}}`.
 
+## Other plugins' tools
+
+Steps can call XIV MCP's tools and other plugins' tools too. Declare the ones you use with `UsesTools`, so the player sees what is missing before a job is refused. See [Using other tools in your jobs](/docs/developer/plugin-api/interop) and the [example](/docs/developer/plugin-api/interop-example).
+
 ## XIV MCP's own tools
 
-They are listed with their purpose in the [tools reference](/docs/user/tools), and with their arguments in `tools/list`. For example, `new McpJobStep("sell_item", new { retainer = "{{pick.retainer}}", item = "Iron Ore" })` passes your result into one of them.
+They are listed with their purpose in the [tools reference](/docs/user/tools), and with their arguments in `tools/list`. The ones that need other plugins are on [Tools that need plugins](/docs/developer/plugin-api/tool-requirements). For example, `new McpJobStep("sell_item", new { retainer = "{{pick.retainer}}", item = "Iron Ore" })` passes your result into one of them.
 
 ## Permissions and control
 

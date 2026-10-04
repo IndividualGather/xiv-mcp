@@ -29,8 +29,8 @@ public sealed class Plugin : IDalamudPlugin
         mcp.RegistrationFailed += message => Log.Warning($"XIV MCP rejected a tool: {message}");
 
         mcp.AddTool(
-            new McpToolDefinition("myplugin_status", "What My Plugin is doing right now: its mode and current target.") { ReadOnly = true },
-            args => new { mode = Mode.ToString(), target = CurrentTarget?.Name });
+            new McpToolDefinition("myplugin_status", "Whom My Plugin is following right now, if anyone.") { ReadOnly = true },
+            args => new { following = FollowTarget?.Name });
     }
 
     public void Dispose() => mcp.Dispose();
@@ -61,28 +61,41 @@ Pick capabilities from [the table below](#capabilities-what-to-declare). If you'
 
 ### Take arguments
 
-Describe them with a JSON schema; read them from the `JsonObject`:
+Arguments are the details of one call. The assistant fills them in from what the player asked for, or a job step passes them in its `args`. `InputSchema` is a JSON schema that tells the assistant which arguments exist, what each means and which values are allowed; the handler reads what was sent from the `JsonObject`.
+
+A real example: XIV MCP's own `set_map_flag`, here as a plugin tool. "Put a flag at 21.4, 18.2 in Kozama'uka" becomes `{ "zone": "Kozama'uka", "x": 21.4, "y": 18.2 }`:
 
 ```csharp
 mcp.AddTool(
-    new McpToolDefinition("myplugin_set_mode", "Switches My Plugin's mode. Use \"idle\" to stop it.")
+    new McpToolDefinition("myplugin_set_flag", "Places the flag on the player's map at map coordinates in any zone, and opens the map at it.")
     {
         Capabilities = [McpCapabilities.GameUi],
         InputSchema = """
             {
               "type": "object",
-              "properties": { "mode": { "type": "string", "enum": ["idle", "follow", "assist"], "description": "The new mode." } },
-              "required": ["mode"]
+              "properties": {
+                "x": { "type": "number", "description": "Map X coordinate, as the in-game map shows it (about 1 to 42)." },
+                "y": { "type": "number", "description": "Map Y coordinate, as the in-game map shows it." },
+                "zone": { "type": "string", "description": "Zone name or territory id. Default: the zone you are in." },
+                "open_map": { "type": "boolean", "description": "Open the map at the flag. Default true." }
+              },
+              "required": ["x", "y"]
             }
             """,
     },
     args =>
     {
-        var mode = args["mode"]?.GetValue<string>() ?? throw new McpToolException("Give 'mode'.");
-        SetMode(mode);
-        return new { mode };
+        var x = args["x"]?.GetValue<double>() ?? throw new McpToolException("'x' is required.");
+        var y = args["y"]?.GetValue<double>() ?? throw new McpToolException("'y' is required.");
+        if (x is < 1 or > 42 || y is < 1 or > 42) throw new McpToolException($"({x}, {y}) is off the map: map coordinates run from 1 to 42.");
+        var zone = args["zone"]?.GetValue<string>();                // optional: not in "required"; null means the current zone
+        var openMap = args["open_map"]?.GetValue<bool>() ?? true;   // optional, default in the description
+        PlaceFlag(zone, x, y, openMap);
+        return new { zone, x, y, mapOpened = openMap };
     });
 ```
+
+XIV MCP passes arguments on as they were sent and doesn't check them against the schema, so validate them before acting.
 
 ### Return results and errors
 
@@ -179,6 +192,26 @@ var job = mcp.StartJob("Farm, then head to a bell",
 - **XIV MCP's own tools** are listed, with their arguments, in the [README](../README.md#tools) and in `tools/list`. For example, `new McpJobStep("sell_item", new { retainer = "{{pick.retainer}}", item = "Iron Ore" })` passes your result into one of them.
 - **Permissions:** every step is checked against the player's settings, so a step set to *Ask* waits for the player.
 - **Control:** use `GetJob(id)`, `ListJobs()`, `PauseJob`, `ResumeJob` and `CancelJob`. Your jobs show in `/xivmcp` → **Jobs** with your plugin's name.
+- **Missing tools:** `StartJob` refuses a job if a step's tool doesn't exist, isn't available (its plugin isn't loaded or isn't enabled in XIV MCP) or is turned off. A built-in tool whose plugin is missing fails when its step runs.
+
+### Use other plugins' tools, and declare them
+
+Steps can call XIV MCP's own tools and other plugins' tools. Each step is checked against the settings of the tool it calls, not yours. Declare the ones your jobs use at startup, so the player sees on your card in `/xivmcp` → **Third-party plugins** what is missing, with a way to install it:
+
+```csharp
+mcp.UsesTools(
+    McpDependency.BuiltIn("navigate_to"),          // XIV MCP knows it needs vnavmesh and Lifestream
+    McpDependency.FromPlugin("otherplugin_announce",
+        plugin: "OtherPlugin",                       // its internal name
+        pluginName: "Other Plugin",                  // its name in the installer
+        repo: "https://example.com/repo.json",       // its repo.json, or "official"
+        minVersion: "1.2.0"));                       // the oldest version with the tool
+```
+
+- Built-in tools take no plugin fields; naming a plugin for one is refused. Any other name needs all four.
+- Calling `UsesTools` again replaces the list. It's sent again whenever XIV MCP loads.
+- `GetStatus().Dependencies` tells you where each one stands: `ok`, `needs_plugin`, `plugin_missing`, `plugin_not_loaded`, `plugin_outdated`, `tool_missing` or `not_enabled`.
+- Declaring asks the player for nothing and allows nothing; it only shows what your jobs need.
 
 ## Capabilities: what to declare
 
@@ -233,8 +266,9 @@ Every call, decision and approval is listed under your plugin in `/xivmcp` → *
 | `AddTool(definition, args => result)` | A tool that answers right away, called on the framework thread. |
 | `AddLongRunningTool(definition, async call => result)` | A tool that may take long; see `McpCall`. |
 | `RemoveTool(name)` | Unregisters one tool. |
-| `GetStatus()` | `McpStatus`: your `State`, `CanRun`, `SuspendReason`, the setting of each declared capability (`Capabilities`) and of each tool as a whole (`Tools`). |
+| `GetStatus()` | `McpStatus`: your `State`, `CanRun`, `SuspendReason`, the setting of each declared capability (`Capabilities`) and of each tool as a whole (`Tools`), and each declared dependency (`Dependencies`). |
 | `CheckPermission(capability)` | `Allow`, `Ask` or `Deny` for one capability (`Deny` unless enabled). |
+| `UsesTools(params dependencies)` | Declares the tools your jobs use that aren't yours (`McpDependency.BuiltIn` / `FromPlugin`). |
 | `StartJob(name, params steps)` | Starts a job; returns it as JSON (`id`, `state`, …). |
 | `GetJob(id)` / `ListJobs()` | A job, or the jobs your plugin started. |
 | `PauseJob(id)` / `ResumeJob(id)` / `CancelJob(id)` | Job control. |
@@ -331,7 +365,8 @@ For plugins that don't use `XivMcpClient.cs`. XIV MCP's gates are named `XivMcp.
 | `RegisterTool` | `Func<string owner, string definitionJson, string>` | `{"name","enabled","awaitingConsent","state","capabilities":[{"id","mode"}]}` |
 | `UnregisterTool` | `Func<string owner, string name, string>` | `{"removed": bool}` |
 | `UnregisterAll` | `Func<string owner, string>` | `{"removed": count}` |
-| `GetStatus` | `Func<string owner, string>` | `{"state","canRun","suspendReason","tools":[{"name","mode","own"}],"capabilities":[{"id","mode"}]}` |
+| `GetStatus` | `Func<string owner, string>` | `{"state","canRun","suspendReason","tools":[{"name","mode","own"}],"capabilities":[{"id","mode"}],"dependencies":[{"tool","plugin","state","message","install"}]}` |
+| `DeclareDependencies` | `Func<string owner, string json, string>` | `{"tools":[{"tool"}, {"tool","plugin","name","repo","minVersion"}]}`; returns `{"dependencies":[…]}` |
 | `CheckPermission` | `Func<string owner, string capability, string>` | `{"mode":"allow"\|"ask"\|"deny","enabled","suspended","state"}` |
 | `RequestApproval` | `Func<string callId, string requestJson, string>` | Request `{"capability","summary"}`; returns `{"approvalId","state"}` |
 | `GetApproval` | `Func<string approvalId, string>` | `{"state":"pending"\|"approved"\|"denied"}` |

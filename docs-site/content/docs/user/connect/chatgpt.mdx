@@ -15,11 +15,18 @@ In `/xivmcp` → **Connect**, choose **ChatGPT** and click the button. XIV MCP a
 
 ## By hand
 
-Codex can read the token from an environment variable. Open a new terminal after `setx`, before you start Codex:
+Codex can read the token from an environment variable. In PowerShell, store the token:
 
-```sh
+```powershell
 setx XIVMCP_TOKEN "<token>"
-codex mcp add ffxiv --url http://localhost:37521/mcp --bearer-token-env-var XIVMCP_TOKEN
+```
+
+Then open a new terminal, so it sees the variable, and add the server before you start Codex:
+
+```powershell
+codex mcp add ffxiv `
+  --url http://localhost:37521/mcp `
+  --bearer-token-env-var XIVMCP_TOKEN
 ```
 
 Or add the server to `~/.codex/config.toml` directly:

@@ -16,7 +16,9 @@ The full guide is [docs/plugin-api.md](../docs/plugin-api.md).
 | `hellomcp_countdown` | long-running | `game_ui` | Replying "pending", `call.Progress(…)`, stopping on `call.Cancellation`, going back to the framework thread |
 | `hellomcp_pretend_purchase` | long-running | `spend_gil` | `mcp.CheckPermission(…)` and `call.RequestApprovalAsync(…)`: asking the player at the risky moment with the real numbers. Nothing is bought. |
 
-The `/hellomcp job` command starts a job: the countdown, then a chat message that uses the countdown's result (`{{count.seconds}}`), then XIV MCP's own `get_game_status`. `/hellomcp jobs` lists the jobs the plugin started.
+The `/hellomcp job` command starts a job: the countdown, then a chat message that uses the countdown's result (`{{count.seconds}}`), then XIV MCP's own `get_game_status`. `/hellomcp bell` starts a job that walks to a summoning bell with XIV MCP's `navigate_to`, then prints the result. `/hellomcp jobs` lists the jobs the plugin started.
+
+The plugin declares the tools its jobs use besides its own (`mcp.UsesTools(McpDependency.BuiltIn("get_game_status"), McpDependency.BuiltIn("navigate_to"))`). They show on its card in `/xivmcp` → **Third-party plugins**, with an error and an install button when a plugin they need is missing.
 
 ## Try it
 

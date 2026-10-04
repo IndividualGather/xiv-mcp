@@ -31,6 +31,26 @@ internal static class DalamudInternals
 
     public static object? Prop(object target, string name) => target.GetType().GetProperty(name, Any)?.GetValue(target);
 
+    /// <summary>
+    /// The custom plugin repositories the player added in Dalamud's settings (URL and whether it is enabled), or null when this
+    /// Dalamud version keeps them elsewhere. Only read: XIV MCP never adds a repository itself.
+    /// </summary>
+    public static IReadOnlyList<(string Url, bool Enabled)>? CustomRepositories()
+    {
+        try
+        {
+            var config = GetService("Dalamud.Configuration.Internal.DalamudConfiguration");
+            if (Prop(config, "ThirdRepoList") is not IEnumerable list) return null;
+            return list.Cast<object>().Select(r => (Url: Prop(r, "Url") as string ?? "", Enabled: Prop(r, "IsEnabled") is true))
+                       .Where(r => r.Url.Length > 0).ToList();
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Debug($"[MCP] Could not read Dalamud's custom repositories: {ex.Message}");
+            return null;
+        }
+    }
+
     /// <summary>All installed plugins as Dalamud LocalPlugin instances.</summary>
     public static List<object> InstalledPlugins() =>
         ((IEnumerable)Prop(PluginManager, "InstalledPlugins")!).Cast<object>().ToList();

@@ -29,7 +29,14 @@ icon: Lightbulb
 | `hellomcp_countdown` | long-running | `game_ui` | Replying "pending", `call.Progress(…)`, stopping on `call.Cancellation`, going back to the framework thread |
 | `hellomcp_pretend_purchase` | long-running | `spend_gil` | `mcp.CheckPermission(…)` and `call.RequestApprovalAsync(…)`: asking the player at the risky moment with the real numbers. Nothing is bought. |
 
-The `/hellomcp job` command starts a job: the countdown, then a chat message that uses the countdown's result (`{{count.seconds}}`), then XIV MCP's own `get_game_status`. `/hellomcp jobs` lists the jobs the plugin started.
+It also declares the tools its jobs use besides its own, `get_game_status` and `navigate_to`, with `mcp.UsesTools(...)`. They show on its card under **Tools its jobs use**. See [Using other tools in your jobs](/docs/developer/plugin-api/interop).
+
+| Command | What it does |
+|---|---|
+| `/hellomcp job` | Starts a job: the countdown, then a chat message that uses the countdown's result (`{{count.seconds}}`), then XIV MCP's own `get_game_status`. |
+| `/hellomcp bell` | Starts a job that walks to a summoning bell with XIV MCP's `navigate_to`, then prints the result (`{{walk.arrived}}`). |
+| `/hellomcp jobs` | Lists the jobs the plugin started. |
+| `/hellomcp status` | Shows what the plugin sees (`mcp.GetStatus()`), including tools its jobs use that cannot run. |
 
 ## Try it
 
@@ -61,6 +68,7 @@ dotnet build examples/HelloMcp/HelloMcp.csproj -c Debug
 - Ask it to "print hello in chat with Hello MCP". The approval window asks first. Choose *Approve for this session* and ask again; it does not ask a second time.
 - Ask it to "pretend to buy a Hi-Potion with Hello MCP". The call itself is approved first, then the tool asks again with the price.
 - Type `/hellomcp job` and watch the job in `/xivmcp` → **Jobs**. Pause it while the countdown runs to see cancellation, then resume it.
+- Type `/hellomcp bell`. It walks you to a bell if vnavmesh and Lifestream are there. Turn vnavmesh off in the plugin installer, and Hello MCP's card shows `navigate_to` as an error, with a button to enable it again.
 - Check the activity list under *Hello MCP*: every call, decision and approval is recorded.
 
 </Step>

@@ -95,3 +95,10 @@ html > body[data-scroll-locked] {
 .dark .prose a:not([data-card]) {
   text-decoration-color: rgba(59, 239, 196, 0.5);
 }
+
+/* Long URLs in tables wrap anywhere instead of making the table scroll; tool names stay whole. */
+.xiv-url {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.85em;
+  word-break: break-all;
+}

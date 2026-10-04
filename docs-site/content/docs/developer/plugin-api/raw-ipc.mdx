@@ -20,7 +20,8 @@ For plugins that do not use `XivMcpClient.cs`.
 | `RegisterTool` | `Func<string owner, string definitionJson, string>` | `{"name","enabled","awaitingConsent","state","capabilities":[{"id","mode"}]}` |
 | `UnregisterTool` | `Func<string owner, string name, string>` | `{"removed": bool}` |
 | `UnregisterAll` | `Func<string owner, string>` | `{"removed": count}` |
-| `GetStatus` | `Func<string owner, string>` | `{"state","canRun","suspendReason","tools":[{"name","mode","own"}],"capabilities":[{"id","mode"}]}` |
+| `GetStatus` | `Func<string owner, string>` | `{"state","canRun","suspendReason","tools":[{"name","mode","own"}],"capabilities":[{"id","mode"}],"dependencies":[…]}` |
+| `DeclareDependencies` | `Func<string owner, string json, string>` | Declares the tools your jobs use (see below); returns `{"dependencies":[…]}` |
 | `CheckPermission` | `Func<string owner, string capability, string>` | `{"mode":"allow"\|"ask"\|"deny","enabled","suspended","state"}` |
 | `RequestApproval` | `Func<string callId, string requestJson, string>` | Request `{"capability","summary"}`; returns `{"approvalId","state"}` |
 | `GetApproval` | `Func<string approvalId, string>` | `{"state":"pending"\|"approved"\|"denied"}` |
@@ -39,7 +40,7 @@ For plugins that do not use `XivMcpClient.cs`.
 ```json
 {
   "name": "myplugin_restock",
-  "description": "Buys the consumables your list is short of from the nearest vendor.",
+  "description": "Buys what your list is short of from the nearest vendor.",
   "inputSchema": { "type": "object", "properties": {} },
   "readOnly": false,
   "destructive": false,
@@ -48,6 +49,48 @@ For plugins that do not use `XivMcpClient.cs`.
 ```
 
 `capabilities` is required unless `readOnly`. `readOnly` and `destructive` cannot both be true, and unknown capability ids are rejected.
+
+### Dependencies
+
+The declaration replaces the previous one; `{"tools": []}` clears it.
+
+```json
+{
+  "tools": [
+    { "tool": "navigate_to" },
+    {
+      "tool": "otherplugin_announce",
+      "plugin": "OtherPlugin",
+      "name": "Other Plugin",
+      "repo": "https://example.com/repo.json",
+      "minVersion": "1.2.0"
+    }
+  ]
+}
+```
+
+A built-in tool is named alone; naming a plugin for one is refused. Any other tool needs `plugin`, `name`, `repo` (an `https://` URL, or `"official"`) and `minVersion`. At most 64 tools.
+
+Each entry of `dependencies` in the reply and in `GetStatus`:
+
+```json
+{
+  "tool": "navigate_to",
+  "plugin": null,
+  "state": "needs_plugin",
+  "message": "Needs vnavmesh, which is not installed or not enabled.",
+  "install": [
+    {
+      "plugin": "vnavmesh", "name": "vnavmesh",
+      "repo": "https://puni.sh/api/repository/veyn",
+      "needed": true, "installed": false, "outdated": false,
+      "reason": "Walks to the destination when it is not in sight."
+    }
+  ]
+}
+```
+
+`state` is one of `ok`, `needs_plugin`, `plugin_missing`, `plugin_not_loaded`, `plugin_outdated`, `tool_missing` or `not_enabled`. `install` lists the plugins to install, enable or update; `needed: false` marks one that only improves the tool.
 
 ## Gates your plugin provides
 
@@ -62,12 +105,25 @@ For plugins that do not use `XivMcpClient.cs`.
 
 ```text
 XivMcp → you   Invoke("c1", "myplugin_farm", "{\"minutes\":1}")
-you → XivMcp   reply {"pending": true}                         (start the work, return at once)
-you → XivMcp   ReportProgress("c1", "12 kills")                 (any number of times)
-you → XivMcp   RequestApproval("c1", "{\"capability\":\"spend_gil\",\"summary\":\"Repair for 3,200 gil\"}")
-                → {"approvalId":"a7","state":"pending"}; poll GetApproval("a7") every ~250 ms until approved or denied
-XivMcp → you   Cancel("c1")                                     (only if the job is paused or cancelled: stop safely)
-you → XivMcp   CompleteCall("c1", "{\"kills\":31}")             (the result itself, not wrapped in {"result": …})
+
+you → XivMcp   reply {"pending": true}
+               (start the work, return at once)
+
+you → XivMcp   ReportProgress("c1", "12 kills")
+               (any number of times)
+
+you → XivMcp   RequestApproval("c1", request) with the request
+               {"capability":"spend_gil",
+                "summary":"Repair for 3,200 gil"}
+               → {"approvalId":"a7","state":"pending"}
+               poll GetApproval("a7") every ~250 ms
+               until approved or denied
+
+XivMcp → you   Cancel("c1")
+               (only if the job is paused or cancelled: stop safely)
+
+you → XivMcp   CompleteCall("c1", "{\"kills\":31}")
+               (the result itself, not wrapped in {"result": …})
                or FailCall("c1", "Bags full after 31 kills.")
 ```
 

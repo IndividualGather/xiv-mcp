@@ -12,8 +12,9 @@ icon: Library
 | `AddTool(definition, args => result)` | A tool that answers right away, called on the framework thread. |
 | `AddLongRunningTool(definition, async call => result)` | A tool that may take long; see `McpCall`. |
 | `RemoveTool(name)` | Unregisters one tool. |
-| `GetStatus()` | `McpStatus`: your `State`, `CanRun`, `SuspendReason`, the setting of each declared capability (`Capabilities`) and of each tool as a whole (`Tools`). |
+| `GetStatus()` | `McpStatus`: your `State`, `CanRun`, `SuspendReason`, the setting of each declared capability (`Capabilities`) and of each tool as a whole (`Tools`), and where each declared dependency stands (`Dependencies`). |
 | `CheckPermission(capability)` | `Allow`, `Ask` or `Deny` for one capability (`Deny` unless enabled). |
+| `UsesTools(params dependencies)` | Declares the tools your jobs use that are not yours. See [Using other tools in your jobs](/docs/developer/plugin-api/interop). |
 | `StartJob(name, params steps)` | Starts a job; returns it as JSON (`id`, `state`, …). |
 | `GetJob(id)` / `ListJobs()` | A job, or the jobs your plugin started. |
 | `PauseJob(id)` / `ResumeJob(id)` / `CancelJob(id)` | Job control. |
@@ -31,6 +32,26 @@ icon: Library
 | `ReadOnly` | True if it changes nothing. It runs during jobs and needs no capabilities. |
 | `Destructive` | True if the changes are hard to undo. |
 | `Capabilities` | `McpCapabilities` ids. Required unless `ReadOnly`. |
+
+## `McpDependency(Tool)`
+
+A tool your jobs use, for `UsesTools`. Create it with one of:
+
+| Factory | For |
+|---|---|
+| `McpDependency.BuiltIn(tool)` | One of XIV MCP's own tools, core or integration. XIV MCP knows which plugins it needs. |
+| `McpDependency.FromPlugin(tool, plugin, pluginName, repo, minVersion)` | Another plugin's tool: its internal name, its name in the installer, the `https://` URL of its `repo.json` (or `"official"`), and the oldest version that has the tool. |
+
+## `McpDependencyStatus`
+
+One entry of `McpStatus.Dependencies`.
+
+| Member | Meaning |
+|---|---|
+| `Tool` | The declared tool. |
+| `State` | `ok`, `needs_plugin`, `plugin_missing`, `plugin_not_loaded`, `plugin_outdated`, `tool_missing` or `not_enabled`. |
+| `Message` | What is wrong, in words the player understands. |
+| `Ok` | True when `State` is `ok`. |
 
 ## `McpCall` (long-running tools)
 

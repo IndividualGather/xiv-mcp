@@ -23,8 +23,8 @@ namespace XivMcp.Api;
 /// capability (allow / ask / deny), in-game approval, side-effect checks and the audit log.
 ///
 /// XIV MCP provides (prefix "XivMcp."): ApiVersion, IsReady, ListCapabilities, RegisterTool, UnregisterTool, UnregisterAll,
-/// CheckPermission, RequestApproval, GetApproval, CompleteCall, FailCall, ReportProgress, StartJob, GetJob, ListJobs, PauseJob,
-/// ResumeJob, CancelJob, and the messages Ready / Disposing. A plugin that registers tools provides "&lt;InternalName&gt;.XivMcp.Invoke"
+/// CheckPermission, GetStatus, DeclareDependencies, RequestApproval, GetApproval, CompleteCall, FailCall, ReportProgress, StartJob,
+/// GetJob, ListJobs, PauseJob, ResumeJob, CancelJob, and the messages Ready / Disposing. A plugin that registers tools provides "&lt;InternalName&gt;.XivMcp.Invoke"
 /// (and optionally "&lt;InternalName&gt;.XivMcp.Cancel").
 /// </summary>
 internal sealed class PluginApi : IDisposable
@@ -43,6 +43,13 @@ internal sealed class PluginApi : IDisposable
     private readonly List<Action> unregister = [];
     private readonly ConcurrentDictionary<string, PendingCall> pending = new();
     private readonly ConcurrentDictionary<string, Task<bool>> approvals = new();
+
+    /// <summary>The tools each plugin's jobs use (XivMcp.DeclareDependencies), by plugin id. Gone when the plugin unloads.</summary>
+    private readonly ConcurrentDictionary<string, IReadOnlyList<ToolDependency>> dependencies = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The last check per plugin: the settings window draws every frame, and checking reads Dalamud's plugin list.</summary>
+    private readonly ConcurrentDictionary<string, (DateTime At, IReadOnlyList<DependencyStatus> Statuses)> checkedDependencies = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly TimeSpan RecheckAfter = TimeSpan.FromSeconds(2);
     private readonly ICallGateProvider<object> ready;
     private readonly ICallGateProvider<object> disposing;
 
@@ -70,7 +77,14 @@ internal sealed class PluginApi : IDisposable
         }));
         Func<string, string, string>(P + "RegisterTool", Guard2(RegisterTool));
         Func<string, string, string>(P + "UnregisterTool", Guard2((owner, name) => Ok(new JsonObject { ["removed"] = registry.Remove(name, Provider(owner)) })));
-        Func<string, string>(P + "UnregisterAll", Guard1(owner => Ok(new JsonObject { ["removed"] = registry.RemoveProvider(Provider(owner)) })));
+        Func<string, string>(P + "UnregisterAll", Guard1(owner =>
+        {
+            var provider = Provider(owner);
+            dependencies.TryRemove(provider.Id, out _);
+            checkedDependencies.TryRemove(provider.Id, out _);
+            return Ok(new JsonObject { ["removed"] = registry.RemoveProvider(provider) });
+        }));
+        Func<string, string, string>(P + "DeclareDependencies", Guard2(DeclareDependencies));
         Func<string, string, string>(P + "CheckPermission", Guard2(CheckPermission));
         Func<string, string>(P + "GetStatus", Guard1(GetStatus));
         Func<string, string, string>(P + "RequestApproval", Guard2(RequestApproval));
@@ -114,7 +128,8 @@ internal sealed class PluginApi : IDisposable
 
     // ------------------------------------------------------------------ what the settings window shows
 
-    public sealed record PluginInfo(string InternalName, string DisplayName, bool Loaded, PluginPolicy Policy, List<McpTool> Tools)
+    public sealed record PluginInfo(string InternalName, string DisplayName, bool Loaded, PluginPolicy Policy, List<McpTool> Tools,
+                                    IReadOnlyList<DependencyStatus> Dependencies)
     {
         public IEnumerable<string> DeclaredCapabilities => Tools.SelectMany(t => t.Capabilities).Distinct();
     }
@@ -126,9 +141,77 @@ internal sealed class PluginApi : IDisposable
                               .GroupBy(t => t.Provider.Id, StringComparer.OrdinalIgnoreCase)
                               .ToDictionary(g => g.Key, g => g.OrderBy(t => t.Name).ToList(), StringComparer.OrdinalIgnoreCase);
         foreach (var known in config.ThirdPartyPolicies.Keys) byOwner.TryAdd(known, []);
-        return byOwner.Select(kv => new PluginInfo(kv.Key, DisplayName(kv.Key), PluginCompat.IsLoaded(kv.Key), policies.Get(kv.Key), kv.Value))
+        foreach (var declaring in dependencies.Keys) byOwner.TryAdd(declaring, []);
+        return byOwner.Select(kv => new PluginInfo(kv.Key, DisplayName(kv.Key), PluginCompat.IsLoaded(kv.Key), policies.Get(kv.Key), kv.Value,
+                                                   CheckedDependencies(kv.Key)))
                       .OrderBy(o => o.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
     }
+
+    // ------------------------------------------------------------------ dependencies
+
+    /// <summary>
+    /// The tools a plugin's jobs use: {"tools": [{"tool": "navigate_to"}, {"tool": "x_scan", "plugin": "X", "name": "X",
+    /// "repo": "https://…/repo.json" | "official", "minVersion": "1.2.0"}]}. Replaces the previous declaration; returns each tool's state.
+    /// </summary>
+    private string DeclareDependencies(string owner, string json)
+    {
+        var provider = Provider(owner);
+        var declared = DependencyParser.Parse(json, IsBuiltIn);
+        dependencies[provider.Id] = declared;
+        checkedDependencies.TryRemove(provider.Id, out _);
+        var statuses = CheckedDependencies(provider.Id);
+        Svc.Log.Information($"[MCP] Plugin {owner} declared {declared.Count} tool(s) its jobs use" +
+                            (statuses.Any(s => s.IsError) ? $"; missing: {string.Join(", ", statuses.Where(s => s.IsError).Select(s => s.Dependency.Tool))}" : ""));
+        return Ok(new JsonObject { ["dependencies"] = DependenciesJson(statuses) });
+    }
+
+    /// <summary>XIV MCP's own tools (core and integrations): those a plugin can declare by name alone.</summary>
+    private bool IsBuiltIn(string tool) =>
+        registry.TryGet(tool, out var t) ? t.Provider.Trust != ProviderTrust.ThirdParty
+            : PermissionCatalog.CoreTools.ContainsKey(tool) || XivMcp.Integrations.IntegrationCatalog.For(tool) is not null;
+
+    private IReadOnlyList<DependencyStatus> CheckedDependencies(string pluginId)
+    {
+        if (!dependencies.TryGetValue(pluginId, out var declared) || declared.Count == 0) return [];
+        if (checkedDependencies.TryGetValue(pluginId, out var cached) && DateTime.UtcNow - cached.At < RecheckAfter) return cached.Statuses;
+
+        var installed = Svc.PluginInterface.InstalledPlugins
+                           .GroupBy(p => p.InternalName, StringComparer.OrdinalIgnoreCase)
+                           .ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.IsLoaded).First(), StringComparer.OrdinalIgnoreCase);
+        PluginPresence? Presence(string id) =>
+            installed.TryGetValue(id, out var p) ? new PluginPresence(p.InternalName, p.Name, p.Version, p.IsLoaded) : null;
+        string? Owner(string tool) => registry.TryGet(tool, out var t) && t.Provider.Trust == ProviderTrust.ThirdParty ? t.Provider.Id : null;
+        bool Enabled(string id) => policies.Get(id) is { Enabled: true, AwaitingConsent: false, Suspended: false };
+
+        var statuses = declared.Select(d => DependencyCheck.Check(d, Presence, Owner, Enabled)).ToList();
+        checkedDependencies[pluginId] = (DateTime.UtcNow, statuses);
+        return statuses;
+    }
+
+    private static JsonArray DependenciesJson(IEnumerable<DependencyStatus> statuses) => new(statuses.Select(s => (JsonNode)new JsonObject
+    {
+        ["tool"] = s.Dependency.Tool,
+        ["plugin"] = s.Dependency.Plugin,
+        ["state"] = StateId(s.State),
+        ["message"] = s.Message,
+        ["install"] = new JsonArray(s.Install.Select(i => (JsonNode)new JsonObject
+        {
+            ["plugin"] = i.InternalName, ["name"] = i.Name, ["repo"] = i.Repo, ["needed"] = i.Needed, ["installed"] = i.Installed,
+            ["outdated"] = i.Outdated, ["reason"] = i.Reason,
+        }).ToArray()),
+    }).ToArray());
+
+    /// <summary>"ok", "needs_plugin", "plugin_missing", "plugin_not_loaded", "plugin_outdated", "tool_missing" or "not_enabled".</summary>
+    private static string StateId(DependencyState s) => s switch
+    {
+        DependencyState.Ok => "ok",
+        DependencyState.NeedsPlugin => "needs_plugin",
+        DependencyState.PluginMissing => "plugin_missing",
+        DependencyState.PluginNotLoaded => "plugin_not_loaded",
+        DependencyState.PluginOutdated => "plugin_outdated",
+        DependencyState.ToolMissing => "tool_missing",
+        _ => "not_enabled",
+    };
 
     // ------------------------------------------------------------------ registration
 
@@ -203,6 +286,9 @@ internal sealed class PluginApi : IDisposable
             gate.Sessions.Clear(provider.Id);
             Svc.Log.Information($"[MCP] Plugin {provider.Id} unloaded; removed its {n} tool(s).");
         }
+        // Declarations go with their plugin; the others are checked again, since a plugin they need may have come or gone.
+        foreach (var id in dependencies.Keys.Where(id => !PluginCompat.IsLoaded(id)).ToList()) dependencies.TryRemove(id, out _);
+        checkedDependencies.Clear();
         foreach (var (id, call) in pending.Where(p => !PluginCompat.IsLoaded(p.Value.Owner)).ToList())
             if (pending.TryRemove(id, out _)) call.Completion.TrySetException(new ToolException($"The {call.Tool.Provider.DisplayName} plugin was unloaded during the call."));
     }
@@ -246,6 +332,7 @@ internal sealed class PluginApi : IDisposable
             {
                 ["id"] = c, ["mode"] = gate.Check(provider, c).ToString().ToLowerInvariant(),
             }).ToArray()),
+            ["dependencies"] = DependenciesJson(CheckedDependencies(provider.Id)),
         });
     }
 

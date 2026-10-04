@@ -91,6 +91,46 @@ public sealed record McpStatus(McpPluginState State, string? SuspendReason, IRea
                                IReadOnlyDictionary<string, McpPermission> Tools)
 {
     public bool CanRun => State == McpPluginState.Enabled;
+
+    /// <summary>Where each tool you declared with <see cref="XivMcpClient.UsesTools"/> stands right now.</summary>
+    public IReadOnlyList<McpDependencyStatus> Dependencies { get; init; } = [];
+}
+
+/// <summary>
+/// A tool your jobs use, declared with <see cref="XivMcpClient.UsesTools"/>. XIV MCP checks it and shows the player what is missing,
+/// with a way to install it. Use <see cref="BuiltIn"/> for XIV MCP's own tools (it knows which plugins they need) and
+/// <see cref="FromPlugin"/> for another plugin's tool.
+/// </summary>
+public sealed record McpDependency(string Tool)
+{
+    /// <summary>The other plugin's internal name (its manifest's InternalName).</summary>
+    public string? Plugin { get; init; }
+
+    /// <summary>The other plugin's name as players see it in the plugin installer.</summary>
+    public string? PluginName { get; init; }
+
+    /// <summary>The https URL of the repo.json the other plugin is installed from, or "official" for Dalamud's main repository.</summary>
+    public string? Repo { get; init; }
+
+    /// <summary>The oldest version of the other plugin that has the tool as you use it, e.g. "1.2.0".</summary>
+    public string? MinVersion { get; init; }
+
+    /// <summary>One of XIV MCP's own tools (core or integration), e.g. "navigate_to".</summary>
+    public static McpDependency BuiltIn(string tool) => new(tool);
+
+    /// <summary>Another plugin's tool, with where to install that plugin and the version it needs.</summary>
+    public static McpDependency FromPlugin(string tool, string plugin, string pluginName, string repo, string minVersion) =>
+        new(tool) { Plugin = plugin, PluginName = pluginName, Repo = repo, MinVersion = minVersion };
+}
+
+/// <summary>
+/// Where a declared tool stands: <see cref="State"/> is "ok", "needs_plugin" (a built-in tool's plugin is missing),
+/// "plugin_missing", "plugin_not_loaded", "plugin_outdated", "tool_missing" or "not_enabled" (the player hasn't enabled that
+/// plugin in XIV MCP). Anything but "ok" means StartJob refuses jobs with that tool, or its step fails when it runs.
+/// </summary>
+public sealed record McpDependencyStatus(string Tool, string State, string Message)
+{
+    public bool Ok => State == "ok";
 }
 
 /// <summary>A tool error the assistant should see as-is ("Not at a summoning bell."). Other exceptions are reported with their type.</summary>
@@ -141,7 +181,10 @@ public sealed class McpCall
     }
 }
 
-/// <summary>A step of a job: a tool (built-in or any plugin's) and its arguments. Arguments may use "{{stepId.path}}" placeholders.</summary>
+/// <summary>
+/// A step of a job: a tool (built-in or any plugin's) and its arguments. Arguments may use "{{stepId.path}}" placeholders. Declare
+/// the tools your jobs use with <see cref="XivMcpClient.UsesTools"/>, so the player sees what they need.
+/// </summary>
 public sealed record McpJobStep(string Tool, object? Args = null, string? Id = null, string? Note = null);
 
 public sealed class XivMcpClient : IDisposable
@@ -157,6 +200,7 @@ public sealed class XivMcpClient : IDisposable
     private readonly ICallGateProvider<string, object> cancelGate;
     private readonly ICallGateSubscriber<object> readySub;
     private readonly ICallGateSubscriber<object> disposingSub;
+    private McpDependency[]? declared;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public XivMcpClient(IDalamudPluginInterface pluginInterface)
@@ -235,7 +279,41 @@ public sealed class XivMcpClient : IDisposable
         var toolModes = new Dictionary<string, McpPermission>();
         foreach (var t in reply["tools"]?.AsArray() ?? [])
             if (t?["name"]?.GetValue<string>() is { } name) toolModes[name] = Permission(t["mode"]?.GetValue<string>());
-        return new McpStatus(state, reply["suspendReason"]?.GetValue<string>(), caps, toolModes);
+        var dependencies = new List<McpDependencyStatus>();
+        foreach (var d in reply["dependencies"]?.AsArray() ?? [])
+            if (d?["tool"]?.GetValue<string>() is { } tool)
+                dependencies.Add(new McpDependencyStatus(tool, d["state"]?.GetValue<string>() ?? "", d["message"]?.GetValue<string>() ?? ""));
+        return new McpStatus(state, reply["suspendReason"]?.GetValue<string>(), caps, toolModes) { Dependencies = dependencies };
+    }
+
+    /// <summary>
+    /// Declares the tools your jobs use: XIV MCP's own (<see cref="McpDependency.BuiltIn"/>) and other plugins'
+    /// (<see cref="McpDependency.FromPlugin"/>). The player sees each one on your plugin's page, with an error and an install button
+    /// when something is missing. Call it once at startup, like AddTool; calling it again replaces the list. It is sent again whenever
+    /// XIV MCP loads. A rejected declaration raises <see cref="RegistrationFailed"/>.
+    /// </summary>
+    public void UsesTools(params McpDependency[] dependencies)
+    {
+        declared = dependencies;
+        DeclareDependencies();
+    }
+
+    private void DeclareDependencies()
+    {
+        if (declared is null || !IsAvailable) return;
+        var json = new JsonObject
+        {
+            ["tools"] = new JsonArray(Array.ConvertAll(declared, d => (JsonNode)new JsonObject
+            {
+                ["tool"] = d.Tool, ["plugin"] = d.Plugin, ["name"] = d.PluginName, ["repo"] = d.Repo, ["minVersion"] = d.MinVersion,
+            })),
+        };
+        // A built-in tool is sent with "tool" alone.
+        foreach (var node in json["tools"]!.AsArray())
+            foreach (var key in new[] { "plugin", "name", "repo", "minVersion" })
+                if (node![key] is null) node.AsObject().Remove(key);
+        try { Call(Prefix + "DeclareDependencies", owner, json.ToJsonString()); }
+        catch (McpToolException ex) { RegistrationFailed?.Invoke($"dependencies: {ex.Message}"); }
     }
 
     private static McpPermission Permission(string? mode) => mode switch
@@ -297,6 +375,7 @@ public sealed class XivMcpClient : IDisposable
     private void RegisterAll()
     {
         foreach (var (def, _, _) in tools.Values) Register(def);
+        DeclareDependencies();
     }
 
     private void OnXivMcpDisposing()

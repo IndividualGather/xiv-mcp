@@ -9,7 +9,9 @@ icon: LifeBuoy
 - **What the assistant sees:** the address and token are in `/xivmcp` → **Connect**.
 
 ```bash
-curl -s http://localhost:37521/mcp -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+curl -s http://localhost:37521/mcp \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
@@ -26,4 +28,7 @@ curl -s http://localhost:37521/mcp -H "Authorization: Bearer <token>" -H "Conten
 | `RequestApprovalAsync` is always false | The capability is not declared on that tool. |
 | "The background job '…' is running a step" | A job is running and your tool is not read-only. Pause the job first. |
 | A cancelled job stays "running" for two minutes | Your handler ignores `call.Cancellation`. |
+| "Unknown tool '…' in a step" / "'…' is not available right now" | A step's tool does not exist, or its plugin is not loaded or not enabled. Declare it with `UsesTools`; the player sees what is missing on your card. |
+| "'…' is not an XIV MCP tool. For another plugin's tool, give 'plugin' …" | A built-in tool name is misspelt, or another plugin's tool lacks its plugin fields. |
+| "'…' is built into XIV MCP; declare it with 'tool' alone" | Drop `plugin`, `name`, `repo` and `minVersion` for XIV MCP's own tools. |
 | `InvalidOperationException` or hitches | Game access off the framework thread: use `RunOnFrameworkThread`. |

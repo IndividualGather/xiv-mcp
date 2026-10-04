@@ -56,6 +56,7 @@ A new tool of XIV MCP's own touches these places:
 | `XivMcp/Plugin.cs` | Registering the tool's class. |
 | `XivMcp.Core/Permissions/PermissionCatalog.cs` | The module it belongs to. Tools that drive one other plugin go into `IntegrationCatalog.cs` instead, with their capabilities. |
 | `XivMcp.Core/Mcp/ToolSummaries.cs` | One sentence for the player, shown in `/xivmcp` and in the tools reference. |
+| `XivMcp.Core/Integrations/ToolRequirements.cs` | If a core tool uses another plugin: which one, whether it is needed or only improves the tool, and what for. New plugins also go into `PluginCatalog.cs`, with the repository they are installed from. |
 | `README.md` | The tool table of its area. |
 
 The tests check that every tool has a summary written in the player style, and that every tool in the catalog maps to an existing module.

@@ -10,39 +10,141 @@ Anything that is not read-only must declare what it does. The player decides, pe
 
 ```csharp
 mcp.AddTool(
-    new McpToolDefinition("myplugin_follow", "Follows the current target on foot until myplugin_stop is called.")
+    new McpToolDefinition(
+        "myplugin_follow",
+        "Follows the current target on foot until myplugin_stop is called.")
     {
         Capabilities = [McpCapabilities.MoveCharacter],
     },
-    args => { StartFollowing(); return new { following = CurrentTarget?.Name }; });
+    args =>
+    {
+        StartFollowing();
+        return new { following = CurrentTarget?.Name };
+    });
 ```
 
 Pick capabilities from the [capabilities table](/docs/developer/plugin-api/capabilities). If you are unsure, declare more: an undeclared effect gets your plugin suspended.
 
 ## Arguments
 
-Describe them with a JSON schema, and read them from the `JsonObject`:
+Arguments are the details a call needs to do the right thing. This section uses a real tool as its example: XIV MCP's own `set_map_flag`, which places the flag on the player's map. It needs to know where: the map coordinates, and in which zone.
+
+Your plugin never fills arguments in itself. They come from whoever calls the tool:
+
+- **The assistant**, from what the player asked for. When the player says "put a flag at 21.4, 18.2 in Kozama'uka", the assistant calls the tool with `{ "zone": "Kozama'uka", "x": 21.4, "y": 18.2 }`.
+- **A job step**, from the `args` of its `McpJobStep`, such as `new McpJobStep("set_map_flag", new { x = 21.4, y = 18.2 })`.
+
+So a tool has two halves:
+
+1. **`InputSchema` says what the tool accepts.** The assistant reads it next to your description, to learn which arguments exist, what each one means and which values are allowed. It is a [JSON schema](https://json-schema.org/understanding-json-schema/) for an object.
+2. **The handler reads what was sent.** `args` is a `JsonObject` with the arguments of this one call.
+
+```text
+Player:     "Put a flag at 21.4, 18.2 in Kozama'uka."
+Assistant:  reads the schema below, then calls the tool with
+            { "zone": "Kozama'uka", "x": 21.4, "y": 18.2 }
+Your code:  args["x"] is 21.4, args["y"] is 18.2,
+            args["zone"] is "Kozama'uka",
+            args["open_map"] is missing, so you use the default
+```
+
+### The schema and the handler
+
+This is `set_map_flag`'s schema as XIV MCP defines it, in a plugin written with the client. A plugin cannot use XIV MCP's own names, so it is called `myplugin_set_flag` here:
 
 ```csharp
+// The schema, as XIV MCP defines it for set_map_flag.
+const string FlagSchema = """
+{
+  "type": "object",
+  "properties": {
+    "x": {
+      "type": "number",
+      "description":
+        "Map X coordinate, as the in-game map shows it (about 1 to 42)."
+    },
+    "y": {
+      "type": "number",
+      "description": "Map Y coordinate, as the in-game map shows it."
+    },
+    "zone": {
+      "type": "string",
+      "description":
+        "Zone name or territory id. Default: the zone you are in."
+    },
+    "open_map": {
+      "type": "boolean",
+      "description": "Open the map at the flag. Default true."
+    },
+    "name": {
+      "type": "string",
+      "description":
+        "What the spot is (shown as the map window title)."
+    }
+  },
+  "required": ["x", "y"]
+}
+""";
+
 mcp.AddTool(
-    new McpToolDefinition("myplugin_set_mode", "Switches My Plugin's mode. Use \"idle\" to stop it.")
+    new McpToolDefinition(
+        "myplugin_set_flag",
+        "Places the flag on the player's map at map coordinates in " +
+        "any zone, and opens the map at it. Only marks the spot: " +
+        "nothing moves.")
     {
         Capabilities = [McpCapabilities.GameUi],
-        InputSchema = """
-            {
-              "type": "object",
-              "properties": { "mode": { "type": "string", "enum": ["idle", "follow", "assist"], "description": "The new mode." } },
-              "required": ["mode"]
-            }
-            """,
+        InputSchema = FlagSchema,
     },
     args =>
     {
-        var mode = args["mode"]?.GetValue<string>() ?? throw new McpToolException("Give 'mode'.");
-        SetMode(mode);
-        return new { mode };
+        var x = args["x"]?.GetValue<double>()
+                ?? throw new McpToolException("'x' is required.");
+        var y = args["y"]?.GetValue<double>()
+                ?? throw new McpToolException("'y' is required.");
+        var zone = args["zone"]?.GetValue<string>();    // null: here
+        var openMap = args["open_map"]?.GetValue<bool>() ?? true;
+        var name = args["name"]?.GetValue<string>();
+        PlaceFlag(zone, x, y, openMap, name);
+        return new { zone, x, y, mapOpened = openMap };
     });
 ```
+
+What each part of the schema does:
+
+| Part | Means | The assistant |
+|---|---|---|
+| `"type": "object"` | The arguments are one object with named fields. Always this. | Sends `{ … }` |
+| `"properties"` | The arguments that exist, by name: `x`, `y`, `zone`, `open_map` and `name`. | Uses only these names |
+| `"type"` of a property | What kind of value it is: `"number"` for the coordinates, `"string"` (text) for the zone, `"boolean"` (true or false) for `open_map`. Others are `"integer"`, `"array"` and `"object"`. | Sends a value of that kind |
+| `"description"` | What the argument is for, where the value comes from and its default: "as the in-game map shows it", "Default: the zone you are in". | Decides what to send from it |
+| `"required"` | The arguments every call must have: `x` and `y`. | Always sends them, and may leave out the others |
+
+Two more parts are useful in other tools: `"enum"` lists the only values allowed (`"enum": ["gil", "mgp"]`), and `"minimum"` and `"maximum"` limit a number.
+
+A tool without arguments, like the first example above, leaves `InputSchema` out.
+
+### Optional arguments and defaults
+
+`zone`, `open_map` and `name` are optional: they are not in `required`. Their descriptions say what happens without them, so the assistant knows it can leave them out, and the handler falls back to the same default:
+
+```csharp
+// null means the zone the player is in.
+var zone = args["zone"]?.GetValue<string>();
+var openMap = args["open_map"]?.GetValue<bool>() ?? true;
+```
+
+### Check what you get
+
+XIV MCP passes the arguments on as they were sent. It does not check them against your schema, and the assistant can get them wrong. So check them in the handler before you act, and say what is wrong. `set_map_flag` refuses coordinates that are off the map:
+
+```csharp
+if (x is < 1 or > 42 || y is < 1 or > 42)
+    throw new McpToolException(
+        $"({x}, {y}) is off the map: map coordinates run from 1 to 42.");
+```
+
+The assistant reads the message and usually calls again with fixed arguments.
 
 ## Results and errors
 

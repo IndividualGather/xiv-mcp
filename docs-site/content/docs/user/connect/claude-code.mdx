@@ -12,8 +12,12 @@ In `/xivmcp` → **Connect**, choose **Claude Code** and click the button. XIV M
 
 ## By hand
 
-```sh
-claude mcp add --scope user --transport http ffxiv http://localhost:37521/mcp --header "Authorization: Bearer <token>"
+In PowerShell:
+
+```powershell
+claude mcp add --scope user --transport http `
+  ffxiv http://localhost:37521/mcp `
+  --header "Authorization: Bearer <token>"
 ```
 
 Replace `<token>` with the token from `/xivmcp` → **Connect**.

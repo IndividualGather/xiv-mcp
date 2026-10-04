@@ -16,18 +16,29 @@ There are two ways to build on XIV MCP.
 Your Dalamud plugin can offer tools to AI assistants through XIV MCP. You do not need a server or a reference to XIV MCP, and your plugin keeps working without it.
 
 ```csharp
-mcp = new XivMcpClient(pluginInterface);                     // examples/XivMcpClient.cs, copied into your plugin
-mcp.AddTool(new("myplugin_status", "What My Plugin is doing right now.") { ReadOnly = true },
-            args => new { mode = Mode.ToString() });
-mcp.AddTool(new("myplugin_follow", "Follows the current target on foot.") { Capabilities = [McpCapabilities.MoveCharacter] },
-            args => { StartFollowing(); return new { following = true }; });
+// XivMcpClient.cs comes from examples/, copied into your plugin.
+mcp = new XivMcpClient(pluginInterface);
+
+mcp.AddTool(
+    new("myplugin_status", "Whom My Plugin is following right now.")
+    {
+        ReadOnly = true,
+    },
+    args => new { following = FollowTarget?.Name });
+
+mcp.AddTool(
+    new("myplugin_follow", "Follows the current target on foot.")
+    {
+        Capabilities = [McpCapabilities.MoveCharacter],
+    },
+    args => { StartFollowing(); return new { following = true }; });
 ```
 
 The player decides what your tools may do. They enable your plugin, and choose *Allow*, *Ask* or *Deny* for every [capability](/docs/developer/plugin-api/capabilities) you declare. XIV MCP checks what each call changed, and suspends plugins whose calls have effects they did not declare.
 
 ## Six things to get right
 
-1. **Prefix tool names** with your plugin's name, and start them with a verb: `myplugin_set_mode`.
+1. **Prefix tool names** with your plugin's name, and start them with a verb: `myplugin_follow`, `myplugin_stop`.
 2. **Write descriptions for the assistant:** what the tool does, when to use it, what it needs, and what comes before or after.
 3. **Declare every capability**, including indirect ones (a teleport spends gil). Undeclared side effects suspend your plugin.
 4. **Ask at the risky moment, with real numbers:** `call.RequestApprovalAsync(McpCapabilities.SpendGil, "Buy 3 Hi-Potions for 1,200 gil")`.

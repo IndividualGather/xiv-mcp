@@ -7,11 +7,15 @@
     "approvals",
     "status",
     "jobs",
+    "interop",
+    "interop-example",
     "capabilities",
     "player-controls",
     "guidelines",
     "hello-mcp",
+    "---Reference---",
     "reference",
+    "tool-requirements",
     "raw-ipc",
     "troubleshooting"
   ]

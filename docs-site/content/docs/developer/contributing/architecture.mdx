@@ -7,10 +7,18 @@ icon: Network
 ## The path of a tool call
 
 ```text
-AI app ──HTTP──▶ McpServer ──▶ ToolRegistry ──▶ ToolGate ──▶ handler ──▶ the game
-                 (localhost,       (core,          (Allow / Ask /     (framework
-                  bearer token)     integrations,   Deny, approval     thread)
-                                    third-party)    window, audit)
+AI app
+  │  HTTP
+  ▼
+McpServer      localhost only, bearer token
+  ▼
+ToolRegistry   core, integrations, third-party
+  ▼
+ToolGate       Allow / Ask / Deny, approval window, audit
+  ▼
+handler        on the framework thread
+  ▼
+the game
 ```
 
 1. **`McpServer`** (`XivMcp/Mcp`) implements MCP's Streamable HTTP transport with JSON responses, directly on `HttpListener`, because Dalamud does not ship ASP.NET Core. It only listens on localhost, checks the bearer token, and refuses browser requests from other origins.

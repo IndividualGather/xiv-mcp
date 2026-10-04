@@ -79,6 +79,7 @@ Other plugins can offer their own tools to your assistant. Those tools run that 
 - **Capabilities you decide on.** Every tool declares what it may do: use game windows, move the character, fight, move, sell or destroy items, spend gil or other currencies, send chat, log out, change settings, go online. For each capability you choose **Allow**, **Ask** or **Deny**. Everything except reading starts at *Ask*. Destroying items can't be set to *Allow*; it's asked every time.
 - **Approval window.** *Ask* shows who asks, the tool, what it wants to do and its arguments. You can approve once, approve for this session (until the plugin or XIV MCP reloads), **always allow** (sets those capabilities to *Allow* for that plugin; you can change it back on its page), or decline. No answer in two minutes counts as declined. A plugin can also ask in the middle of a call, with the real numbers ("Buy 3 Hi-Potions for 1,200 gil").
 - **Checks on what changed.** Before and after every call, XIV MCP compares your gil, currencies, item count, zone and world, the chat you sent, and whether you're still logged in. A change the plugin didn't declare flags the call. If the call was short, the plugin is **suspended** until you lift it, and you get a chat message. Longer calls are only flagged, since you or another plugin may have acted meanwhile.
+- **Tools its jobs use.** A plugin can declare the tools its background jobs use: XIV MCP's own, or other plugins'. Its card lists them under **Tools its jobs use**, with a green check, or a red error when something is missing: a plugin a built-in tool needs (vnavmesh for `navigate_to`, for example), another plugin that isn't installed, is turned off, is older than the version asked for, hasn't registered the tool or isn't enabled in XIV MCP. Buttons open the plugin installer to install, enable or update it; for plugins outside Dalamud's main repository there are **Copy repository URL** and **Open Dalamud settings** (Experimental → Custom Plugin Repositories). XIV MCP never adds a repository itself. Plugins that only improve a tool (Penny Pincher's undercut settings) are hints, not errors.
 - **Audit log.** Every call, decision and approval is listed under the plugin, with flagged entries highlighted. The full log is in `pluginConfigs/XivMcp/audit.jsonl`.
 - **Only trust what you know.** Even with all of this, an enabled plugin's code does what it was written to do. Enable plugins you trust, and read the capabilities they ask for.
 
@@ -442,18 +443,19 @@ Your Dalamud plugin can offer tools to AI assistants through XIV MCP, and start 
 
 ```csharp
 mcp = new XivMcpClient(pluginInterface);                     // examples/XivMcpClient.cs, copied into your plugin
-mcp.AddTool(new("myplugin_status", "What My Plugin is doing right now.") { ReadOnly = true },
-            args => new { mode = Mode.ToString() });
+mcp.AddTool(new("myplugin_status", "Whom My Plugin is following right now.") { ReadOnly = true },
+            args => new { following = FollowTarget?.Name });
 mcp.AddTool(new("myplugin_follow", "Follows the current target on foot.") { Capabilities = [McpCapabilities.MoveCharacter] },
             args => { StartFollowing(); return new { following = true }; });
 ```
 
 - **Guide:** [docs/plugin-api.md](docs/plugin-api.md) covers the quick start, permissions and approvals, writing tools assistants use well, long-running tools and cancellation, jobs, the IPC reference and troubleshooting.
-- **Examples:** [examples/](examples) holds the drop-in client `XivMcpClient.cs` and *Hello MCP*, a complete example plugin. Its four tools are a quick one, an acting one, a long-running one, and one that asks for approval mid-call. It also starts a job.
+- **Examples:** [examples/](examples) holds the drop-in client `XivMcpClient.cs` and *Hello MCP*, a complete example plugin. Its four tools are a quick one, an acting one, a long-running one, and one that asks for approval mid-call. It also starts jobs, one of them with XIV MCP's `navigate_to`, and declares the tools they use.
+- **Other tools in your jobs:** job steps can call XIV MCP's own tools and other plugins' tools. Declare them with `mcp.UsesTools(McpDependency.BuiltIn("navigate_to"), McpDependency.FromPlugin(tool, plugin, name, repo, minVersion))`; the player sees on your card what is missing, with a way to install it. Which built-in tools need which plugins is kept in `XivMcp.Core/Integrations/ToolRequirements.cs` (with `PluginCatalog.cs` for where to get each plugin) and generated into the docs.
 
 Six things to get right:
 
-1. **Prefix tool names** with your plugin's name, and start them with a verb: `myplugin_set_mode`.
+1. **Prefix tool names** with your plugin's name, and start them with a verb: `myplugin_follow`, `myplugin_stop`.
 2. **Write descriptions for the assistant:** what the tool does, when to use it, what it needs, and what comes before or after.
 3. **Declare every capability**, including indirect ones (a teleport spends gil). Undeclared side effects suspend your plugin.
 4. **Ask at the risky moment, with real numbers:** `call.RequestApprovalAsync(McpCapabilities.SpendGil, "Buy 3 Hi-Potions for 1,200 gil")`.

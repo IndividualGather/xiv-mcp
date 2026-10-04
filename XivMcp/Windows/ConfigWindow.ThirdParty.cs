@@ -66,5 +66,13 @@ internal sealed partial class ConfigWindow
         public void ToolsChanged() => plugin.Server.NotifyIfToolsChanged();
         public RegistrationReview.Result Pending(string pluginId) => plugin.Decisions.Pending(pluginId);
         public void Decide(string pluginId, bool enable) => plugin.Decisions.Decide(pluginId, enable);
+
+        private (DateTime At, IReadOnlyList<(string Url, bool Enabled)>? Repos) repos;
+
+        public IReadOnlyList<(string Url, bool Enabled)>? CustomRepositories()
+        {
+            if (DateTime.UtcNow - repos.At > TimeSpan.FromSeconds(5)) repos = (DateTime.UtcNow, DalamudInternals.CustomRepositories());
+            return repos.Repos;
+        }
     }
 }

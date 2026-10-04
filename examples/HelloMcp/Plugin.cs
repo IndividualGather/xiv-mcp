@@ -131,9 +131,17 @@ public sealed class Plugin : IDalamudPlugin
                 return new { item, gil, approved, note = "Nothing was actually bought." };
             });
 
+        // 5. The tools our jobs use besides our own. XIV MCP shows them on Hello MCP's page in /xivmcp → Third-party plugins, and
+        //    tells the player what is missing: navigate_to needs a walking and a travel plugin, which XIV MCP knows by itself.
+        //    Another plugin's tool would be declared with McpDependency.FromPlugin(tool, plugin, name, repo, minVersion).
+        mcp.UsesTools(
+            McpDependency.BuiltIn("get_game_status"),
+            McpDependency.BuiltIn("navigate_to"));
+
         Commands.AddHandler("/hellomcp", new CommandInfo(OnCommand)
         {
-            HelpMessage = "/hellomcp job → start an example XIV MCP job · /hellomcp jobs → list this plugin's jobs · /hellomcp status",
+            HelpMessage = "/hellomcp job → start an example XIV MCP job · /hellomcp bell → walk to a summoning bell, then say so · " +
+                          "/hellomcp jobs → list this plugin's jobs · /hellomcp status",
         });
     }
 
@@ -151,6 +159,15 @@ public sealed class Plugin : IDalamudPlugin
                         new McpJobStep("get_game_status")); // a built-in XIV MCP tool
                     Chat.Print($"Started job {job["id"]} — see /xivmcp → Jobs.", "Hello MCP");
                     break;
+                case "bell":
+                    // A built-in tool that uses other plugins, then ours with its result. navigate_to reports arrived: false (with a
+                    // reason) when it can't get there, for example because a plugin it needs is missing; Hello MCP's page in
+                    // /xivmcp shows what to install.
+                    var walk = mcp.StartJob("Hello MCP walks to a bell",
+                        new McpJobStep("navigate_to", new { destination = "summoning_bell" }, Id: "walk"),
+                        new McpJobStep("hellomcp_print", new { text = "At a summoning bell: {{walk.arrived}}." }));
+                    Chat.Print($"Started job {walk["id"]} — see /xivmcp → Jobs.", "Hello MCP");
+                    break;
                 case "jobs":
                     foreach (var j in mcp.ListJobs())
                         Chat.Print($"{j?["id"]} {j?["name"]}: {j?["state"]} ({j?["progress"]})", "Hello MCP");
@@ -167,6 +184,8 @@ public sealed class Plugin : IDalamudPlugin
                         McpPluginState.Suspended => $"XIV MCP suspended Hello MCP: {status.SuspendReason}",
                         _ => "Enabled in XIV MCP. " + string.Join(", ", status.Tools.Select(t => $"{t.Key}: {t.Value}")),
                     }, "Hello MCP");
+                    foreach (var d in status.Dependencies.Where(d => !d.Ok))
+                        Chat.PrintError($"Our jobs use {d.Tool}: {d.Message}", "Hello MCP");
                     break;
             }
         }

@@ -7,8 +7,10 @@ using Dalamud.Interface;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility.Raii;
 using XivMcp.Api;
+using XivMcp.Integrations;
 using XivMcp.Mcp;
 using XivMcp.Permissions;
+using XivMcp.Util;
 using static XivMcp.Windows.ConfigWindow;
 
 namespace XivMcp.Windows;
@@ -28,6 +30,9 @@ internal interface IThirdPartyHost
 
     /// <summary>Enable (consent to the current registration) or keep disabled (remembered until the registration changes).</summary>
     void Decide(string pluginId, bool enable);
+
+    /// <summary>The custom repositories added in Dalamud's settings, or null when they can't be read.</summary>
+    IReadOnlyList<(string Url, bool Enabled)>? CustomRepositories();
 }
 
 /// <summary>
@@ -54,7 +59,11 @@ internal sealed class ThirdPartyPanel(IThirdPartyHost host)
     {
         var plugins = host.Plugins();
         var suspended = plugins.Count(p => p.Policy.Suspended);
-        return plugins.Count == 0 ? "Third-party plugins" : suspended > 0 ? $"Third-party plugins ({suspended} suspended)" : $"Third-party plugins ({plugins.Count})";
+        var missing = plugins.Count(p => p.Dependencies.Any(d => d.IsError));
+        return plugins.Count == 0 ? "Third-party plugins"
+             : suspended > 0 ? $"Third-party plugins ({suspended} suspended)"
+             : missing > 0 ? $"Third-party plugins ({plugins.Count}, {missing} missing something)"
+             : $"Third-party plugins ({plugins.Count})";
     }
 
     public void Draw()
@@ -163,6 +172,13 @@ internal sealed class ThirdPartyPanel(IThirdPartyHost host)
             {
                 if (i > 0) PermissionsPanel.Divider(inner, External with { W = 0.28f });
                 CapabilityRow(p, policy, sections[i], left, inner);
+            }
+
+            // The tools its jobs use, with what is missing and how to install it.
+            if (p.Dependencies.Count > 0)
+            {
+                PermissionsPanel.Divider(inner, External with { W = 0.28f });
+                DrawDependencies(p, left, inner);
             }
 
             // Footer: session approvals and recent activity.
@@ -282,6 +298,89 @@ internal sealed class ThirdPartyPanel(IThirdPartyHost host)
     }
 
     /// <summary>
+    /// "Tools its jobs use": one row per declared tool, with where it comes from and whether it can run. A tool that can't is shown
+    /// as an error, with a way to get each plugin it needs: install, enable or update it, or add its repository first.
+    /// </summary>
+    private void DrawDependencies(PluginApi.PluginInfo p, float left, float inner)
+    {
+        var errors = p.Dependencies.Count(d => d.IsError);
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted("Tools its jobs use");
+        ImGui.SameLine();
+        ImGui.TextColored(errors > 0 ? Red : Muted, errors > 0 ? $"{errors} of {p.Dependencies.Count} can't run" : $"{p.Dependencies.Count}, all ready");
+        Tooltip($"{p.DisplayName} declared these tools for its background jobs. A job with a tool that is not available is refused when it starts; a tool whose plugin is missing fails when its step runs.");
+
+        foreach (var d in p.Dependencies)
+        {
+            using var id = ImRaii.PushId($"dep-{d.Dependency.Tool}");
+            ImGui.Dummy(new Vector2(0, 2 * Ui.Scale));
+            IconText(d.IsError ? FontAwesomeIcon.TimesCircle : FontAwesomeIcon.CheckCircle, d.IsError ? Red : Green);
+            ImGui.SameLine();
+            using (Ui.MonoFont()) ImGui.TextUnformatted(d.Dependency.Tool);
+            ImGui.SameLine();
+            ImGui.TextColored(Muted, d.Dependency.BuiltIn ? "XIV MCP" : $"{d.Dependency.PluginName} {d.Dependency.MinVersion} or newer");
+            if (!d.Dependency.BuiltIn) Tooltip($"Internal name: {d.Dependency.Plugin}\nRepository: {RepoLabel(d.Dependency.Repo)}");
+
+            var indent = ImGui.GetFrameHeight();
+            using var _ = ImRaii.PushIndent(indent, false);
+            ImGui.PushTextWrapPos(left + inner);
+            if (d.IsError || d.Install.Count > 0) ImGui.TextColored(d.IsError ? Red : Muted, d.Message);
+            if (d.State == DependencyState.ToolMissing)
+                ImGui.TextColored(Muted, $"Update {d.Dependency.PluginName}, or check that it is set up to offer this tool.");
+            ImGui.PopTextWrapPos();
+
+            if (d.State == DependencyState.NotEnabled && ImGui.SmallButton($"Show {d.Dependency.PluginName}"))
+                Focus(d.Dependency.Plugin!);
+            foreach (var plugin in d.Install) DrawInstall(plugin, left + indent, inner - indent);
+        }
+    }
+
+    /// <summary>One plugin to get: what it is for, and the buttons that get it (install, enable, update, or add its repository first).</summary>
+    private void DrawInstall(PluginToInstall plugin, float left, float inner)
+    {
+        using var id = ImRaii.PushId($"inst-{plugin.InternalName}");
+        ImGui.PushTextWrapPos(left + inner);
+        ImGui.TextColored(plugin.Needed ? ImGui.GetStyle().Colors[(int)ImGuiCol.Text] : Muted, $"{plugin.Name}: {plugin.Reason}");
+        ImGui.PopTextWrapPos();
+
+        var name = plugin.Name;
+        if (plugin.Outdated)
+        {
+            if (ImGui.SmallButton($"Update {name}")) Svc.PluginInterface.OpenPluginInstallerTo(PluginInstallerOpenKind.UpdateablePlugins, name);
+            Tooltip($"Opens the plugin installer's updates, at {name}. It needs {plugin.MinVersion} or newer.");
+            return;
+        }
+        if (plugin.Installed)
+        {
+            if (ImGui.SmallButton($"Enable {name}")) Svc.PluginInterface.OpenPluginInstallerTo(PluginInstallerOpenKind.InstalledPlugins, name);
+            Tooltip($"{name} is installed but turned off. Opens your installed plugins at {name}.");
+            return;
+        }
+
+        var official = plugin.Repo == PluginCatalog.Official;
+        var repoAdded = official || host.CustomRepositories()?.Any(r => r.Enabled && SameUrl(r.Url, plugin.Repo)) == true;
+        if (!repoAdded)
+        {
+            ImGui.PushTextWrapPos(left + inner);
+            ImGui.TextColored(Muted, $"{name} is not in Dalamud's main repository. Add its repository first: Dalamud settings → Experimental → " +
+                                     "Custom Plugin Repositories, paste the URL, tick Enabled and save. Only add repositories you trust.");
+            ImGui.PopTextWrapPos();
+            using (Ui.MonoFont()) ImGui.TextColored(Muted, plugin.Repo);
+            if (ImGui.SmallButton("Copy repository URL")) ImGui.SetClipboardText(plugin.Repo);
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Open Dalamud settings")) Svc.PluginInterface.OpenDalamudSettingsTo(SettingsOpenKind.Experimental, "");
+            Tooltip("Opens the Experimental tab, where custom plugin repositories are added.");
+            ImGui.SameLine();
+        }
+        if (ImGui.SmallButton($"Install {name}")) Svc.PluginInterface.OpenPluginInstallerTo(PluginInstallerOpenKind.AllPlugins, name);
+        Tooltip(repoAdded ? $"Opens the plugin installer at {name}." : $"Opens the plugin installer at {name}, once its repository is added.");
+    }
+
+    private static string RepoLabel(string? repo) => repo == PluginCatalog.Official ? "Dalamud's main repository" : repo ?? "";
+
+    private static bool SameUrl(string a, string b) => string.Equals(a.Trim().TrimEnd('/'), b.Trim().TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// A caret plus label as one clickable area (hover turns both gold). Returns whether the row is expanded. <paramref name="after"/>
     /// draws extra items on the same line (a badge).
     /// </summary>
@@ -363,7 +462,8 @@ internal sealed class ThirdPartyPanel(IThirdPartyHost host)
     private string Summary(PluginApi.PluginInfo p, PluginStatus status)
     {
         if (!p.Loaded) return "Not loaded";
-        var tools = $"{p.Tools.Count} tool{(p.Tools.Count == 1 ? "" : "s")}";
+        var missing = p.Dependencies.Count(d => d.IsError);
+        var tools = $"{p.Tools.Count} tool{(p.Tools.Count == 1 ? "" : "s")}" + (missing > 0 ? $" · its jobs miss {missing} tool{(missing == 1 ? "" : "s")}" : "");
         return status.State switch
         {
             PluginState.Undecided => $"Waiting for your decision · {tools}",

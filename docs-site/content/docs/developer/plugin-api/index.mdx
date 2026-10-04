@@ -28,11 +28,17 @@ public sealed class Plugin : IDalamudPlugin
     public Plugin(IDalamudPluginInterface pluginInterface)
     {
         mcp = new XivMcpClient(pluginInterface);
-        mcp.RegistrationFailed += message => Log.Warning($"XIV MCP rejected a tool: {message}");
+        mcp.RegistrationFailed += message =>
+            Log.Warning($"XIV MCP rejected a tool: {message}");
 
         mcp.AddTool(
-            new McpToolDefinition("myplugin_status", "What My Plugin is doing right now: its mode and current target.") { ReadOnly = true },
-            args => new { mode = Mode.ToString(), target = CurrentTarget?.Name });
+            new McpToolDefinition(
+                "myplugin_status",
+                "Whom My Plugin is following right now, if anyone.")
+            {
+                ReadOnly = true,
+            },
+            args => new { following = FollowTarget?.Name });
     }
 
     public void Dispose() => mcp.Dispose();
@@ -51,7 +57,7 @@ The player gets a notification that your plugin wants to register. They click **
 
 ### Ask the assistant
 
-Ask it to "check My Plugin's status". It calls `myplugin_status`.
+Ask it "whom is My Plugin following?". It calls `myplugin_status` and answers from its result.
 
 </Step>
 </Steps>

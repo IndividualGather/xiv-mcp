@@ -33,8 +33,11 @@ This site uses the same gradient, on near-black surfaces (`#1A1A1A`), with Inter
 Everything in `branding/` is generated. Change the drawing in `brand.ps1`, then run:
 
 ```powershell
-powershell -File branding/draw-assets.ps1        # banner, icons, logos, docs-site files
-powershell -File XivMcp/images/draw-icon.ps1 -Out XivMcp/images/icon.png   # the plugin icon
+# Banner, icons, logos and the docs-site files
+powershell -File branding/draw-assets.ps1
+
+# The plugin icon
+powershell -File XivMcp/images/draw-icon.ps1 -Out XivMcp/images/icon.png
 ```
 
 | File | Use |

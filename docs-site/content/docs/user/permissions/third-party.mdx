@@ -41,6 +41,21 @@ Before and after every call, XIV MCP compares:
 
 A change the plugin did not declare flags the call. If the call was short (under two minutes), the plugin is **suspended** until you lift it, and you get a chat message. Longer calls are only flagged, since you or another plugin may have acted in the meantime.
 
+## Tools its jobs use
+
+A plugin can run [background jobs](/docs/user/features/jobs) that use XIV MCP's own tools or other plugins' tools. It declares which ones, and its card lists them under **Tools its jobs use**:
+
+<Screenshot src="third-party-dependencies.png" alt="A plugin card listing the tools its jobs use: three ready, three with red errors and buttons to fix them" caption="Ready tools get a green check. A red error says what is missing, with a way to get it." width={620} />
+
+- **A green check** means the tool can run.
+- **A red error** means a job with that tool will be refused, or its step will fail. The card says why: a plugin that tool needs is not installed, is turned off, is too old, or is not enabled in XIV MCP.
+- **The buttons fix it.** **Install**, **Enable** and **Update** open Dalamud's plugin installer at that plugin. A plugin outside Dalamud's main repository shows its repository URL, with **Copy repository URL** and **Open Dalamud settings**. Add the URL under **Experimental** → **Custom Plugin Repositories**, then install it.
+- **A grey hint** names a plugin that only makes a tool better. Nothing fails without it.
+
+XIV MCP never adds a repository by itself. Only add repositories you trust: a plugin from them can do anything on your PC.
+
+The tab's label says when a plugin's jobs miss something.
+
 ## Audit log
 
 Every call, decision and approval is listed under the plugin, with flagged entries highlighted. The full log is in `pluginConfigs/XivMcp/audit.jsonl`.

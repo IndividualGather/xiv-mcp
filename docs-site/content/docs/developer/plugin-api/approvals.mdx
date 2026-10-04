@@ -8,8 +8,10 @@ When the real cost is only known during the call, ask then, with the numbers:
 
 ```csharp
 var basket = await Framework.RunOnFrameworkThread(PlanPurchase);
-if (!await call.RequestApprovalAsync(McpCapabilities.SpendGil, $"Buy {basket.Summary} for {basket.Gil:N0} gil"))
-    throw new McpToolException("The player declined the purchase; nothing was bought.");
+var question = $"Buy {basket.Summary} for {basket.Gil:N0} gil";
+if (!await call.RequestApprovalAsync(McpCapabilities.SpendGil, question))
+    throw new McpToolException(
+        "The player declined the purchase; nothing was bought.");
 ```
 
 ## How it answers

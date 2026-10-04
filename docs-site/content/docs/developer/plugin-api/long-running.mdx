@@ -1,34 +1,66 @@
 ---
 title: Long-running tools
-description: Tools that take minutes or hours, with progress, cancellation and reruns.
+description: Tools that take minutes or hours, how they run as job steps, and how they report progress and stop.
 icon: Timer
 ---
 
-Use `AddLongRunningTool` for anything that waits. The call can run for hours as a job step.
+Use `AddLongRunningTool` for anything that waits: farming, crafting a list, walking somewhere. A quick tool (`AddTool`) runs on the framework thread and must return at once; a long-running tool runs asynchronously, for as long as its work takes.
+
+## Long-running tools and jobs
+
+A long-running tool is one tool. A [job](/docs/developer/plugin-api/jobs) is a queue of tool calls that XIV MCP runs in the game one after another, independent of the chat. The two are meant to be used together:
+
+- **As a job step,** the usual way, the tool can run for hours. The assistant (or your plugin, with `StartJob`) puts it into a job, and the job waits until it is done before starting the next step.
+- **Called directly,** it works too, but only within the AI app's own time limit for a request, which XIV MCP does not control.
+- **Cancelling comes from the job.** Pausing or cancelling the job fires `call.Cancellation`, and so does an app that aborts a direct call.
+- **Progress goes to the job log,** shown in `/xivmcp` → **Jobs** and in `get_job`.
+- **Failing makes the job wait.** The step becomes *pending* until the assistant retries, skips or changes it.
+
+So write a long-running tool as if it were a job step: safe to stop at any moment, safe to run again, with a result the next step can use (`{{farm.kills}}`). How players see jobs is described in [Background jobs](/docs/user/features/jobs).
+
+## Example
 
 ```csharp
 mcp.AddLongRunningTool(
-    new McpToolDefinition("myplugin_farm", "Farms the current zone until the bags are full or 'minutes' have passed.")
+    new McpToolDefinition(
+        "myplugin_farm",
+        "Farms the current zone until the bags are full " +
+        "or 'minutes' have passed.")
     {
-        Capabilities = [McpCapabilities.MoveCharacter, McpCapabilities.Combat],
-        InputSchema = """{ "type": "object", "properties": { "minutes": { "type": "integer", "minimum": 1, "maximum": 600 } } }""",
+        Capabilities =
+            [McpCapabilities.MoveCharacter, McpCapabilities.Combat],
+        InputSchema = """
+            {
+              "type": "object",
+              "properties": {
+                "minutes": {
+                  "type": "integer", "minimum": 1, "maximum": 600
+                }
+              }
+            }
+            """,
     },
     async call =>
     {
-        var until = DateTime.UtcNow.AddMinutes(call.Args["minutes"]?.GetValue<int>() ?? 60);
+        var minutes = call.Args["minutes"]?.GetValue<int>() ?? 60;
+        var until = DateTime.UtcNow.AddMinutes(minutes);
         await Framework.RunOnFrameworkThread(StartFarming);
         try
         {
-            while (DateTime.UtcNow < until && !await Framework.RunOnFrameworkThread(BagsFull))
+            while (DateTime.UtcNow < until
+                   && !await Framework.RunOnFrameworkThread(BagsFull))
             {
-                await Task.Delay(5000, call.Cancellation);   // throws when the job is paused or cancelled
-                call.Progress($"{Kills} kills");              // shown in the job log
+                // Throws when the job is paused or cancelled.
+                await Task.Delay(5000, call.Cancellation);
+                // Shown in the job log.
+                call.Progress($"{Kills} kills");
             }
             return new { kills = Kills };
         }
         finally
         {
-            await Framework.RunOnFrameworkThread(StopFarmingSafely);  // also runs on cancel
+            // Also runs on cancel.
+            await Framework.RunOnFrameworkThread(StopFarmingSafely);
         }
     });
 ```
@@ -39,5 +71,6 @@ mcp.AddLongRunningTool(
 - **Cancel safely:** when `call.Cancellation` fires, finish the fight or close the window, then return or throw. XIV MCP waits up to two minutes for you.
 - **Progress:** `call.Progress("Room 2 of 5")` adds a line to the job log. Report milestones, not every frame.
 - **Ending a cancelled call:** let the `OperationCanceledException` from `Task.Delay(…, call.Cancellation)` propagate, or throw it yourself. The client reports "Cancelled."
-- **Pause and resume:** a paused job runs the step again from the start, with the same arguments. Make tools safe to run again: prefer targets ("until 20 ore") over counts ("20 more").
-- **Failing** (throwing) makes a job step *pending*: the job waits for the assistant to retry or change it. Say what is left: "Bags full after 120 kills; 3 Iron Ore still missing."
+- **Pause and resume:** when a paused [job](/docs/developer/plugin-api/jobs) resumes, it runs the step again from the start, with the same arguments. Make tools safe to run again: prefer targets ("until 20 ore") over counts ("20 more").
+- **Failing** (throwing) makes the job step *pending*: the job waits for the assistant to retry or change it. Say what is left: "Bags full after 120 kills; 3 Iron Ore still missing."
+- **One acting step at a time:** while your tool runs as a job step, other tools that change something are refused, so nothing collides with it. Tools that only read keep working.

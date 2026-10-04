@@ -10,14 +10,23 @@ The player may not have enabled your plugin yet, or may have suspended it. `GetS
 var status = mcp.GetStatus();
 var hint = status.State switch
 {
-    McpPluginState.Unavailable     => "XIV MCP is not installed.",
-    McpPluginState.Undecided       => "Enable My Plugin in /xivmcp → Third-party plugins to use it from your assistant.",
-    McpPluginState.KeptDisabled    => "You kept My Plugin disabled in XIV MCP.",
-    McpPluginState.AwaitingConsent => "My Plugin has new features; confirm them in /xivmcp → Third-party plugins.",
-    McpPluginState.Suspended       => $"XIV MCP suspended My Plugin: {status.SuspendReason}",
-    _                              => null,   // Enabled
+    McpPluginState.Unavailable =>
+        "XIV MCP is not installed.",
+    McpPluginState.Undecided =>
+        "Enable My Plugin in /xivmcp → Third-party plugins " +
+        "to use it from your assistant.",
+    McpPluginState.KeptDisabled =>
+        "You kept My Plugin disabled in XIV MCP.",
+    McpPluginState.AwaitingConsent =>
+        "My Plugin has new features; " +
+        "confirm them in /xivmcp → Third-party plugins.",
+    McpPluginState.Suspended =>
+        $"XIV MCP suspended My Plugin: {status.SuspendReason}",
+    _ => null,   // Enabled
 };
-var canBuy = status.Capabilities.GetValueOrDefault(McpCapabilities.SpendGil) != McpPermission.Deny;
+
+var canBuy = status.Capabilities
+    .GetValueOrDefault(McpCapabilities.SpendGil) != McpPermission.Deny;
 ```
 
 Call it when your window opens or before a step, not every frame. Do not cache it: the player can change settings at any time.
