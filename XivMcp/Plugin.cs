@@ -118,6 +118,7 @@ public sealed class Plugin : IDalamudPlugin
             .Append(SelfTest.Tool())
             .Concat(JobTools.Create(() => jobs!, () => Server?.LastClient))
             .Concat(MapTools.Create(() => jobs!, () => Server?.LastClient))
+            .Concat(DyeTools.Create())
             .Concat(SaucyTools.Create(() => jobs!, () => Server?.LastClient))
             .Concat(XivMcpWindowTools.Create(() => configWindow, () => overlayWindow, () => jobs, pluginInterface.IsDev))
             .ToList();

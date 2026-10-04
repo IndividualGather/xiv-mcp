@@ -68,6 +68,7 @@ public static class ToolSummaries
         ["stop_saucy"] = "Stops Triple Triad and travel that are running at the Gold Saucer.",
         ["show_xivmcp_window"] = "Opens the XIV MCP window on a tab, for example to show you a job or a plugin.",
         ["press_xivmcp_control"] = "Presses a button in the XIV MCP window, for testing the plugin while it is developed.",
+        ["dye_item"] = "Dyes a piece of your gear in a color, using a dye from your bags.",
         ["capture_ui_events"] = "Records what game windows send while you click, for developing new tools.",
         ["take_screenshot"] = "Looks at your screen: takes a screenshot of the game or of the XIV MCP window.",
         ["interact_with_object"] = "Talks to an NPC or uses an object near you, such as a summoning bell.",

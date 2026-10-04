@@ -26,7 +26,7 @@ internal static class RetainerUi
     private static readonly string[] RetainerWindows =
         ["SelectString", "Talk", "RetainerTaskAsk", "RetainerTaskResult", "RetainerTaskList", "RetainerSellList", "RetainerSell"];
 
-    private static Dalamud.Game.NativeWrapper.AtkUnitBasePtr Ptr(string name) => Svc.GameGui.GetAddonByName(name, 1);
+    internal static Dalamud.Game.NativeWrapper.AtkUnitBasePtr Ptr(string name) => Svc.GameGui.GetAddonByName(name, 1);
     private static unsafe AtkUnitBase* Addon(string name) => Svc.GameGui.GetAddonByName<AtkUnitBase>(name, 1);
     public static bool Ready(string name) => Ptr(name) is { IsNull: false, IsVisible: true, IsReady: true };
 

@@ -71,7 +71,7 @@ public static class PermissionCatalog
         [
             "get_retainers", "get_retainer_inventories", "get_fc_chest", "find_ventures",
             "sort_inventory", "move_items", "open_retainer", "close_retainer", "transfer_retainer_items", "refresh_retainer_inventories",
-            "assign_venture", "recall_venture", "turn_in_collectables",
+            "assign_venture", "recall_venture", "turn_in_collectables", "dye_item",
         ],
         ["market"] =
         [
