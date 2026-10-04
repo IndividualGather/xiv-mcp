@@ -46,6 +46,10 @@ Every tool has a `ToolProvider` with a trust level, which decides how its calls 
 
 `Jobs` (`XivMcp/Util`) runs a queue of tool calls one after another, independent of any app connection. A failed or stopped step puts the job into *pending*, waiting for the agent. While an acting step runs, other changing calls are refused; passive steps such as `wait` and `wait_until_arrived` do not block. Placeholders between steps are resolved by `Placeholders` in the core.
 
+## Pausing other plugins
+
+While XIV MCP drives game windows, it pauses YesAlready and TextAdvance by adding itself to their `StopRequests` sets, and holds AutoRetainer back at a bell through AutoRetainer's public IPC. See [Compatibility](/docs/user/compatibility) for what players see.
+
 ## Caches as resources
 
 Each cache (see [Caches](/docs/user/caches)) is also an MCP **resource** (`xiv://cache/<id>`) that apps can subscribe to with `resources/subscribe`. Apps that open the event stream (`GET /mcp` with their `Mcp-Session-Id`) receive `notifications/resources/updated` when a cache changes.

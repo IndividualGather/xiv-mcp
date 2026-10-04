@@ -36,7 +36,7 @@ XIV MCP is open source under the MIT license, and contributions are welcome: bug
 </Step>
 <Step>
 
-**Update the documentation.** `README.md` and this site describe every tool, permission and dependency. Change them in the same pull request. The [tools reference](/docs/user/tools) updates itself from the code.
+**Update the documentation.** This site describes every tool, permission and dependency; `README.md` only gives an overview and links here. Change the site in the same pull request. The [tools reference](/docs/user/tools) updates itself from the code.
 
 </Step>
 <Step>
@@ -57,7 +57,7 @@ A new tool of XIV MCP's own touches these places:
 | `XivMcp.Core/Permissions/PermissionCatalog.cs` | The module it belongs to. Tools that drive one other plugin go into `IntegrationCatalog.cs` instead, with their capabilities. |
 | `XivMcp.Core/Mcp/ToolSummaries.cs` | One sentence for the player, shown in `/xivmcp` and in the tools reference. |
 | `XivMcp.Core/Integrations/ToolRequirements.cs` | If a core tool uses another plugin: which one, whether it is needed or only improves the tool, and what for. New plugins also go into `PluginCatalog.cs`, with the repository they are installed from. |
-| `README.md` | The tool table of its area. |
+| `docs-site/content/docs/user/features/*.mdx` | The tool table of its area, on the page players read. |
 
 The tests check that every tool has a summary written in the player style, and that every tool in the catalog maps to an existing module.
 
