@@ -7,3 +7,6 @@ obj/
 
 # Local AI client settings (may contain the access token)
 .codex/
+
+# Local Claude Code settings and skills
+.claude/
