@@ -355,15 +355,36 @@ internal sealed partial class ConfigWindow : Window
         var config = plugin.Config;
         ImGui.Spacing();
         var vip = config.FashionReportVipCard;
-        var changed = ImGui.Checkbox("Use a Gold Saucer VIP Card for the Fashion Report##fr-vip", ref vip);
-        if (Controls.Consume("saucy:vip-card") && !changed) { vip = !vip; changed = true; } // press_xivmcp_control (dev builds)
-        if (changed)
+        var vipChanged = ImGui.Checkbox("Use a Gold Saucer VIP Card for the Fashion Report##fr-vip", ref vip);
+        if (Controls.Consume("saucy:vip-card") && !vipChanged) { vip = !vip; vipChanged = true; } // press_xivmcp_control (dev builds)
+        if (vipChanged)
         {
             config.FashionReportVipCard = vip;
             config.Save();
         }
         Tooltip("Right before presenting to the Masked Rose, XIV MCP uses a Gold Saucer VIP Card from your bags, unless its bonus is already active. " +
                 "The card raises the MGP the Fashion Report pays.");
+
+        var discard = config.FashionReportDiscard;
+        var changed = ImGui.Checkbox("Discard cheap pieces bought for the Fashion Report##fr-discard", ref discard);
+        if (Controls.Consume("saucy:discard") && !changed) { discard = !discard; changed = true; } // press_xivmcp_control (dev builds)
+        if (changed)
+        {
+            config.FashionReportDiscard = discard;
+            config.Save();
+        }
+        Tooltip("After the Masked Rose judged, XIV MCP puts your gearset back on and throws away the pieces the Fashion Report job bought " +
+                "(from a vendor or the market board) that are worth at most this much: the vendor price, otherwise the market price. " +
+                "Pieces you had before, or took from a retainer, the glamour dresser or the armoire, are never discarded.");
+        if (!discard) return;
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(110 * Ui.Scale);
+        var max = config.FashionReportDiscardMaxValue;
+        if (ImGui.InputInt("gil at most##fr-discard-max", ref max, 500, 5000))
+        {
+            config.FashionReportDiscardMaxValue = Math.Clamp(max, 0, 10_000_000);
+            config.Save();
+        }
     }
 
     /// <summary>Pause between item moves: random within a range (default 500-800 ms) or an exact value.</summary>

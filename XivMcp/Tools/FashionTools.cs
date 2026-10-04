@@ -1,10 +1,10 @@
 using System;
-using Dalamud.Game.ClientState.Conditions;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Types;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
@@ -130,14 +130,16 @@ internal static class FashionTools
             Description = "Presents the player's outfit to the Masked Rose at the Gold Saucer for this week's Fashion Report (Friday to the Tuesday " +
                           "reset): puts on the given 'items' first (from the bags or armoury chest), goes to the Masked Rose, chooses to be " +
                           "judged and confirms, and returns the score. Right before talking to her it uses a Gold Saucer VIP Card (more MGP) unless " +
-                          "its bonus is already active, if the setting in /xivmcp says so (on by default) or 'use_vip_card' is true. The look counts as worn, including glamours and dyes. Each week has 4 " +
+                          "its bonus is already active, if the setting in /xivmcp says so (on by default) or 'use_vip_card' is true. " +
+                          "Pieces listed in 'discard' (bought for the report) are thrown away after judging when cheap enough, if the setting says so. The look counts as worn, including glamours and dyes. Each week has 4 " +
                           "attempts; the best one counts.",
             InputSchema = """
                 {
                   "type": "object",
                   "properties": {
                     "items": { "type": "array", "items": { "type": ["string", "integer"] }, "description": "Gear to put on first (names or ids)." },
-                    "use_vip_card": { "type": "boolean", "description": "Use a Gold Saucer VIP Card right before presenting (default: the setting in /xivmcp, on unless turned off)." }
+                    "use_vip_card": { "type": "boolean", "description": "Use a Gold Saucer VIP Card right before presenting (default: the setting in /xivmcp, on unless turned off)." },
+                    "discard": { "type": "array", "items": { "type": "integer" }, "description": "Item ids bought for the report: after judging, the gearset goes back on and those worth at most the limit in /xivmcp (5,000 gil by default) are thrown away, if that setting is on." }
                   }
                 }
                 """,
@@ -152,7 +154,10 @@ internal static class FashionTools
                     await Equip(item, ct).ConfigureAwait(false);
                     steps.Add($"Put on {item}.");
                 }
-                return await Present(steps, vipCard, ct).ConfigureAwait(false);
+                var discard = config.FashionReportDiscard
+                    ? args.Node("discard")?.AsArray().Select(n => n?.GetValue<uint>() ?? 0).Where(i => i != 0).Distinct().ToList() ?? []
+                    : [];
+                return await Present(steps, vipCard, discard, config.FashionReportDiscardMaxValue, config.AllowOnlineData, ct).ConfigureAwait(false);
             },
         };
 
@@ -292,8 +297,11 @@ internal static class FashionTools
 
         var judging = FashionSchedule.IsJudgingOpen(DateTime.UtcNow);
         if (judging)
-            Add("present_fashion_report", new JsonObject { ["items"] = new JsonArray(pieces.Select(p => (JsonNode)p.ItemId).ToArray()) },
-                "Puts on the outfit and presents it to the Masked Rose");
+            Add("present_fashion_report", new JsonObject
+            {
+                ["items"] = new JsonArray(pieces.Select(p => (JsonNode)p.ItemId).ToArray()),
+                ["discard"] = new JsonArray(pieces.Where(p => p.Source is ItemSource.Vendor or ItemSource.Market).Select(p => (JsonNode)p.ItemId).ToArray()),
+            }, "Puts on the outfit, presents it to the Masked Rose, and throws away cheap pieces it bought");
         if (steps.Count == 0) throw new ToolException("Nothing to do: judging is closed (Friday to the Tuesday reset) and you have everything already.");
 
         var job = jobs.Start($"Fashion Report: {report.Theme}", steps, client);
@@ -513,7 +521,7 @@ internal static class FashionTools
 
     // ---------------------------------------------------------------- presenting
 
-    private static async Task<object> Present(List<string> steps, bool vipCard, CancellationToken ct)
+    private static async Task<object> Present(List<string> steps, bool vipCard, List<uint> discard, int maxValue, bool online, CancellationToken ct)
     {
         var state = await Game.Run(ReportState).ConfigureAwait(false);
         if (state is { Remaining: 0 }) throw new ToolException("No attempts left this week.");
@@ -569,10 +577,116 @@ internal static class FashionTools
         var score = await Game.Run(() => { unsafe { var m = FashionCheckManager.Instance(); return m == null ? (int?)null : m->EquipEvaluations.Score; } }).ConfigureAwait(false);
         var after = await Game.Run(ReportState).ConfigureAwait(false);
         steps.Add("Judged.");
-        return new { score, highScore = after?.HighScore, attemptsLeft = after?.Remaining, vipCard = vip, steps };
+        List<object>? discarded = null;
+        if (discard.Count > 0)
+        {
+            await PutGearsetBackOn(steps, ct).ConfigureAwait(false);
+            discarded = [];
+            foreach (var id in discard) discarded.Add(await DiscardBought(id, maxValue, online, steps, ct).ConfigureAwait(false));
+        }
+        return new { score, highScore = after?.HighScore, attemptsLeft = after?.Remaining, vipCard = vip, discarded, steps };
     }
 
-/// <summary>
+    // ---------------------------------------------------------------- after presenting
+
+    /// <summary>Puts the active gearset back on, so the pieces worn for the report come off.</summary>
+    private static async Task PutGearsetBackOn(List<string> steps, CancellationToken ct)
+    {
+        var equipped = await Game.Run(() =>
+        {
+            unsafe
+            {
+                var module = RaptureGearsetModule.Instance();
+                var index = module->CurrentGearsetIndex;
+                if (index < 0 || !module->IsValidGearset(index)) return false;
+                module->EquipGearset(index);
+                return true;
+            }
+        }).ConfigureAwait(false);
+        if (!equipped) { steps.Add("No gearset is active: the outfit stays on."); return; }
+        steps.Add("Put the gearset back on.");
+        await Task.Delay(1500, ct).ConfigureAwait(false);
+    }
+
+    private static readonly InventoryType[] DiscardFrom =
+    [
+        InventoryType.Inventory1, InventoryType.Inventory2, InventoryType.Inventory3, InventoryType.Inventory4,
+        InventoryType.ArmoryMainHand, InventoryType.ArmoryOffHand, InventoryType.ArmoryHead, InventoryType.ArmoryBody, InventoryType.ArmoryHands,
+        InventoryType.ArmoryWaist, InventoryType.ArmoryLegs, InventoryType.ArmoryFeets, InventoryType.ArmoryEar, InventoryType.ArmoryNeck,
+        InventoryType.ArmoryWrist, InventoryType.ArmoryRings,
+    ];
+
+    /// <summary>
+    /// Throws one bought piece away when it is worth at most <paramref name="maxValue"/> gil (vendor price, otherwise the lowest market
+    /// listing on the home world). Never throws: a piece that stays is reported with the reason.
+    /// </summary>
+    private static async Task<object> DiscardBought(uint itemId, int maxValue, bool online, List<string> steps, CancellationToken ct)
+    {
+        var (name, vendor) = await Game.Run(() =>
+            (Items.Name(itemId), SoldByVendor(itemId) ? (int?)(int)(Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId)?.PriceMid ?? 0) : null)).ConfigureAwait(false);
+        int? market = null;
+        if (vendor is null && online)
+        {
+            try
+            {
+                var world = await Game.Run(() => Universalis.HomeScopes().World).ConfigureAwait(false);
+                var data = await Universalis.Get([itemId], world, 1, 0, ct).ConfigureAwait(false);
+                market = data.TryGetValue(itemId, out var m) && m.Listings.Count > 0 ? (int)Math.Min(int.MaxValue, m.Listings.Min(l => l.PricePerUnit)) : null;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException) { /* unknown value: kept */ }
+        }
+        var value = vendor ?? market;
+        if (!FashionCleanup.ShouldDiscard(vendor is not null ? ItemSource.Vendor : ItemSource.Market, vendor, market, maxValue))
+            return new { item = name, kept = value is null ? "its value is unknown" : $"worth {value:N0} gil, more than {maxValue:N0}" };
+
+        var found = await Game.Run(() =>
+        {
+            unsafe
+            {
+                var im = InventoryManager.Instance();
+                var worn = im->GetInventoryContainer(InventoryType.EquippedItems);
+                for (var i = 0; i < worn->Size; i++)
+                    if (worn->GetInventorySlot(i)->ItemId == itemId) return "worn";
+                foreach (var type in DiscardFrom)
+                {
+                    var container = im->GetInventoryContainer(type);
+                    if (container == null) continue;
+                    for (var i = 0; i < container->Size; i++)
+                    {
+                        var slot = container->GetInventorySlot(i);
+                        if (slot->ItemId != itemId) continue;
+                        var addon = FFXIVClientStructs.FFXIV.Client.UI.RaptureAtkUnitManager.Instance()->GetAddonByName("Inventory");
+                        FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentInventoryContext.Instance()->DiscardItem(slot, type, i, addon != null ? addon->Id : 0u);
+                        return "asked";
+                    }
+                }
+                return "missing";
+            }
+        }).ConfigureAwait(false);
+        if (found == "worn") return new { item = name, kept = "still worn (no gearset to put back on)" };
+        if (found == "missing") return new { item = name, kept = "not in the bags or armoury chest" };
+
+        // The game asks "Discard ...?"; confirm, then check it is gone.
+        var before = await Game.Run(() => Count(itemId)).ConfigureAwait(false);
+        var until = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < until)
+        {
+            if (await Game.Run(() => RetainerUi.Ready("SelectYesno")).ConfigureAwait(false)) { await Game.Run(() => { FireYes(); return true; }).ConfigureAwait(false); break; }
+            await Task.Delay(200, ct).ConfigureAwait(false);
+        }
+        var gone = await WaitFor(() => Count(itemId) < before, TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
+        if (!gone) return new { item = name, kept = "the game did not discard it" };
+        steps.Add($"Discarded {name} (worth {value:N0} gil).");
+        return new { item = name, discarded = true, value };
+    }
+
+    private static unsafe int Count(uint itemId)
+    {
+        var im = InventoryManager.Instance();
+        return DiscardFrom.Sum(t => im->GetItemCountInContainer(itemId, t));
+    }
+
+    /// <summary>
     /// Uses a Gold Saucer VIP Card unless its bonus is already active; returns what happened (for the result). Never throws: a missing
     /// card only means no bonus.
     /// </summary>

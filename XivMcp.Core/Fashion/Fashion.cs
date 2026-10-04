@@ -132,3 +132,14 @@ public static class FashionSchedule
         return hoursSinceMonday >= fridayOpen || hoursSinceMonday < tuesdayReset;
     }
 }
+
+/// <summary>Which pieces bought for the Fashion Report are thrown away after presenting.</summary>
+public static class FashionCleanup
+{
+    /// <summary>
+    /// Only pieces the job bought (from a vendor or the market board), and only when they are worth at most <paramref name="maxValue"/>
+    /// gil: the vendor price if a vendor sells it, otherwise the market price. A piece of unknown value is kept.
+    /// </summary>
+    public static bool ShouldDiscard(ItemSource source, int? vendorPrice, int? marketPrice, int maxValue) =>
+        source is ItemSource.Vendor or ItemSource.Market && (vendorPrice ?? marketPrice) is { } value && value <= maxValue;
+}

@@ -188,3 +188,40 @@ public class FashionScheduleTests
         Assert.Equal(open, FashionSchedule.IsJudgingOpen(DateTime.Parse(utc, null, System.Globalization.DateTimeStyles.AdjustToUniversal)));
     }
 }
+
+public class FashionCleanupTests
+{
+    [Theory]
+    [InlineData(ItemSource.Vendor, 783, null, true)]
+    [InlineData(ItemSource.Vendor, 5000, null, true)]
+    [InlineData(ItemSource.Vendor, 5001, null, false)]
+    [InlineData(ItemSource.Market, null, 3200, true)]
+    [InlineData(ItemSource.Market, null, 48000, false)]
+    public void Cheap_bought_pieces_are_discarded(ItemSource source, int? vendor, int? market, bool discard)
+    {
+        Assert.Equal(discard, FashionCleanup.ShouldDiscard(source, vendor, market, 5000));
+    }
+
+    [Theory]
+    [InlineData(ItemSource.Have)]
+    [InlineData(ItemSource.Retainer)]
+    [InlineData(ItemSource.GlamourDresser)]
+    [InlineData(ItemSource.Armoire)]
+    [InlineData(ItemSource.Duty)]
+    public void Pieces_that_were_not_bought_are_kept(ItemSource source)
+    {
+        Assert.False(FashionCleanup.ShouldDiscard(source, 100, 100, 5000));
+    }
+
+    [Fact]
+    public void A_piece_of_unknown_value_is_kept()
+    {
+        Assert.False(FashionCleanup.ShouldDiscard(ItemSource.Market, null, null, 5000));
+    }
+
+    [Fact]
+    public void The_vendor_price_counts_before_the_market_price()
+    {
+        Assert.True(FashionCleanup.ShouldDiscard(ItemSource.Vendor, 900, 20000, 5000));
+    }
+}
