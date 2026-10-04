@@ -14,7 +14,8 @@ public enum Access { Read, Write }
 /// integration (<see cref="PluginId"/> set). Each has a read and a write setting, Allow / Ask / Deny.
 /// </summary>
 public sealed record PermissionGroup(string Id, string Title, string Description, PolicyMode DefaultRead, PolicyMode DefaultWrite,
-                                     bool HasRead = true, bool HasWrite = true, string? PluginId = null, IReadOnlyList<string>? AlsoWith = null)
+                                     bool HasRead = true, bool HasWrite = true, string? PluginId = null, IReadOnlyList<string>? AlsoWith = null,
+                                     bool Standalone = false)
 {
     /// <summary>The plugins that make the group's tools available: its own, then those that offer some of its tools as well (TriadBuddy for the Gold Saucer).</summary>
     public IReadOnlyList<string> Plugins => PluginId is null ? [] : [PluginId, .. AlsoWith ?? []];
@@ -45,7 +46,7 @@ public static class PermissionCatalog
         .. IntegrationCatalog.All.Select(i => new PermissionGroup(IntegrationGroupId(i.PluginId), i.DisplayName, i.Summary, A, D,
             // Tools that declare nothing beyond reading only read; the others change something.
             HasRead: i.Tools.Values.Any(c => c.Length == 0), HasWrite: i.Tools.Values.Any(c => c.Length > 0), PluginId: i.PluginId,
-            AlsoWith: i.AlsoWith.Values.SelectMany(p => p).Distinct().ToList())),
+            AlsoWith: i.AlsoWith.Values.SelectMany(p => p).Distinct().ToList(), Standalone: i.Standalone.Count > 0)),
     ];
 
     /// <summary>The group id of an integration: its plugin's internal name, lower-cased (e.g. "autoduty").</summary>
@@ -72,7 +73,7 @@ public static class PermissionCatalog
         [
             "get_retainers", "get_retainer_inventories", "get_fc_chest", "find_ventures",
             "sort_inventory", "move_items", "open_retainer", "close_retainer", "transfer_retainer_items", "refresh_retainer_inventories",
-            "assign_venture", "recall_venture", "turn_in_collectables", "move_gil", "repair_submersible", "deploy_submersible", "dye_item",
+            "assign_venture", "recall_venture", "turn_in_collectables", "move_gil", "repair_submersible", "deploy_submersible", "dye_item", "equip_items", "retrieve_glamour_item",
         ],
         ["market"] =
         [
@@ -80,7 +81,7 @@ public static class PermissionCatalog
             "buy_item", "request_spending_approval", "revoke_approval", "sell_item", "reprice_listings", "get_sale_history",
         ],
         ["ui_editing"] = ["get_macros", "list_waymark_presets", "get_waymark_preset", "set_macro", "clear_macro", "set_waymark_preset"],
-        ["online"] = ["get_item_sources", "get_market_prices", "find_fish"],
+        ["online"] = ["get_item_sources", "get_market_prices", "find_fish", "get_fashion_report"],
         ["plugin_management"] = ["list_plugin_config_files", "get_plugin_config", "set_plugin_enabled", "reload_plugin", "set_plugin_config"],
         ["screen"] = ["take_screenshot"],
         ["trading"] = ["get_trade", "trade_with_player", "cancel_trade"],

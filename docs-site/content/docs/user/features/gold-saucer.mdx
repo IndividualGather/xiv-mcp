@@ -1,10 +1,36 @@
 ---
 title: Gold Saucer
-description: Triple Triad cards, opponents and decks, playing and farming cards with Saucy, and the Cactpot lotteries.
+description: The Fashion Report, Triple Triad cards, opponents and decks, playing and farming cards with Saucy, and the Cactpot lotteries.
 icon: Dices
 ---
 
-These tools work through **Saucy**, so they are only offered while Saucy is loaded. Reading your cards, the Triple Triad opponents and your decks, and saving a deck, also work with **TriadBuddy** instead. They have their own module, **Gold Saucer**, under **Integrations maintained by XIV MCP**: reading is allowed by default, everything that plays or changes something is denied until you allow it.
+These tools have their own module, **Gold Saucer**, under **Integrations maintained by XIV MCP**: reading is allowed by default, everything that plays or changes something is denied until you allow it.
+
+- The **Fashion Report** needs no plugin.
+- **Triple Triad** reading (cards, opponents, decks) and saving a deck work with **Saucy** or **TriadBuddy**.
+- **Playing** Triple Triad and the **Cactpot** lotteries need **Saucy**.
+
+## Fashion Report
+
+| Tool | What it does |
+|---|---|
+| `get_fashion_report` | This week's theme, hints and ready-made sets from [fashionreportxiv.com](https://fashionreportxiv.com), with where you have each piece and whether you have its dye. Goes online (*Online lookups*). |
+| `complete_fashion_report` | Starts one background job for the "easy 80" set (or "easy 100"): gets the pieces, dyes them, puts them on and presents the outfit. |
+| `present_fashion_report` | Puts on the given pieces, walks to the Masked Rose and presents your outfit for judging. |
+
+> "Do this week's Fashion Report for the easy 80 points."
+
+### How the job works
+
+`complete_fashion_report` reads this week's set and plans every piece:
+
+1. **Getting each piece**, the cheapest way first: you carry it already; a retainer has it (a summoning bell, then `transfer_retainer_items`); it is in your glamour dresser or armoire (your inn room, then `retrieve_glamour_item`); or a vendor sells it (`buy_item`). Pieces with no known way stop the job before it starts; `get_item_sources` shows drops and crafting.
+2. **The dyes**, with `dye_item`. Most colors come from **Standard Spectrum Dye** now; if you have none, the job buys one.
+3. **Presenting** as the last step: it puts on the pieces, walks to the Masked Rose and presents. The best of your 4 weekly attempts counts.
+
+The Masked Rose judges from Friday 08:00 UTC until the weekly reset on Tuesday. Outside that, the job only prepares the outfit.
+
+Buying pieces on the market board is planned, but not part of the job yet.
 
 ## Triple Triad
 

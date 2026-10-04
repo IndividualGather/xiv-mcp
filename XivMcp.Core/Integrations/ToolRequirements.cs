@@ -75,6 +75,8 @@ public static class ToolRequirements
     /// <summary>The plugins a tool of XIV MCP uses (empty for tools that need none, and for tools XIV MCP doesn't know).</summary>
     public static IReadOnlyList<ToolRequirement> For(string tool)
     {
+        if (IntegrationCatalog.For(tool) is { } own && own.Standalone.Contains(tool))
+            return own.Helpers.TryGetValue(tool, out var standaloneHelpers) ? standaloneHelpers : [];
         if (IntegrationCatalog.For(tool) is { } integration)
             return
             [

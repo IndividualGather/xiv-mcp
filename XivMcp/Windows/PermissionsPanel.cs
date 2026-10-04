@@ -81,7 +81,7 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
         void Card(PermissionGroup g) => DrawCard(g, byGroup.GetValueOrDefault(g.Id) ?? [], found[g.Id].Tools);
 
         var core = PermissionCatalog.Groups.Where(g => g.PluginId is null && found[g.Id].Visible).ToList();
-        var installed = PermissionCatalog.Groups.Where(g => g.PluginId is not null && g.Plugins.Any(host.IsInstalled) && found[g.Id].Visible).ToList();
+        var installed = PermissionCatalog.Groups.Where(g => g.PluginId is not null && (g.Standalone || g.Plugins.Any(host.IsInstalled)) && found[g.Id].Visible).ToList();
         var soon = Upcoming.Where(u => ModuleSearch.Match(search, u.Title, u.Description, []).Visible).ToList();
         if (core.Count + installed.Count + soon.Count == 0)
         {
@@ -211,7 +211,7 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
         var scale = Ui.Scale;
         var read = g.HasRead ? host.Policy.ModeFor(g.Id, Access.Read) : (PolicyMode?)null;
         var write = g.HasWrite ? host.Policy.ModeFor(g.Id, Access.Write) : (PolicyMode?)null;
-        var loaded = g.PluginId is null || g.Plugins.Any(host.IsLoaded);
+        var loaded = g.PluginId is null || g.Standalone || g.Plugins.Any(host.IsLoaded);
         // Only a plugin that offers some of the tools (TriadBuddy for the Gold Saucer): say which ones work.
         var partly = g.PluginId is { } own && loaded && !host.IsLoaded(own);
         var on = host.Policy.IsGroupOn(g.Id);

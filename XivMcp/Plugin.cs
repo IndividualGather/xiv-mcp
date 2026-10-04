@@ -123,6 +123,7 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(JobTools.Create(() => jobs!, () => Server?.LastClient))
             .Concat(MapTools.Create(() => jobs!, () => Server?.LastClient))
             .Concat(DyeTools.Create())
+            .Concat(FashionTools.Create(Config, retainers, () => jobs!, () => Server?.LastClient))
             .Concat(SaucyTools.Create(() => jobs!, () => Server?.LastClient))
             .Concat(AutoHookTools.Create(Config, () => jobs!, () => Server?.LastClient))
             .Concat(XivMcpWindowTools.Create(() => configWindow, () => overlayWindow, () => jobs, pluginInterface.IsDev))

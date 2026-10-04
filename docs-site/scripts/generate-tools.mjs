@@ -84,7 +84,9 @@ for (const m of integrationSource.matchAll(/new\("(\w+)", "([^"]+)", "([^"]+)", 
   const block = (name) => extras.match(new RegExp(`${name} = new Dictionary<[^>]+>\\s*\\{([\\s\\S]*?)\\n\\s*\\},`))?.[1] ?? '';
   const alsoWith = Object.fromEntries([...block('AlsoWith').matchAll(/\["(\w+)"\] = \[([^\]]*)\]/g)].map((a) => [a[1], [...a[2].matchAll(/"(\w+)"/g)].map((x) => x[1])]));
   const helpers = Object.fromEntries([...block('Helpers').matchAll(/\["(\w+)"\] = (\w+)/g)].map((h) => [h[1], h[2]]));
-  integrations.push({ id: m[1], title: m[2], description: m[3], tools, alsoWith, helpers });
+  // Standalone = new HashSet<string> { "tool", ... }: tools of the integration that need no plugin.
+  const standalone = new Set([...(extras.match(/Standalone = new HashSet<string> \{([^}]*)\}/)?.[1] ?? '').matchAll(/"(\w+)"/g)].map((x) => x[1]));
+  integrations.push({ id: m[1], title: m[2], description: m[3], tools, alsoWith, helpers, standalone });
 }
 // Helper lists named in Helpers: private static ToolRequirement[] Travel => [ new("vnavmesh", Need.Improves, "purpose", "without"), ... ];
 const helperLists = Object.fromEntries([...integrationSource.matchAll(/ToolRequirement\[\] (\w+) =>\s*\[([\s\S]*?)\];/g)].map((h) => [
@@ -256,7 +258,7 @@ req.push(
   '',
 );
 for (const i of integrations) {
-  const extra = i.tools.some((t) => i.alsoWith[t.name] || i.helpers[t.name]);
+  const extra = i.tools.some((t) => i.alsoWith[t.name] || i.helpers[t.name] || i.standalone.has(t.name));
   req.push(`### ${i.title}`, '', `${text(i.description)} Needs **${plugin(i.id).name}**${extra ? ', except where the table says otherwise' : ''}.`, '');
   if (!extra) {
     req.push('| Tool | What it does |', '|---|---|');
@@ -266,7 +268,8 @@ for (const i of integrations) {
     for (const t of i.tools) {
       const needs = [i.id, ...(i.alsoWith[t.name] ?? [])].map((p) => `**${plugin(p).name}**`).join(' or ');
       const helps = (helperLists[i.helpers[t.name]] ?? []).map((h) => `${plugin(h.plugin).name}: ${text(h.purpose)} Without it: ${text(h.without)}`);
-      req.push(`| \`${t.name}\` | ${summary(t.name)} | Needs ${needs}.${helps.length ? '<br />' + helps.join('<br />') : ''} |`);
+      const needsText = i.standalone.has(t.name) ? 'Needs no plugin.' : `Needs ${needs}.`;
+      req.push(`| \`${t.name}\` | ${summary(t.name)} | ${needsText}${helps.length ? '<br />' + helps.join('<br />') : ''} |`);
     }
   }
   req.push('');

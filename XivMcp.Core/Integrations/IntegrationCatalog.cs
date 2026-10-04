@@ -22,6 +22,9 @@ public static class IntegrationCatalog
         /// <summary>Tools that other plugins make available as well: offered while any one of them is loaded (e.g. TriadBuddy for reading cards).</summary>
         public IReadOnlyDictionary<string, string[]> AlsoWith { get; init; } = new Dictionary<string, string[]>();
 
+        /// <summary>Tools of the integration that need no plugin at all (the Fashion Report in the Gold Saucer module): always offered.</summary>
+        public IReadOnlySet<string> Standalone { get; init; } = new HashSet<string>();
+
         /// <summary>Plugins that do a part of a tool's work, which the tool also does without (walking, teleporting), like core tools' helpers.</summary>
         public IReadOnlyDictionary<string, ToolRequirement[]> Helpers { get; init; } = new Dictionary<string, ToolRequirement[]>();
     }
@@ -80,8 +83,12 @@ public static class IntegrationCatalog
             ["play_mini_cactpot"] = [MoveCharacter, GameUi, SpendCurrency, EditSettings],
             ["play_jumbo_cactpot"] = [MoveCharacter, GameUi, SpendCurrency, EditSettings],
             ["stop_saucy"] = [GameUi],
+            ["present_fashion_report"] = [MoveCharacter, MoveItems, GameUi],
+            ["complete_fashion_report"] = [MoveCharacter, MoveItems, GameUi, SpendGil, Network],
         })
         {
+            // The Fashion Report needs no plugin: it belongs here because it happens at the Gold Saucer.
+            Standalone = new HashSet<string> { "present_fashion_report", "complete_fashion_report" },
             // Reading cards, opponents and decks needs no automation: TriadBuddy players get it too.
             AlsoWith = new Dictionary<string, string[]>
             {
@@ -96,6 +103,8 @@ public static class IntegrationCatalog
                 ["farm_triad_cards"] = Travel,
                 ["play_mini_cactpot"] = Travel,
                 ["play_jumbo_cactpot"] = Travel,
+                ["present_fashion_report"] = Travel,
+                ["complete_fashion_report"] = Travel,
             },
         },
         new("AutoHook", "AutoHook", "Fishing with AutoHook: presets built for the fish you are after, fishing until it is caught, and a job that does it all.", new Dictionary<string, string[]>
@@ -115,7 +124,7 @@ public static class IntegrationCatalog
 
     /// <summary>Whether a tool of an integration is offered: its plugin, or one of the plugins that also make it available, is loaded.</summary>
     public static bool IsAvailable(string toolName, Func<string, bool> isLoaded) =>
-        For(toolName) is not { } i || isLoaded(i.PluginId) || i.AlsoWith.TryGetValue(toolName, out var others) && others.Any(isLoaded);
+        For(toolName) is not { } i || i.Standalone.Contains(toolName) || isLoaded(i.PluginId) || i.AlsoWith.TryGetValue(toolName, out var others) && others.Any(isLoaded);
 
     /// <summary>The integration a tool belongs to, if any.</summary>
     public static Integration? For(string toolName) => All.FirstOrDefault(i => i.Tools.ContainsKey(toolName));

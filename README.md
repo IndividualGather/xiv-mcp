@@ -2,7 +2,7 @@
 
 # XIV MCP
 
-A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV that runs a local **Model Context Protocol (MCP) server** inside the game client. AI assistants such as ChatGPT (Codex), Claude or a model in LM Studio can read your character, inventory, retainers and the game around you, and, when you allow it, act in the game: walk and travel, move items, crystals and gil, trade with other players, send ventures and submersibles, buy and sell, craft, gather, run dungeons, play Triple Triad and the Cactpot, find and catch fish, and run long tasks as background jobs. Other plugins can add their own tools.
+A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV that runs a local **Model Context Protocol (MCP) server** inside the game client. AI assistants such as ChatGPT (Codex), Claude or a model in LM Studio can read your character, inventory, retainers and the game around you, and, when you allow it, act in the game: walk and travel, move items, crystals and gil, trade with other players, send ventures and submersibles, buy and sell, craft, gather, run dungeons, play Triple Triad and the Cactpot, do the Fashion Report, find and catch fish, and run long tasks as background jobs. Other plugins can add their own tools.
 
 - **Local only:** MCP Streamable HTTP at `http://localhost:37521/mcp`, with an access token
 - **You decide:** reading is allowed by default; acting, editing and going online are denied until you allow them, per module and per tool, in `/xivmcp`
