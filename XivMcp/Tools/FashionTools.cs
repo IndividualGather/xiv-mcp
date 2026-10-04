@@ -154,11 +154,19 @@ internal static class FashionTools
             Name = "complete_fashion_report",
             Description = "Does this week's Fashion Report with a ready-made set from fashionreportxiv.com ('easy80' by default, or 'easy100'): " +
                           "plans how to get each piece the player doesn't carry (from a retainer at a summoning bell, the glamour dresser or " +
-                          "armoire in an inn room, or a vendor), the dyes, and starts one background job that gets the pieces, dyes them, puts " +
+                          "armoire in an inn room, a vendor, or the market board up to 'max_market_price'), the dyes, and starts one background job that gets the pieces, dyes them, puts " +
                           "them on and presents the outfit to the Masked Rose. Pieces with no known way to get them stop it before it starts " +
                           "(see get_item_sources). Follow it with get_job. Goes online for the report (Online lookups in /xivmcp); each step " +
                           "follows its own module.",
-            InputSchema = """{ "type": "object", "properties": { "set": { "type": "string", "enum": ["easy80", "easy100"], "description": "Which set (default easy80)." } } }""",
+            InputSchema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "set": { "type": "string", "enum": ["easy80", "easy100"], "description": "Which set (default easy80)." },
+                    "max_market_price": { "type": "integer", "minimum": 1, "description": "Most gil per piece on the market board (default 50000)." }
+                  }
+                }
+                """,
             ReadOnly = false,
             Handler = async (args, ct) =>
             {
@@ -169,7 +177,7 @@ internal static class FashionTools
                 var set = setName == "easy100" ? report.Easy100 : report.Easy80;
                 if (set.Pieces.Count == 0) throw new ToolException($"fashionreportxiv.com has no {setName} set this week yet.");
                 var pieces = await Game.RunLoggedIn(() => set.Pieces.Select(p => Inspect(p, retainers)).ToList()).ConfigureAwait(false);
-                return Plan(report, setName, set, pieces, jobs(), client());
+                return Plan(report, setName, set, pieces, jobs(), client(), args.Int("max_market_price", 50_000, 1, int.MaxValue));
             },
         };
     }
@@ -183,7 +191,7 @@ internal static class FashionTools
         public object Describe() => new
         {
             slot = Piece.Slot, item = Name, itemId = ItemId, source = Source.ToString(), retainer = Where.Retainer,
-            inBags = Where.InBags, inGlamourDresser = Where.InGlamourDresser, inArmoire = Where.InArmoire, soldByVendor = Where.AtVendor,
+            inBags = Where.InBags, inGlamourDresser = Where.InGlamourDresser, inArmoire = Where.InArmoire, soldByVendor = Where.AtVendor, onMarketBoard = Where.OnMarket,
             dye = Piece.Dye, dyeItem = DyeItem, haveDye = Piece.Dye is null ? (bool?)null : HaveDye, alreadyDyed = Piece.Dye is null ? (bool?)null : AlreadyDyed,
         };
     }
@@ -196,7 +204,8 @@ internal static class FashionTools
         string? retainer = null;
         if (retainers.Get(Svc.PlayerState.ContentId) is { } cached)
             retainer = cached.Retainers.FirstOrDefault(r => r.Items.Any(i => i.ItemId == item.RowId))?.Name;
-        var where = new ItemWhereabouts(carried is not null || IsEquipped(item.RowId), retainer, InDresser(item.RowId), InArmoire(item.RowId), SoldByVendor(item.RowId), false);
+        var where = new ItemWhereabouts(carried is not null || IsEquipped(item.RowId), retainer, InDresser(item.RowId), InArmoire(item.RowId), SoldByVendor(item.RowId), false,
+            OnMarket: !item.IsUntradable && item.ItemSearchCategory.RowId != 0);
 
         uint stain = 0;
         string? dyeItem = null;
@@ -219,12 +228,12 @@ internal static class FashionTools
     }
 
     /// <summary>The job: get the pieces (grouped by place), dye them, and present at the end.</summary>
-    private static object Plan(WeeklyReport report, string setName, FashionSet set, List<PieceState> pieces, JobManager jobs, string? client)
+    private static object Plan(WeeklyReport report, string setName, FashionSet set, List<PieceState> pieces, JobManager jobs, string? client, int maxMarketPrice)
     {
         var missing = pieces.Where(p => p.Source == ItemSource.None).ToList();
         if (missing.Count > 0)
             throw new ToolException($"No known way to get {string.Join(", ", missing.Select(p => p.Name))}: not carried, not with a retainer, " +
-                                    "not in the glamour dresser or armoire, and no vendor sells it. Check get_item_sources for drops or crafting.");
+                                    "not in the glamour dresser or armoire, no vendor sells it and it can't be traded. Check get_item_sources for drops or crafting.");
 
         var steps = new List<JobManager.Step>();
         void Add(string tool, JsonObject args, string note) => steps.Add(new JobManager.Step { Id = $"s{steps.Count + 1}", Tool = tool, Args = args, Note = note });
@@ -246,8 +255,16 @@ internal static class FashionTools
         }
         foreach (var p in pieces.Where(p => p.Source == ItemSource.Vendor))
             Add("buy_item", new JsonObject { ["item"] = p.ItemId, ["quantity"] = 1 }, $"Buys {p.Name}");
+        foreach (var p in pieces.Where(p => p.Source == ItemSource.Market))
+            Add("buy_from_market_board", new JsonObject { ["item"] = p.ItemId, ["quantity"] = 1, ["max_unit_price"] = maxMarketPrice },
+                $"Buys {p.Name} on the market board (at most {maxMarketPrice:N0} gil)");
         foreach (var dyeItem in pieces.Where(p => p.Piece.Dye is not null && !p.HaveDye && !p.AlreadyDyed && p.DyeItem is not null).Select(p => p.DyeItem!).Distinct())
-            Add("buy_item", new JsonObject { ["item"] = dyeItem, ["quantity"] = 1 }, $"Buys {dyeItem}");
+        {
+            var dyeId = ResolveItem(dyeItem).RowId;
+            if (SoldByVendor(dyeId)) Add("buy_item", new JsonObject { ["item"] = dyeItem, ["quantity"] = 1 }, $"Buys {dyeItem}");
+            else Add("buy_from_market_board", new JsonObject { ["item"] = dyeItem, ["quantity"] = 1, ["max_unit_price"] = maxMarketPrice },
+                     $"Buys {dyeItem} on the market board");
+        }
         foreach (var p in pieces.Where(p => p.Piece.Dye is not null && !p.AlreadyDyed))
             Add("dye_item", new JsonObject { ["item"] = p.ItemId, ["dye"] = p.Piece.Dye }, $"Dyes {p.Name} {p.Piece.Dye}");
 

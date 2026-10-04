@@ -15,6 +15,7 @@ icon: Coins
 | `get_market_listings` | Your retainers' listings from the cache, flagged when someone is cheaper | Market & purchases |
 | `get_sales` | Sale notices the game showed while XIV MCP was running (item, quantity, gil, time) | Market & purchases |
 | `get_sale_history` | A retainer's last 20 sales (item, quantity, price, buyer, date), at the bell | Market & purchases |
+| `buy_from_market_board` | Walks to a market board in the current zone, reads the listings and buys the cheapest ones until the quantity is reached, never above your price per item. Above your gil limit it asks first, or uses a standing approval. | Market & purchases |
 | `sell_item` | Puts a stack up for sale, just below the cheapest offer, unless you give a price | Market & purchases |
 | `reprice_listings` | Undercuts competing listings where someone else is cheaper. Big cuts are skipped and reported; a dry run only reports. | Market & purchases |
 

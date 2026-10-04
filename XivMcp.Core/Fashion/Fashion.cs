@@ -100,16 +100,16 @@ public sealed record WeeklyReport(int Week, string Theme, IReadOnlyList<FashionH
 }
 
 /// <summary>Where an item for the Fashion Report could come from.</summary>
-public enum ItemSource { None, Have, Retainer, GlamourDresser, Armoire, Vendor, Duty }
+public enum ItemSource { None, Have, Retainer, GlamourDresser, Armoire, Vendor, Market, Duty }
 
 /// <summary>Where a player has an item, and whether it can be bought from a vendor or dropped in a duty.</summary>
-public sealed record ItemWhereabouts(bool InBags, string? Retainer, bool InGlamourDresser, bool InArmoire, bool AtVendor, bool FromDuty);
+public sealed record ItemWhereabouts(bool InBags, string? Retainer, bool InGlamourDresser, bool InArmoire, bool AtVendor, bool FromDuty, bool OnMarket = false);
 
 public static class FashionPlan
 {
     /// <summary>
     /// The cheapest way to the item: carried already, then stored (retainer, glamour dresser, armoire), then bought from a vendor,
-    /// and a dungeon last because it takes longest.
+    /// then from the market board (tradable items), and a dungeon last because it takes longest.
     /// </summary>
     public static ItemSource Choose(ItemWhereabouts w) =>
         w.InBags ? ItemSource.Have
@@ -117,6 +117,7 @@ public static class FashionPlan
         : w.InGlamourDresser ? ItemSource.GlamourDresser
         : w.InArmoire ? ItemSource.Armoire
         : w.AtVendor ? ItemSource.Vendor
+        : w.OnMarket ? ItemSource.Market
         : w.FromDuty ? ItemSource.Duty
         : ItemSource.None;
 }

@@ -68,6 +68,7 @@ public static class ToolSummaries
         ["stop_saucy"] = "Stops Triple Triad and travel that are running at the Gold Saucer.",
         ["show_xivmcp_window"] = "Opens the XIV MCP window on a tab, for example to show you a job or a plugin.",
         ["press_xivmcp_control"] = "Presses a button in the XIV MCP window, for testing the plugin while it is developed.",
+        ["buy_from_market_board"] = "Buys an item on the market board, the cheapest offers first, up to your price limit.",
         ["equip_items"] = "Puts on pieces of gear from your bags or armoury chest.",
         ["retrieve_glamour_item"] = "Takes an item out of your glamour dresser or armoire into your bags.",
         ["get_fashion_report"] = "Looks at this week's Fashion Report: theme, hints, ready-made sets and which items you have.",

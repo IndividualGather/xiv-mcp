@@ -24,13 +24,11 @@ These tools have their own module, **Gold Saucer**, under **Integrations maintai
 
 `complete_fashion_report` reads this week's set and plans every piece:
 
-1. **Getting each piece**, the cheapest way first: you carry it already; a retainer has it (a summoning bell, then `transfer_retainer_items`); it is in your glamour dresser or armoire (your inn room, then `retrieve_glamour_item`); or a vendor sells it (`buy_item`). Pieces with no known way stop the job before it starts; `get_item_sources` shows drops and crafting.
-2. **The dyes**, with `dye_item`. Most colors come from **Standard Spectrum Dye** now; if you have none, the job buys one.
+1. **Getting each piece**, the cheapest way first: you carry it already; a retainer has it (a summoning bell, then `transfer_retainer_items`); it is in your glamour dresser or armoire (your inn room, then `retrieve_glamour_item`); a vendor sells it (`buy_item`); or it is bought on the market board (`buy_from_market_board`), at most `max_market_price` gil (50,000 by default) and only in a city with a market board. Pieces with no known way stop the job before it starts; `get_item_sources` shows drops and crafting.
+2. **The dyes**, with `dye_item`. Most colors come from **Standard Spectrum Dye** now; if you have none, the job buys one from a vendor or on the market board.
 3. **Presenting** as the last step: it puts on the pieces, walks to the Masked Rose and presents. The best of your 4 weekly attempts counts.
 
 The Masked Rose judges from Friday 08:00 UTC until the weekly reset on Tuesday. Outside that, the job only prepares the outfit.
-
-Buying pieces on the market board is planned, but not part of the job yet.
 
 ## Triple Triad
 
