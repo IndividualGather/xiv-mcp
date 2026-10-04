@@ -26,9 +26,9 @@ internal static class Navigation
     public static float NavBuildProgress => Svc.PluginInterface.GetIpcSubscriber<float>("vnavmesh.Nav.BuildProgress").InvokeFunc();
     public static bool PathRunning => Func<bool>("vnavmesh.Path.IsRunning") || Func<bool>("vnavmesh.SimpleMove.PathfindInProgress");
 
-    /// <summary>Pathfinds and walks to within <paramref name="range"/> of a point.</summary>
-    public static bool MoveCloseTo(Vector3 target, float range) =>
-        Svc.PluginInterface.GetIpcSubscriber<Vector3, bool, float, bool>("vnavmesh.SimpleMove.PathfindAndMoveCloseTo").InvokeFunc(target, false, range);
+    /// <summary>Pathfinds and walks (or flies, when mounted where flying is allowed) to within <paramref name="range"/> of a point.</summary>
+    public static bool MoveCloseTo(Vector3 target, float range, bool fly = false) =>
+        Svc.PluginInterface.GetIpcSubscriber<Vector3, bool, float, bool>("vnavmesh.SimpleMove.PathfindAndMoveCloseTo").InvokeFunc(target, fly, range);
 
     public static void StopMoving()
     {

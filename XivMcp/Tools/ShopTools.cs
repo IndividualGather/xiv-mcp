@@ -11,6 +11,7 @@ using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Excel.Sheets;
 using XivMcp.Maps;
 using XivMcp.Mcp;
+using XivMcp.Shops;
 using XivMcp.Util;
 
 namespace XivMcp.Tools;
@@ -72,7 +73,7 @@ internal static class ShopTools
         {
             Name = "buy_item",
             Description = "Buys an item from an NPC vendor (needs a vendor-location plugin to know where vendors stand): picks a vendor (gil vendors " +
-                          "and the current zone first, or the one you name), travels there if needed (with the navigation plugins installed, needs 'Game & navigation'), " +
+                          "in a city first, then the current zone, or the one you name), travels there if needed (with the navigation plugins installed, needs 'Game & navigation'), " +
                           "opens the shop through the NPC's menu and buys the quantity in batches of up to 99, confirming like a player. Checks free " +
                           "bag slots (and gil for gil shops) first and verifies what arrived. Gil shops buy directly. Any other shop (tomestones, " +
                           "scrips, seals, items) shows an approval popup in game while its window is open, and only buys when the player clicks " +
@@ -84,7 +85,7 @@ internal static class ShopTools
                   "properties": {
                     "item": { "type": "string", "description": "Item name or id." },
                     "quantity": { "type": "integer", "description": "How many to buy." },
-                    "npc": { "type": "string", "description": "Vendor NPC name or id (from find_vendors); default: a gil vendor, current zone first." },
+                    "npc": { "type": "string", "description": "Vendor NPC name or id (from find_vendors); default: a gil vendor, in a city first, the current zone first." },
                     "menu_option": { "type": "string", "description": "Text of the NPC menu entry that opens the right shop, if it can't be found automatically." },
                     "approval": { "type": "string", "description": "Id of a standing approval (request_spending_approval) to use instead of asking per purchase; it caps what can be spent." }
                   },
@@ -321,7 +322,7 @@ internal static class ShopTools
             throw new ToolException("Finding vendors needs a vendor-location plugin, which isn't installed or enabled.");
     }
 
-    /// <summary>Vendors of an item from Item Vendor Location: gil vendors first, then the current zone, then the rest. Framework thread.</summary>
+    /// <summary>Vendors of an item from Item Vendor Location, the best first (see <see cref="VendorRanking"/>). Framework thread.</summary>
     private static List<Offer> Offers(uint itemId)
     {
         RequireVendorPlugin();
@@ -338,7 +339,7 @@ internal static class ShopTools
 
         var price = (int)(Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId)?.PriceMid ?? 0);
         var here = Svc.ClientState.TerritoryType;
-        return vendors.Select(v => v.Item1).Distinct().Select(npc =>
+        var offers = vendors.Select(v => v.Item1).Distinct().Select(npc =>
             {
                 // GetItemVendors repeats the X coordinate; GetVendorLocation has the correct pair.
                 (uint, (float, float))? location = null;
@@ -348,9 +349,12 @@ internal static class ShopTools
                 return new Offer(npc, ItemSourceTools.NpcName(npc), location?.Item1 ?? 0, location is { Item1: not 0 } l ? l.Item2 : null,
                                  shops.Gil ? price : null, shops.Names);
             })
-            .OrderBy(o => o.GilPrice is null ? 1 : 0)
-            .ThenBy(o => o.Territory == here ? 0 : o.Territory != 0 ? 1 : 2)
             .ToList();
+        // Gil vendors in a city first (quick to reach by aetheryte), then the field; the current zone first within each.
+        var territories = Svc.Data.GetExcelSheet<TerritoryType>();
+        return VendorRanking.Order(offers, o => new VendorSpot(o.Npc, o.GilPrice is not null,
+                                                            territories.GetRowOrDefault(o.Territory)?.TerritoryIntendedUse.RowId == 0 && o.Territory != 0,
+                                                            o.Territory == here, o.Coords is not null)).ToList();
     }
 
     private static Offer PickOffer(uint itemId, string? npc)
@@ -367,27 +371,46 @@ internal static class ShopTools
 
     /// <summary>
     /// Names of the NPC's shops that list the item (the menu entries to pick), and whether one of them is a gil shop. Only used to
-    /// choose the right menu entry; which NPC sells what comes from Item Vendor Location.
+    /// choose the right menu entry; which NPC sells what comes from Item Vendor Location. Shops behind a sub-menu (TopicSelect, as
+    /// the city merchants have) or a greeting (PreHandler) are followed; the sub-menu's name comes before the shop's.
     /// </summary>
     private static (List<string> Names, bool Gil) ShopNamesFor(uint npcId, uint itemId)
     {
         var names = new List<string>();
         var gil = false;
         if (Svc.Data.GetExcelSheet<ENpcBase>().GetRowOrDefault(npcId) is not { } npc) return (names, gil);
-        var gilItems = Svc.Data.GetSubrowExcelSheet<GilShopItem>();
-        var specialShops = Svc.Data.GetExcelSheet<SpecialShop>();
-        foreach (var data in npc.ENpcData)
+        foreach (var data in npc.ENpcData) Visit(data, 0);
+        return (names, gil);
+
+        // True when the entry (or something behind it) lists the item.
+        bool Visit(Lumina.Excel.RowRef entry, int depth)
         {
-            var id = data.RowId;
-            if (id is >= 262144 and < 327680 && gilItems.TryGetRow(id, out var rows) && rows.Any(r => r.Item.RowId == itemId))
+            var id = entry.RowId;
+            if (id == 0 || depth > 3) return false;
+            if (id is >= 262144 and < 327680)
             {
+                if (!Svc.Data.GetSubrowExcelSheet<GilShopItem>().TryGetRow(id, out var rows) || !rows.Any(r => r.Item.RowId == itemId)) return false;
                 gil = true;
                 if (Svc.Data.GetExcelSheet<GilShop>().GetRowOrDefault(id)?.Name.ExtractText() is { Length: > 0 } n) names.Add(n);
+                return true;
             }
-            else if (id is >= 1769472 and < 1835008 && specialShops.GetRowOrDefault(id) is { } special && special.Name.ExtractText() is { Length: > 0 } sn)
-                names.Add(sn);
+            if (id is >= 1769472 and < 1835008 && Svc.Data.GetExcelSheet<SpecialShop>().GetRowOrDefault(id) is { } special)
+            {
+                if (!special.Item.Any(e => e.ReceiveItems.Any(i => i.Item.RowId == itemId))) return false;
+                if (special.Name.ExtractText() is { Length: > 0 } sn) names.Add(sn);
+                return true;
+            }
+            if (entry.Is<PreHandler>() && entry.GetValueOrDefault<PreHandler>() is { } pre) return Visit(pre.Target, depth + 1);
+            if (entry.Is<TopicSelect>() && entry.GetValueOrDefault<TopicSelect>() is { } topic)
+            {
+                var at = names.Count;
+                var any = false;
+                foreach (var shop in topic.Shop) any |= Visit(shop, depth + 1);
+                if (any && topic.Name.ExtractText() is { Length: > 0 } tn) names.Insert(at, tn);
+                return any;
+            }
+            return false;
         }
-        return (names, gil);
     }
 
     private static object Describe(Offer o) => new

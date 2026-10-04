@@ -281,7 +281,7 @@ internal static partial class NavigationTools
                 if (DateTime.UtcNow - waited > TimeSpan.FromSeconds(90)) throw new ToolException("vnavmesh did not finish building the navmesh for this zone.");
                 await Task.Delay(500, ct).ConfigureAwait(false);
             }
-            if (!await Game.Run(() => MoveCloseTo(t.Position, ArriveRange)).ConfigureAwait(false))
+            if (!await StartPath(t.Position, ArriveRange, steps, ct).ConfigureAwait(false))
                 throw new ToolException($"vnavmesh could not start a path to {t.Name}.");
             steps.Add($"vnavmesh: walking to {t.Name} ({t.Distance:0.#} yalms).");
             phase = $"walking to {t.Name}";
@@ -290,6 +290,7 @@ internal static partial class NavigationTools
                 await Task.Delay(250, ct).ConfigureAwait(false);
         }
 
+        await GetOffMount(steps, ct).ConfigureAwait(false);
         var final = await Game.Run(() => Svc.Objects.LocalPlayer is { } p ? Vector3.Distance(p.Position, t.Position) : float.MaxValue).ConfigureAwait(false);
         if (final > ArriveRange + 2) throw new ToolException($"Stopped {final:0.#} yalms from {t.Name}; the path may be blocked.");
         steps.Add($"At {t.Name} ({final:0.#} yalms).");

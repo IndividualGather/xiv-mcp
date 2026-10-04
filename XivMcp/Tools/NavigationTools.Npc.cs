@@ -67,7 +67,7 @@ internal static partial class NavigationTools
         await WaitForMesh(ct).ConfigureAwait(false);
         var target = await Game.Run(() => spot.ExactHeight ? spot.Position
             : Ipc<Vector3, bool, float, Vector3?>("vnavmesh.Query.Mesh.PointOnFloor", spot.Position with { Y = 1024 }, false, 5f) ?? spot.Position).ConfigureAwait(false);
-        if (!await Game.Run(() => MoveCloseTo(target, 3f)).ConfigureAwait(false))
+        if (!await StartPath(target, 3f, steps, ct).ConfigureAwait(false))
             throw new ToolException($"vnavmesh could not find a path to {spot.Name}.");
         steps.Add($"vnavmesh: walking towards {spot.Name}.");
         phase = $"walking to {spot.Name}";

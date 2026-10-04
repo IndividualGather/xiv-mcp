@@ -291,6 +291,16 @@ internal sealed partial class ConfigWindow : Window
     {
         var config = plugin.Config;
         ImGui.Spacing();
+        var mount = config.UseMountForWalks;
+        var changed = ImGui.Checkbox("Ride a mount for longer walks##use-mount", ref mount);
+        if (Controls.Consume("navigation:use-mount") && !changed) { mount = !mount; changed = true; } // press_xivmcp_control (dev builds)
+        if (changed)
+        {
+            config.UseMountForWalks = mount;
+            config.Save();
+        }
+        Tooltip("Walks of 50 yalms or more use Mount Roulette first, and fly where the zone allows it (all aether currents found). " +
+                "XIV MCP gets off the mount on arrival.");
         IconText(FontAwesomeIcon.Bell, Muted);
         ImGui.SameLine();
         ImGui.TextUnformatted("Summoning bell location");

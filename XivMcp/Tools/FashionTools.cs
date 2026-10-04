@@ -526,6 +526,8 @@ internal static class FashionTools
         // Talk → menu (entry 1: present yourself for judging) → confirmations → results (FashionCheck) → closing talk.
         var chose = false;
         var judged = false;
+        var talked = false;
+        var talkedAt = DateTime.UtcNow;
         var quietSince = DateTime.UtcNow;
         var deadline = DateTime.UtcNow.AddMinutes(2);
         while (DateTime.UtcNow < deadline)
@@ -551,7 +553,13 @@ internal static class FashionTools
                 if (RetainerUi.Ready("Talk")) { RetainerUi.ClickTalk(); return true; }
                 return false;
             }).ConfigureAwait(false);
-            if (acted) quietSince = DateTime.UtcNow;
+            if (acted) { quietSince = DateTime.UtcNow; talked = true; }
+            else if (!talked && DateTime.UtcNow - talkedAt > TimeSpan.FromSeconds(3))
+            {
+                // The game ignores talking during an animation (e.g. using the VIP card); try again.
+                await Game.Run(() => Interact(o => o.BaseId == MaskedRose)).ConfigureAwait(false);
+                talkedAt = DateTime.UtcNow;
+            }
             else if (judged && DateTime.UtcNow - quietSince > TimeSpan.FromSeconds(2)) break;
             await Task.Delay(400, ct).ConfigureAwait(false);
         }

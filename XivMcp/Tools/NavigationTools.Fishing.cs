@@ -61,7 +61,7 @@ internal static partial class NavigationTools
                 var target = await Game.Run(() =>
                     Ipc<Vector3, float, float, Vector3?>("vnavmesh.Query.Mesh.NearestPointReachable", place.Centre with { Y = PlayerHeight() }, place.Radius, 60f)
                     ?? place.Centre).ConfigureAwait(false);
-                if (!await Game.Run(() => MoveCloseTo(target, 2f)).ConfigureAwait(false))
+                if (!await StartPath(target, 2f, steps, ct).ConfigureAwait(false))
                     throw new ToolException($"vnavmesh could not find a path to {place.Name}.");
                 steps.Add($"vnavmesh: walking to {place.Name}.");
                 phase = $"walking to {place.Name}";
@@ -72,6 +72,7 @@ internal static partial class NavigationTools
                     await Task.Delay(250, ct).ConfigureAwait(false);
                 }
                 await Game.Run(() => { StopMoving(); return true; }).ConfigureAwait(false);
+                await GetOffMount(steps, ct).ConfigureAwait(false);
             }
         }
 

@@ -66,6 +66,9 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Use a Gold Saucer VIP Card right before presenting at the Fashion Report (it raises the MGP reward).</summary>
     public bool FashionReportVipCard { get; set; } = true;
 
+    /// <summary>Longer walks ride a mount (Mount Roulette) and fly where the zone allows it.</summary>
+    public bool UseMountForWalks { get; set; } = true;
+
     // ---- Permissions before version 2 (merged above). Read once from older settings files, never written again.
     public bool AllowInventoryActions { get; set; }
     public bool AllowGameInteraction { get; set; }
