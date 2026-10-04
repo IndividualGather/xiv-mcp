@@ -70,9 +70,17 @@ public class IntegrationCatalogTests
     }
 
     [Fact]
+    public void World_travel_is_a_core_tool_that_works_without_its_plugin()
+    {
+        Assert.Null(IntegrationCatalog.For("visit_world"));
+        Assert.Equal("game_navigation", PermissionCatalog.CoreTools["visit_world"]);
+        Assert.Contains(ToolRequirements.For("visit_world"), r => r.PluginId == "Lifestream" && r.Need == Need.Improves);
+    }
+
+    [Fact]
     public void Acting_integration_tools_declare_something_beyond_reading()
     {
-        var acting = new[] { "run_duty", "set_crafting_list", "craft_item", "gather_until", "visit_world", "fc_chest_transfer" };
+        var acting = new[] { "run_duty", "set_crafting_list", "craft_item", "gather_until", "fc_chest_transfer" };
         foreach (var name in acting)
         {
             var integration = IntegrationCatalog.All.Single(i => i.Tools.ContainsKey(name));

@@ -7,6 +7,7 @@
     "approvals",
     "status",
     "jobs",
+    "jobs-or-steps",
     "interop",
     "interop-example",
     "capabilities",

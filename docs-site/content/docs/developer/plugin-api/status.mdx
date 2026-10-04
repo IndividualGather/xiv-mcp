@@ -29,6 +29,20 @@ var canBuy = status.Capabilities
     .GetValueOrDefault(McpCapabilities.SpendGil) != McpPermission.Deny;
 ```
 
+<Mermaid
+  caption="The states McpPluginState reports, and what moves your plugin between them."
+  chart={`stateDiagram-v2
+  direction LR
+  [*] --> Unavailable: XIV MCP not loaded
+  Unavailable --> Undecided: XIV MCP loads, you register
+  Undecided --> Enabled: the player enables you
+  Undecided --> KeptDisabled: Keep disabled
+  Enabled --> AwaitingConsent: you add a tool or capability
+  AwaitingConsent --> Enabled: the player consents
+  Enabled --> Suspended: a call does something undeclared
+  Suspended --> Enabled: the player lifts it`}
+/>
+
 Call it when your window opens or before a step, not every frame. Do not cache it: the player can change settings at any time.
 
 | State | Meaning |

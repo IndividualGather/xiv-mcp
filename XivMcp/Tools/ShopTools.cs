@@ -9,6 +9,7 @@ using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Excel.Sheets;
+using XivMcp.Maps;
 using XivMcp.Mcp;
 using XivMcp.Util;
 
@@ -16,7 +17,8 @@ namespace XivMcp.Tools;
 
 /// <summary>
 /// Buying from NPC vendors. Which NPCs sell an item and where they stand comes from the Item Vendor Location plugin (its public
-/// IPC); XIV MCP travels there, opens the shop through the NPC's menu and buys in batches of up to 99 like a player would.
+/// IPC); XIV MCP travels there, opens the shop through the NPC's menu and buys in batches of up to 99 like a player would. Without
+/// that plugin, the player opens a shop that sells the item, and XIV MCP buys from it.
 /// Whether a purchase costs gil is decided by the shop window that actually opens: gil shops run directly, every other shop
 /// (tomestones, scrips, seals, items) only buys after the player approved it in game — with that shop window open in front of them.
 /// </summary>
@@ -100,7 +102,9 @@ internal static class ShopTools
                 try
                 {
                     var item = await Game.RunLoggedIn(() => Items.Resolve(args.String("item") ?? throw new ToolException("'item' is required."))).ConfigureAwait(false);
-                    var offer = await Game.Run(() => PickOffer(item.RowId, args.String("npc"))).ConfigureAwait(false);
+                    var offer = ItemVendorLocationLoaded
+                        ? await Game.Run(() => PickOffer(item.RowId, args.String("npc"))).ConfigureAwait(false)
+                        : await AskForShop(item, steps, ct).ConfigureAwait(false);
                     var name = item.Name.ExtractText();
 
                     // Does it fit, and (for a known gil price) can we afford it?
@@ -115,7 +119,8 @@ internal static class ShopTools
                     }).ConfigureAwait(false);
 
                     // Get to the vendor.
-                    var near = await Game.Run(() => Svc.Objects.Any(o => o.BaseId == offer.NpcId && Game.DistanceToPlayer(o.Position) < 4)).ConfigureAwait(false);
+                    var near = await Game.Run(() => AnyVisible(ShopAddons) is not null ||
+                                                    Svc.Objects.Any(o => o.BaseId == offer.NpcId && Game.DistanceToPlayer(o.Position) < 4)).ConfigureAwait(false);
                     if (!near)
                     {
                         if (!config.AllowGameNavigation) throw new ToolException($"{offer.Npc} is not nearby and 'Game & navigation' is off; go there first ({Location(offer)}).");
@@ -264,6 +269,40 @@ internal static class ShopTools
     {
         var im = InventoryManager.Instance();
         return im == null ? 0 : id == 1 ? im->GetGil() : im->GetInventoryItemCount(id);
+    }
+
+    /// <summary>
+    /// Without a vendor plugin: asks the player to open the shop of a vendor that sells the item (unless one is open already), waits
+    /// up to ten minutes for a shop window, and returns that vendor as the offer. The purchase then checks that the shop lists the item.
+    /// </summary>
+    private static async Task<Offer> AskForShop(Item item, List<string> steps, CancellationToken ct)
+    {
+        var name = item.Name.ExtractText();
+        if (await Game.Run(() => AnyVisible(ShopAddons)).ConfigureAwait(false) is null)
+        {
+            PlayerGuide.Ask(PlayerGuidance.OpenShop(name));
+            steps.Add($"Asked you to open the shop of a vendor that sells {name}.");
+            using var wait = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            wait.CancelAfter(TimeSpan.FromMinutes(10));
+            try
+            {
+                while (await Game.Run(() => AnyVisible(ShopAddons)).ConfigureAwait(false) is null)
+                    await Task.Delay(500, wait.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                throw new ToolException($"No shop was opened within 10 minutes, so nothing was bought. Ask the player to open a shop that sells {name}, then try again.");
+            }
+            finally { PlayerGuide.Done(); }
+            steps.Add("You opened a shop.");
+        }
+        return await Game.Run(() =>
+        {
+            var window = AnyVisible(ShopAddons);
+            var npc = Svc.Targets.Target;
+            return new Offer(npc?.BaseId ?? 0, npc?.Name.TextValue is { Length: > 0 } n ? n : "the vendor you opened", Svc.ClientState.TerritoryType, null,
+                             window == "Shop" ? (int)item.PriceMid : null, []);
+        }).ConfigureAwait(false);
     }
 
     // ------------------------------------------------------------------ vendors (Item Vendor Location)

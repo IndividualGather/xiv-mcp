@@ -23,12 +23,27 @@ Every tool belongs to one **module**, and every module has two settings: **Readi
 - **Ask** shows the approval window first. You can approve once, approve for this session, always allow (which sets just that tool to *Allow*), or decline. See [Approvals in the game](/docs/user/permissions/approvals).
 - **Deny** refuses the tool before it runs, and tells your assistant which setting to change.
 
+### How a call is decided
+
+<Mermaid
+  caption="What happens when your assistant calls one of XIV MCP's tools."
+  chart={`flowchart LR
+  C(["A tool call"]) --> O{{"Module<br/>switched on?"}}
+  O -- no --> H["Not offered at all"]
+  O -- yes --> W{{"The tool's own setting,<br/>else its module's"}}
+  W -- Allow --> R["Runs"]
+  W -- Ask --> P["Approval window"]
+  P -- approved --> R
+  P -- "declined or<br/>no answer" --> N["Refused"]
+  W -- Deny --> N`}
+/>
+
 ## The modules and their defaults
 
 | Module | Reading | Changes | Covers |
 |---|---|---|---|
 | **Game data** | Allow | — | Character, jobs, gear, inventory, currencies, quests and unlocks, party and surroundings, collections, game data, caches, the self-test |
-| **Game & navigation** | Allow | Deny | Game windows and menus, NPCs and objects, walking and travel, logging into other characters, gear sets, leaving duties, placing waymarks, map flags and routes |
+| **Game & navigation** | Allow | Deny | Game windows and menus, NPCs and objects, walking and travel, world visits, logging into other characters, gear sets, leaving duties, placing waymarks, map flags and routes |
 | **Items & retainers** | Allow | Deny | Sorting and moving items, retainers and their inventories, ventures (recalling one always asks in the game), collectable turn-ins, the FC chest |
 | **Market & purchases** | Allow | Deny | Buying from vendors (anything not paid in gil also asks in the game), selling and repricing, sale histories, spending approvals |
 | **UI editing** | Allow | Deny | Macros and the waymark preset slots |
@@ -48,6 +63,8 @@ Each card's *Reading* and *Changes* rows expand (the arrow on the left) into the
 - Anything else overrides it for that tool, in both directions: allow one tool of a denied module, or ask before one tool of an allowed module.
 
 The card's summary says how many tools are set on their own. Hover a module's name to see its tools.
+
+<Screenshot src="modules-single-tools.png" alt="The Changes tools of Game and navigation expanded, each with a short description and Group, Allow, Ask and Deny" caption="A module's tools, expanded: each one follows its group or has its own setting." width={620} />
 
 ## Extra options
 
@@ -76,7 +93,6 @@ Tools whose whole purpose is driving one other plugin have their own module, lis
 | **AutoDuty** | Allow | Deny |
 | **Artisan** | Allow | Deny |
 | **GatherBuddy Reborn** | Allow | Deny |
-| **Lifestream** | — | Deny |
 | **Item Vendor Location** | Allow | — |
 | **FCCH** | — | Deny |
 

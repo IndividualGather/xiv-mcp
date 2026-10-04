@@ -85,7 +85,7 @@ public sealed record PluginPresence(string InternalName, string Name, Version? V
 public enum DependencyState
 {
     Ok,
-    /// <summary>A built-in tool needs a plugin that isn't installed or not enabled in Dalamud.</summary>
+    /// <summary>An integration tool needs its plugin, which isn't installed or not enabled in Dalamud. (Core tools work without plugins.)</summary>
     NeedsPlugin,
     /// <summary>Another plugin's tool, and that plugin isn't installed.</summary>
     PluginMissing,
@@ -100,7 +100,8 @@ public enum DependencyState
 }
 
 /// <summary>A plugin to install, enable or update for a dependency. <see cref="Needed"/> is false for plugins that only improve a tool.</summary>
-public sealed record PluginToInstall(string InternalName, string Name, string Repo, Version? MinVersion, string Reason, bool Needed, bool Installed, bool Outdated);
+public sealed record PluginToInstall(string InternalName, string Name, string Repo, Version? MinVersion, string Reason, bool Needed, bool Installed, bool Outdated,
+                                     string? Without = null);
 
 public sealed record DependencyStatus(ToolDependency Dependency, DependencyState State, string Message, IReadOnlyList<PluginToInstall> Install)
 {
@@ -125,11 +126,12 @@ public static class DependencyCheck
             if (p is { Loaded: true }) continue;
             var known = PluginCatalog.Find(r.PluginId);
             install.Add(new PluginToInstall(r.PluginId, known?.Name ?? r.PluginId, known?.Repo ?? PluginCatalog.Official, null, r.Purpose,
-                r.Need == Need.Needed, p is not null, false));
+                r.Need == Need.Needed, p is not null, false, r.Without));
         }
         var missing = install.Where(p => p.Needed).ToList();
         if (missing.Count == 0)
-            return new DependencyStatus(d, DependencyState.Ok, install.Count == 0 ? "Ready." : $"Ready. Works better with {Names(install)}.", install);
+            return new DependencyStatus(d, DependencyState.Ok,
+                install.Count == 0 ? "Ready." : "Ready. " + string.Join(" ", install.Select(p => $"Without {p.Name}: {p.Without ?? "it works, just not as well."}")), install);
         return new DependencyStatus(d, DependencyState.NeedsPlugin,
             $"Needs {Names(missing)}, which {(missing.Count == 1 ? "is" : "are")} not installed or not enabled.", install);
     }

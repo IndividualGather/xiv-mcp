@@ -27,6 +27,9 @@ internal interface IPermissionsHost
 
     /// <summary>A group was turned on or off: tell clients the tool list changed.</summary>
     void ToolsChanged();
+
+    /// <summary>Whether press_xivmcp_control asked to press this control (call it every frame the control is drawn).</summary>
+    bool Press(string controlId);
 }
 
 /// <summary>
@@ -320,7 +323,9 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
             // Arrow and label are one clickable area: hovering either turns both gold, clicking either toggles the tool list.
             // (No cursor change: Dalamud draws ImGui cursors as an extra icon next to the game's own.)
             var labelEnd = frame + ImGui.GetStyle().ItemSpacing.X + ImGui.CalcTextSize(label).X;
-            if (ImGui.InvisibleButton("##toggle", new Vector2(labelEnd, frame)) && !expanded.Remove(key)) expanded.Add(key);
+            // Pressable as module:<group>:read|write, to show a module's tools (only the list; settings can't be pressed).
+            if ((ImGui.InvisibleButton("##toggle", new Vector2(labelEnd, frame)) | host.Press($"module:{g.Id}:{(access == Access.Read ? "read" : "write")}"))
+                && !expanded.Remove(key)) expanded.Add(key);
             hovered = ImGui.IsItemHovered();
             Tooltip(open ? "Hide the tools" : $"Set the {mine.Count} tool{(mine.Count == 1 ? "" : "s")} one by one");
             ImGui.SetCursorPos(rowStart);

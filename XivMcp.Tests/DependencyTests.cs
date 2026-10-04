@@ -122,28 +122,44 @@ public class DependencyTests
         Assert.Equal(DependencyState.Ok, new World().Check(BuiltInDep("get_game_status")).State);
 
     [Fact]
-    public void A_built_in_tool_whose_plugins_are_missing_is_an_error_with_install_hints()
+    public void An_integration_tool_whose_plugin_is_missing_is_an_error_with_install_hints()
     {
-        var status = new World().With("vnavmesh", "1.0").Check(BuiltInDep("navigate_to"));
+        var status = new World().Check(BuiltInDep("run_duty"));
         Assert.Equal(DependencyState.NeedsPlugin, status.State);
         Assert.True(status.IsError);
-        var lifestream = Assert.Single(status.Install);
-        Assert.Equal("Lifestream", lifestream.InternalName);
-        Assert.False(lifestream.Installed);
-        Assert.StartsWith("https://", lifestream.Repo);
+        var autoDuty = Assert.Single(status.Install);
+        Assert.Equal("AutoDuty", autoDuty.InternalName);
+        Assert.False(autoDuty.Installed);
+        Assert.StartsWith("https://", autoDuty.Repo);
     }
 
     [Fact]
     public void An_installed_but_disabled_plugin_is_listed_as_installed()
     {
-        var status = new World().With("vnavmesh", "1.0").With("Lifestream", "2.0", loaded: false).Check(BuiltInDep("navigate_to"));
+        var status = new World().With("AutoDuty", "0.0.0.377", loaded: false).Check(BuiltInDep("run_duty"));
         Assert.Equal(DependencyState.NeedsPlugin, status.State);
         Assert.True(Assert.Single(status.Install).Installed);
     }
 
     [Fact]
-    public void A_built_in_tool_with_its_plugins_is_fine() =>
-        Assert.Equal(DependencyState.Ok, new World().With("vnavmesh", "1.0").With("Lifestream", "2.0").Check(BuiltInDep("navigate_to")).State);
+    public void An_integration_tool_with_its_plugin_is_fine() =>
+        Assert.Equal(DependencyState.Ok, new World().With("AutoDuty", "0.0.0.377").Check(BuiltInDep("run_duty")).State);
+
+    [Fact]
+    public void A_core_tool_without_its_helper_plugins_still_works_and_says_what_changes()
+    {
+        var status = new World().With("vnavmesh", "1.0").Check(BuiltInDep("navigate_to"));
+        Assert.Equal(DependencyState.Ok, status.State);
+        Assert.False(status.IsError);
+        var lifestream = Assert.Single(status.Install);
+        Assert.Equal("Lifestream", lifestream.InternalName);
+        Assert.False(lifestream.Needed);
+        Assert.Contains(lifestream.Without!, status.Message);
+    }
+
+    [Fact]
+    public void A_core_tool_with_its_helper_plugins_has_nothing_to_install() =>
+        Assert.Empty(new World().With("vnavmesh", "1.0").With("Lifestream", "2.0").Check(BuiltInDep("navigate_to")).Install);
 
     [Fact]
     public void Plugins_that_only_improve_a_tool_are_hints_not_errors()

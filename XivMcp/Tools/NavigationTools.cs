@@ -13,7 +13,10 @@ using static XivMcp.Util.Navigation;
 
 namespace XivMcp.Tools;
 
-/// <summary>Navigating the character to a summoning bell, the FC chest, the workshop, the inn or a property (vnavmesh + Lifestream).</summary>
+/// <summary>
+/// Navigating the character to a summoning bell, the FC chest, the workshop, the inn or a property. Walking uses vnavmesh and
+/// travel uses Lifestream when they are installed; without them the player is shown the way and XIV MCP waits (NavigationTools.Guided).
+/// </summary>
 internal static partial class NavigationTools
 {
     private const float ArriveRange = 2.5f;
@@ -31,19 +34,20 @@ internal static partial class NavigationTools
         yield return new McpTool
         {
             Name = "navigate_to",
-            Description = "Moves the character to a destination with the navigation plugins the player has installed (pathfinding for walking in " +
-                          "the current zone; travel for teleports, housing, inns and the workshop). Destinations: summoning_bell (nearby one, otherwise the " +
-                          "preferred bell location from /xivmcp — by default the travel plugin's own property priority, falling back to the inn), company_chest (FC house), workshop (FC " +
-                          "workshop, walks to the voyage control panel), inn, home, fc_house, apartment, or object (by name in the current zone). " +
-                          "Waits until arrived (or the timeout) and returns the steps taken; then use interact_with_object. stop_navigation aborts. " +
-                          "Teleports cost gil as usual. Requires 'Game & navigation' in /xivmcp.",
+            Description = "Gets the character to a destination. Walking and travel are automatic when the player has navigation plugins; " +
+                          "otherwise XIV MCP shows the player the way and waits: it puts the flag on the map and asks them to walk, names the " +
+                          "aetheryte to teleport to, or asks them to enter the inn room or house. Tell the player when that happens. Destinations: " +
+                          "summoning_bell (nearby one, otherwise the preferred bell location from /xivmcp, falling back to the inn), company_chest (FC " +
+                          "house), workshop (FC workshop, walks to the voyage control panel), inn, home, fc_house, apartment, or object (by name in the " +
+                          "current zone). Waits until arrived (or the timeout) and returns the steps taken; then use interact_with_object. " +
+                          "stop_navigation aborts. Teleports cost gil as usual. Requires 'Game & navigation' in /xivmcp.",
             InputSchema = $$"""
                 {
                   "type": "object",
                   "properties": {
                     "destination": { "type": "string", "enum": [{{string.Join(", ", Destinations.Select(d => $"\"{d}\""))}}] },
                     "name": { "type": "string", "description": "For destination=object: the object's name (e.g. \"Material Supplier\")." },
-                    "timeout_seconds": { "type": "integer", "description": "Give up after this long (default 300, max 900)." }
+                    "timeout_seconds": { "type": "integer", "description": "Give up after this long (default 600, max 1800). The player may need a while when they walk or teleport themselves." }
                   },
                   "required": ["destination"]
                 }
@@ -53,8 +57,6 @@ internal static partial class NavigationTools
             {
                 if (!config.AllowGameNavigation)
                     throw new ToolException("Navigation is disabled. Enable \"Game & navigation\" in the XIV MCP settings window (/xivmcp) in game.");
-                if (!VnavmeshLoaded && !LifestreamLoaded)
-                    throw new ToolException("Navigation needs a navigation plugin (for walking or for travel), and none is installed.");
                 var destination = args.String("destination")?.ToLowerInvariant() ?? throw new ToolException("'destination' is required.");
                 if (!Destinations.Contains(destination)) throw new ToolException($"Unknown destination '{destination}'.");
                 var name = args.String("name");
@@ -62,7 +64,7 @@ internal static partial class NavigationTools
 
                 if (!await Gate.WaitAsync(0, ct).ConfigureAwait(false)) throw new ToolException("A navigation is already running; use stop_navigation first.");
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                cts.CancelAfter(TimeSpan.FromSeconds(args.Int("timeout_seconds", 300, 10, 900)));
+                cts.CancelAfter(TimeSpan.FromSeconds(args.Int("timeout_seconds", 600, 10, 1800)));
                 running = cts;
                 var steps = new List<string>();
                 try
@@ -93,8 +95,9 @@ internal static partial class NavigationTools
         yield return new McpTool
         {
             Name = "get_navigation_status",
-            Description = "Whether walking (pathfinding) and travel (teleports, housing) are available, whether something is moving the character " +
-                          "right now, and the phase of a running navigate_to. Only the navigation plugins the player has installed are listed.",
+            Description = "Whether walking (pathfinding) and travel (teleports, housing) are automatic or done by the player following XIV MCP's " +
+                          "directions, whether something is moving the character right now, and the phase of a running navigate_to (for example " +
+                          "\"waiting for you to walk to Summoning Bell\"). Only the navigation plugins the player has installed are listed.",
             Handler = (_, _) => Game.Run<object?>(() =>
             {
                 // Plugins that aren't installed are left out, so the assistant doesn't learn about (and suggest) them.
@@ -103,8 +106,8 @@ internal static partial class NavigationTools
                 if (LifestreamLoaded) plugins["Lifestream"] = new { busy = SafeBool(() => LifestreamBusy) };
                 return new
                 {
-                    walking = VnavmeshLoaded,
-                    travel = LifestreamLoaded,
+                    walking = VnavmeshLoaded ? "automatic" : "the player walks to the map flag",
+                    travel = LifestreamLoaded ? "automatic" : "the player teleports or enters the place",
                     plugins,
                     navigation = running is null ? "idle" : phase,
                     preferredBellLocation = config.PreferredBellLocation,
@@ -172,10 +175,17 @@ internal static partial class NavigationTools
         }
     }
 
-    /// <summary>Travel with Lifestream: "lifestream" (its property priority), "inn", "fc", "home", "apartment" or "workshop".</summary>
+    /// <summary>
+    /// Travel to "lifestream" (Lifestream's property priority), "inn", "fc", "home", "apartment" or "workshop": with Lifestream, or by
+    /// asking the player to go there and waiting.
+    /// </summary>
     private static async Task TravelTo(string where, List<string> steps, CancellationToken ct)
     {
-        if (!LifestreamLoaded) throw new ToolException("Getting there needs a travel plugin (teleports, housing), which isn't installed.");
+        if (!LifestreamLoaded)
+        {
+            await GuidePlace(where, steps, ct).ConfigureAwait(false);
+            return;
+        }
         await Game.RunLoggedIn(() =>
         {
             EnsureCanTravel();
@@ -237,9 +247,15 @@ internal static partial class NavigationTools
         }).ConfigureAwait(false);
         if (target is not { } t) return null;
 
-        if (t.Distance > ArriveRange + 0.5f)
+        if (t.Distance > ArriveRange + 0.5f && !VnavmeshLoaded)
         {
-            if (!VnavmeshLoaded) throw new ToolException($"{t.Name} is {t.Distance:0.#} yalms away; walking there needs a pathfinding plugin, which isn't installed.");
+            // No pathfinding: flag it and wait until the player is next to it.
+            var territory = await Game.Run(() => Svc.ClientState.TerritoryType).ConfigureAwait(false);
+            await GuideWalk(territory, t.Position, t.Name, ArriveRange + 1,
+                () => Svc.Objects.Any(o => match(o) && Game.DistanceToPlayer(o.Position) <= ArriveRange + 1), steps, ct).ConfigureAwait(false);
+        }
+        else if (t.Distance > ArriveRange + 0.5f)
+        {
             phase = $"waiting for the navmesh ({label})";
             var waited = DateTime.UtcNow;
             while (!await Game.Run(() => NavReady).ConfigureAwait(false))
@@ -286,8 +302,10 @@ internal static partial class NavigationTools
     private static string ZoneName() =>
         Excel.Name(Svc.Data.GetExcelSheet<TerritoryType>().GetRowOrDefault(Svc.ClientState.TerritoryType)?.PlaceName ?? default) ?? Svc.ClientState.TerritoryType.ToString();
 
+    /// <summary>In the FC workshop: a housing interior (intended use 14, shared with houses and apartments) with a voyage control panel.</summary>
     private static Task<bool> InWorkshop() =>
-        Game.Run(() => Svc.Data.GetExcelSheet<TerritoryType>().GetRowOrDefault(Svc.ClientState.TerritoryType)?.TerritoryIntendedUse.RowId == 14);
+        Game.Run(() => Svc.Data.GetExcelSheet<TerritoryType>().GetRowOrDefault(Svc.ClientState.TerritoryType)?.TerritoryIntendedUse.RowId == XivMcp.Maps.PlayerGuidance.HousingInteriorUse
+                       && Svc.Objects.Any(o => VoyagePanelIds.Value.Contains(o.BaseId)));
 
     private static bool SafeBool(Func<bool> f)
     {

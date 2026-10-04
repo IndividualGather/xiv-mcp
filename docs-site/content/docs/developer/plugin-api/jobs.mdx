@@ -4,7 +4,7 @@ description: Run steps one after another, your tools and XIV MCP's own, for as l
 icon: ListChecks
 ---
 
-A job runs steps one after another, each as long as it needs. Steps can be your tools, other plugins' tools or XIV MCP's own. Steps that take a while are [long-running tools](/docs/developer/plugin-api/long-running): the job is what lets them run for hours, stops them when it is paused or cancelled, and keeps their progress in its log.
+A job runs steps one after another, each as long as it needs. Steps can be your tools, other plugins' tools or XIV MCP's own. Steps that take a while are [long-running tools](/docs/developer/plugin-api/long-running): the job is what lets them run for hours, stops them when it is paused or cancelled, and keeps their progress in its log. A job costs far fewer tokens than the assistant calling the same tools one by one, but it cannot adapt to surprises: see [Step by step or as a job](/docs/developer/plugin-api/jobs-or-steps).
 
 ```csharp
 var job = mcp.StartJob("Farm, then head to a bell",

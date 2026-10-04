@@ -4,71 +4,122 @@ description: Every member of XivMcpClient and its types.
 icon: Library
 ---
 
+Everything is in `XivMcpClient.cs`, in the namespace `XivMcp.Client`.
+
+<Mermaid
+  caption="How the client's types fit together."
+  chart={`flowchart LR
+  C["XivMcpClient"] -- "AddTool, AddLongRunningTool" --> D["McpToolDefinition"]
+  C -- "calls long-running tools with" --> K["McpCall"]
+  C -- StartJob --> J["McpJobStep"]
+  C -- UsesTools --> P["McpDependency"]
+  C -- GetStatus --> S["McpStatus"]
+  S -- Dependencies --> T["McpDependencyStatus"]`}
+/>
+
 ## `XivMcpClient`
 
 | Member | Does |
 |---|---|
-| `new XivMcpClient(pluginInterface)` | Connects. Tools are registered again whenever XIV MCP loads. |
-| `AddTool(definition, args => result)` | A tool that answers right away, called on the framework thread. |
-| `AddLongRunningTool(definition, async call => result)` | A tool that may take long; see `McpCall`. |
-| `RemoveTool(name)` | Unregisters one tool. |
-| `GetStatus()` | `McpStatus`: your `State`, `CanRun`, `SuspendReason`, the setting of each declared capability (`Capabilities`) and of each tool as a whole (`Tools`), and where each declared dependency stands (`Dependencies`). |
-| `CheckPermission(capability)` | `Allow`, `Ask` or `Deny` for one capability (`Deny` unless enabled). |
-| `UsesTools(params dependencies)` | Declares the tools your jobs use that are not yours. See [Using other tools in your jobs](/docs/developer/plugin-api/interop). |
-| `StartJob(name, params steps)` | Starts a job; returns it as JSON (`id`, `state`, …). |
-| `GetJob(id)` / `ListJobs()` | A job, or the jobs your plugin started. |
-| `PauseJob(id)` / `ResumeJob(id)` / `CancelJob(id)` | Job control. |
-| `IsAvailable` | XIV MCP is loaded and speaks this API version. |
-| `RegistrationFailed` | Event with XIV MCP's message when a definition is rejected. Log it. |
-| `Dispose()` | Unregisters everything; call it in your plugin's `Dispose`. |
+| `XivMcpClient(IDalamudPluginInterface pluginInterface){:csharp}` | Connects. Tools are registered again whenever XIV MCP loads. |
+| `void AddTool(McpToolDefinition definition, Func<JsonObject, object?> handler){:csharp}` | A tool that answers right away, called on the framework thread. |
+| `void AddLongRunningTool(McpToolDefinition definition, Func<McpCall, Task<object?>> handler){:csharp}` | A tool that may take long; see `McpCall`. |
+| `void RemoveTool(string name){:csharp}` | Unregisters one tool. |
+| `McpStatus GetStatus(){:csharp}` | Where your plugin stands, the setting of each capability and tool, and each declared dependency. |
+| `McpPermission CheckPermission(string capability){:csharp}` | `Allow`, `Ask` or `Deny` for one capability (`Deny` unless enabled). |
+| `void UsesTools(params McpDependency[] dependencies){:csharp}` | Declares the tools your jobs use that are not yours. See [Using other tools in your jobs](/docs/developer/plugin-api/interop). |
+| `JsonObject StartJob(string name, params McpJobStep[] steps){:csharp}` | Starts a job; returns it as JSON (`id`, `state`, …). |
+| `JsonObject GetJob(string id){:csharp}` | One job, by id. |
+| `JsonArray ListJobs(){:csharp}` | The jobs your plugin started. |
+| `void PauseJob(string id){:csharp}`, `ResumeJob`, `CancelJob` | Job control. |
+| `bool IsAvailable{:csharp}` | XIV MCP is loaded and speaks this API version. |
+| `event Action<string>? RegistrationFailed{:csharp}` | XIV MCP's message when a definition is rejected. Log it. |
+| `void Dispose(){:csharp}` | Unregisters everything; call it in your plugin's `Dispose`. |
 
-## `McpToolDefinition(Name, Description)`
+## `McpToolDefinition`
+
+```csharp
+public sealed record McpToolDefinition(string Name, string Description)
+{
+    public string? InputSchema { get; init; }
+    public bool ReadOnly { get; init; }
+    public bool Destructive { get; init; }
+    public string[] Capabilities { get; init; } = [];
+}
+```
 
 | Property | Meaning |
 |---|---|
 | `Name` | 3–64 characters `a-z0-9_`, starting with a letter. Prefix it with your plugin's name: `myplugin_…`. |
 | `Description` | What the assistant reads to decide when to call it. |
-| `InputSchema` | JSON schema of the arguments (`"type": "object"`), or null for none. |
+| `InputSchema` | JSON schema of the arguments (`"type": "object"`), or null for none. See [Arguments](/docs/developer/plugin-api/tools#arguments). |
 | `ReadOnly` | True if it changes nothing. It runs during jobs and needs no capabilities. |
 | `Destructive` | True if the changes are hard to undo. |
 | `Capabilities` | `McpCapabilities` ids. Required unless `ReadOnly`. |
 
-## `McpDependency(Tool)`
+## `McpCall`
+
+What a long-running tool's handler gets.
+
+| Member | Meaning |
+|---|---|
+| `JsonObject Args{:csharp}` | The arguments of this call. |
+| `CancellationToken Cancellation{:csharp}` | Fires when the job is paused or cancelled, or the app gives up. |
+| `void Progress(string text){:csharp}` | Adds a line to the job log. |
+| `Task<bool> RequestApprovalAsync(string capability, string summary){:csharp}` | Asks the player now; `true` if approved. |
+| `string Id{:csharp}`, `string Tool{:csharp}` | The call's id and tool name. |
+
+## `McpStatus`
+
+What `GetStatus()` returns.
+
+| Member | Meaning |
+|---|---|
+| `McpPluginState State{:csharp}` | Where your plugin stands. See [Showing your status](/docs/developer/plugin-api/status). |
+| `bool CanRun{:csharp}` | True when `State` is `Enabled`. |
+| `string? SuspendReason{:csharp}` | Why XIV MCP suspended your plugin, if it did. |
+| `IReadOnlyDictionary<string, McpPermission> Capabilities{:csharp}` | The player's setting for each capability you declared. |
+| `IReadOnlyDictionary<string, McpPermission> Tools{:csharp}` | What each of your tools is set to as a whole. |
+| `IReadOnlyList<McpDependencyStatus> Dependencies{:csharp}` | Where each tool you declared with `UsesTools` stands. |
+
+## `McpJobStep`
+
+```csharp
+public sealed record McpJobStep(
+    string Tool,
+    object? Args = null,
+    string? Id = null,
+    string? Note = null);
+```
+
+One step of a job: any tool, its arguments (they may use `{{stepId.path}}` placeholders), an id for later steps to refer to, and a note for the job log.
+
+## `McpDependency`
 
 A tool your jobs use, for `UsesTools`. Create it with one of:
 
 | Factory | For |
 |---|---|
-| `McpDependency.BuiltIn(tool)` | One of XIV MCP's own tools, core or integration. XIV MCP knows which plugins it needs. |
-| `McpDependency.FromPlugin(tool, plugin, pluginName, repo, minVersion)` | Another plugin's tool: its internal name, its name in the installer, the `https://` URL of its `repo.json` (or `"official"`), and the oldest version that has the tool. |
+| `McpDependency.BuiltIn(string tool){:csharp}` | One of XIV MCP's own tools, core or integration. XIV MCP knows which plugins it needs or can use. |
+| `McpDependency.FromPlugin(string tool, string plugin, string pluginName, string repo, string minVersion){:csharp}` | Another plugin's tool: its internal name, its name in the installer, the `https://` URL of its `repo.json` (or `"official"`), and the oldest version that has the tool. |
 
 ## `McpDependencyStatus`
 
-One entry of `McpStatus.Dependencies`.
+```csharp
+public sealed record McpDependencyStatus(
+    string Tool, string State, string Message)
+{
+    public bool Ok => State == "ok";
+}
+```
 
-| Member | Meaning |
-|---|---|
-| `Tool` | The declared tool. |
-| `State` | `ok`, `needs_plugin`, `plugin_missing`, `plugin_not_loaded`, `plugin_outdated`, `tool_missing` or `not_enabled`. |
-| `Message` | What is wrong, in words the player understands. |
-| `Ok` | True when `State` is `ok`. |
-
-## `McpCall` (long-running tools)
-
-| Member | Meaning |
-|---|---|
-| `Args` | The arguments (`JsonObject`). |
-| `Cancellation` | Fires when the job is paused or cancelled. |
-| `Progress(text)` | Adds a line to the job log. |
-| `RequestApprovalAsync(capability, summary)` | Asks the player now; `true` if approved. |
-| `Id`, `Tool` | The call's id and tool name. |
+`State` is `ok`, `needs_plugin` (an integration tool's plugin is missing), `plugin_missing`, `plugin_not_loaded`, `plugin_outdated`, `tool_missing` or `not_enabled`. `Message` says what is wrong, in words the player understands.
 
 ## Other types
 
 | Type | What it is |
 |---|---|
-| `McpToolException(message)` | An error the assistant sees as it is. |
-| `McpJobStep(Tool, Args, Id, Note)` | One job step. |
-| `McpPermission` | `Allow`, `Ask` or `Deny`. |
-| `McpPluginState` | `Unavailable`, `Undecided`, `KeptDisabled`, `Enabled`, `AwaitingConsent` or `Suspended`. See [Showing your status](/docs/developer/plugin-api/status). |
-| `McpCapabilities` | The capability ids. See [Capabilities](/docs/developer/plugin-api/capabilities). |
+| `McpToolException(string message){:csharp}` | An error the assistant sees as it is. |
+| `enum McpPermission { Allow, Ask, Deny }{:csharp}` | A player's setting. |
+| `enum McpPluginState { Unavailable, Undecided, KeptDisabled, Enabled, AwaitingConsent, Suspended }{:csharp}` | Where your plugin stands. See [Showing your status](/docs/developer/plugin-api/status). |
+| `static class McpCapabilities{:csharp}` | The capability ids, such as `McpCapabilities.SpendGil`. See [Capabilities](/docs/developer/plugin-api/capabilities). |

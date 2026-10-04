@@ -69,9 +69,9 @@ internal static class CollectableTools
                 if (npc is null)
                 {
                     if (!config.AllowGameNavigation) throw new ToolException("No Collectable Appraiser nearby and 'Game & navigation' is off; go to one first.");
-                    var spot = await Game.Run(() => AppraiserSpot(args.UInt("npc"), plan.Npcs)).ConfigureAwait(false)
-                               ?? throw new ToolException("Don't know where a Collectable Appraiser stands (that needs a vendor-location plugin); go to one first.");
-                    await NavigationTools.GoToNpc(spot, steps, ct).ConfigureAwait(false);
+                    var spot = await Game.Run(() => AppraiserSpot(args.UInt("npc"), plan.Npcs)).ConfigureAwait(false);
+                    if (spot is not null) await NavigationTools.GoToNpc(spot, steps, ct).ConfigureAwait(false);
+                    else await AskForAppraiser(plan.Npcs, steps, ct).ConfigureAwait(false);
                     npc = await Game.Run(() => NearbyAppraiser(plan.Npcs)).ConfigureAwait(false) ?? throw new ToolException("Arrived, but no appraiser is in reach.");
                 }
 
@@ -234,6 +234,28 @@ internal static class CollectableTools
         var obj = Svc.Objects.Where(o => o.IsTargetable && npcs.Contains(o.BaseId) && Game.DistanceToPlayer(o.Position) < 40)
             .OrderBy(o => Game.DistanceToPlayer(o.Position)).FirstOrDefault();
         return obj is null ? null : (obj.BaseId, obj.GameObjectId);
+    }
+
+    /// <summary>
+    /// Without knowing where an appraiser stands: asks the player to go to one and waits (up to ten minutes) until one is in reach.
+    /// </summary>
+    private static async Task AskForAppraiser(HashSet<uint> npcs, List<string> steps, CancellationToken ct)
+    {
+        XivMcp.Util.PlayerGuide.Ask(XivMcp.Maps.PlayerGuidance.FindAppraiser);
+        steps.Add("Asked you to go to a Collectable Appraiser.");
+        using var wait = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        wait.CancelAfter(TimeSpan.FromMinutes(10));
+        try
+        {
+            while (await Game.Run(() => NearbyAppraiser(npcs)).ConfigureAwait(false) is null)
+                await Task.Delay(500, wait.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new ToolException("No Collectable Appraiser was in reach within 10 minutes. Ask the player to go to one, then try again.");
+        }
+        finally { XivMcp.Util.PlayerGuide.Done(); }
+        steps.Add("You are at a Collectable Appraiser.");
     }
 
     /// <summary>Where an appraiser stands (Item Vendor Location knows NPC positions): the requested one, else the current zone's, else any.</summary>

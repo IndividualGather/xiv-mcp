@@ -197,7 +197,7 @@ internal sealed class PluginApi : IDisposable
         ["install"] = new JsonArray(s.Install.Select(i => (JsonNode)new JsonObject
         {
             ["plugin"] = i.InternalName, ["name"] = i.Name, ["repo"] = i.Repo, ["needed"] = i.Needed, ["installed"] = i.Installed,
-            ["outdated"] = i.Outdated, ["reason"] = i.Reason,
+            ["outdated"] = i.Outdated, ["reason"] = i.Reason, ["without"] = i.Without,
         }).ToArray()),
     }).ToArray());
 

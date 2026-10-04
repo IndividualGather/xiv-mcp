@@ -12,7 +12,7 @@ namespace XivMcp.Tools;
 
 /// <summary>
 /// Logging into other characters of the account — on any world and data center, with several service accounts — through the game's
-/// own lobby (built in, no other plugin needed), and visiting other worlds (Lifestream, optional).
+/// own lobby (built in, no other plugin needed), and visiting other worlds (with Lifestream, or by asking the player and waiting).
 /// </summary>
 internal static class LoginTools
 {
@@ -152,9 +152,10 @@ internal static class LoginTools
         yield return new McpTool
         {
             Name = "visit_world",
-            Description = "Travels the current character to another world with Lifestream (world visit on the same data center, or data center " +
-                          "travel to another one) — as /li <world> does — and waits until it arrived. Use switch_character to log into a different " +
-                          "character instead. Requires Lifestream and 'Game & navigation' in /xivmcp.",
+            Description = "Travels the current character to another world (world visit on the same data center, or data center travel to " +
+                          "another one) and waits until it arrived. With a travel plugin it travels by itself; otherwise XIV MCP asks the player to " +
+                          "use World Visit or Data Center Travel and waits for them, so tell the player. Use switch_character to log into a " +
+                          "different character instead. Requires 'Game & navigation' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
@@ -168,7 +169,7 @@ internal static class LoginTools
             ReadOnly = false,
             Handler = async (args, ct) =>
             {
-                if (!PluginCompat.IsLoaded(Lifestream)) throw new ToolException("World travel needs Lifestream, which is not installed or not enabled.");
+                var automatic = PluginCompat.IsLoaded(Lifestream);
                 var worldName = args.String("world") ?? throw new ToolException("'world' is required.");
                 if (!await Gate.WaitAsync(0, ct).ConfigureAwait(false)) throw new ToolException("A character switch or world travel is already running.");
                 try
@@ -178,9 +179,12 @@ internal static class LoginTools
                         var world = PublicWorld(worldName);
                         if (Svc.PlayerState.CurrentWorld.RowId == world.RowId) throw new ToolException($"Already on {world.Name.ExtractText()}.");
                         EnsureSafeToLogOut();
-                        Svc.PluginInterface.GetIpcSubscriber<string, object>("Lifestream.ExecuteCommand").InvokeAction(world.Name.ExtractText());
-                        return (world.RowId, Name: world.Name.ExtractText(), Dc: world.DataCenter.ValueNullable?.Name.ExtractText());
+                        if (automatic) Svc.PluginInterface.GetIpcSubscriber<string, object>("Lifestream.ExecuteCommand").InvokeAction(world.Name.ExtractText());
+                        var current = Svc.Data.GetExcelSheet<World>().GetRowOrDefault(Svc.PlayerState.CurrentWorld.RowId);
+                        return (world.RowId, Name: world.Name.ExtractText(), Dc: world.DataCenter.ValueNullable?.Name.ExtractText(),
+                                SameDc: current?.DataCenter.RowId == world.DataCenter.RowId);
                     }).ConfigureAwait(false);
+                    if (!automatic) XivMcp.Util.PlayerGuide.Ask(XivMcp.Maps.PlayerGuidance.VisitWorld(target.Name, target.Dc ?? "", target.SameDc));
 
                     var deadline = DateTime.UtcNow.AddSeconds(args.Int("timeout_seconds", 600, 30, 1800));
                     while (DateTime.UtcNow < deadline)
@@ -188,12 +192,16 @@ internal static class LoginTools
                         await Task.Delay(2000, ct).ConfigureAwait(false);
                         var state = await Game.Run(() => (In: Svc.ClientState.IsLoggedIn && Svc.Objects.LocalPlayer is not null, World: Svc.PlayerState.CurrentWorld.RowId,
                                                           Busy: LifestreamBusy())).ConfigureAwait(false);
-                        if (state.In && state.World == target.RowId && !state.Busy) return new { arrived = target.Name, dataCenter = target.Dc };
+                        if (state.In && state.World == target.RowId && !state.Busy)
+                            return new { arrived = target.Name, dataCenter = target.Dc, travelledBy = automatic ? "plugin" : "player" };
                     }
-                    throw new ToolException($"Not on {target.Name} after the timeout; Lifestream may still be travelling or queued.");
+                    throw new ToolException(automatic
+                        ? $"Not on {target.Name} after the timeout; the travel plugin may still be travelling or queued."
+                        : $"Not on {target.Name} after the timeout. Ask the player whether they are still travelling, then try again.");
                 }
                 finally
                 {
+                    if (!automatic) XivMcp.Util.PlayerGuide.Done();
                     Gate.Release();
                 }
             },

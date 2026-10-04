@@ -139,6 +139,9 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Cached snapshots (submersibles, retainers) older than this are reported as stale with a refresh suggestion.</summary>
     public int CacheStaleHours { get; set; } = 12;
 
+    /// <summary>The activity overlay: shown while a tool call or job runs (/xivmcp → Overlay).</summary>
+    public XivMcp.Ui.OverlaySettings Overlay { get; set; } = new();
+
     public static string NewToken() => Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
 
     public void Save() => Svc.PluginInterface.SavePluginConfig(this);

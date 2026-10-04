@@ -15,7 +15,7 @@ XIV MCP has two permission screens, because there are two kinds of tools:
 
 | | What | Where | How it's controlled |
 |---|---|---|---|
-| **XIV MCP's own tools** | The core tools, plus the integrations XIV MCP maintains for other plugins (AutoDuty, Artisan, GatherBuddy Reborn, Lifestream, Item Vendor Location, FCCH) | `/xivmcp` → **Modules** | Per group, reading and changes separately: allow, ask or deny. Their activity log is under **Info** |
+| **XIV MCP's own tools** | The core tools, plus the integrations XIV MCP maintains for other plugins (AutoDuty, Artisan, GatherBuddy Reborn, Item Vendor Location, FCCH) | `/xivmcp` → **Modules** | Per group, reading and changes separately: allow, ask or deny. Their activity log is under **Info** |
 | **Third-party tools** | Tools other plugins register through the [plugin API](#for-plugin-developers) | `/xivmcp` → **Third-party plugins** | Per plugin, capability and tool: allow, ask or deny, with consent to registrations, an audit log and automatic suspension |
 
 The two tabs share one card layout, but third-party plugins look different: violet cards with a **THIRD-PARTY** badge and a plug icon. Each card has an on/off switch, one Allow / Ask / Deny section per declared capability with its risk level, plus a Reading section for tools that only read. Expand a section to set its tools on their own, as on the Modules tab. A tool that follows its sections uses the strictest of them. Tools that can destroy items always ask. The checks on what a call actually did (undeclared gil, item, zone or login changes suspend the plugin) apply either way.
@@ -41,7 +41,7 @@ Every tool of XIV MCP belongs to one **group**, and every group has two settings
 | Group | Reading | Changes | Covers |
 |---|---|---|---|
 | **Game data** | Allow | — | Character, jobs, gear, inventory, currencies, quests and unlocks, party and surroundings, collections, game sheets, caches, the self-test |
-| **Game & navigation** | Allow | Deny | Game windows and menus, NPCs and objects, walking and travel (vnavmesh / Lifestream), logging into other characters, gearsets, leaving duties, placing waymarks |
+| **Game & navigation** | Allow | Deny | Game windows and menus, NPCs and objects, walking and travel (with vnavmesh / Lifestream if installed, otherwise guided), world visits, logging into other characters, gearsets, leaving duties, placing waymarks |
 | **Items & retainers** | Allow | Deny | Sorting and moving items, retainers and their inventories, ventures (recalling one always asks in game), collectable turn-ins, the FC chest |
 | **Market & purchases** | Allow | Deny | Buying from vendors (anything not paid in gil also asks in game), selling and repricing, sale histories, spending approvals |
 | **UI editing** | Allow | Deny | Macros and the waymark preset slots |
@@ -60,7 +60,6 @@ The table shows the defaults. Settings from before this version carry over: a sw
 | **AutoDuty** (`list_duties`, `get_duty_status` / `run_duty`, `stop_duty`) | Allow | Deny |
 | **Artisan** (`get_crafting_lists` / crafts, lists, `run_crafting_list`, `prepare_craft_plan`) | Allow | Deny |
 | **GatherBuddy Reborn** (`get_gather_lists` / lists, auto-gather, `gather_until`) | Allow | Deny |
-| **Lifestream** (`visit_world`) | — | Deny |
 | **Item Vendor Location** (`find_vendors`) | Allow | — |
 | **FCCH** (`fc_chest_transfer`) | — | Deny |
 
@@ -79,7 +78,7 @@ Other plugins can offer their own tools to your assistant. Those tools run that 
 - **Capabilities you decide on.** Every tool declares what it may do: use game windows, move the character, fight, move, sell or destroy items, spend gil or other currencies, send chat, log out, change settings, go online. For each capability you choose **Allow**, **Ask** or **Deny**. Everything except reading starts at *Ask*. Destroying items can't be set to *Allow*; it's asked every time.
 - **Approval window.** *Ask* shows who asks, the tool, what it wants to do and its arguments. You can approve once, approve for this session (until the plugin or XIV MCP reloads), **always allow** (sets those capabilities to *Allow* for that plugin; you can change it back on its page), or decline. No answer in two minutes counts as declined. A plugin can also ask in the middle of a call, with the real numbers ("Buy 3 Hi-Potions for 1,200 gil").
 - **Checks on what changed.** Before and after every call, XIV MCP compares your gil, currencies, item count, zone and world, the chat you sent, and whether you're still logged in. A change the plugin didn't declare flags the call. If the call was short, the plugin is **suspended** until you lift it, and you get a chat message. Longer calls are only flagged, since you or another plugin may have acted meanwhile.
-- **Tools its jobs use.** A plugin can declare the tools its background jobs use: XIV MCP's own, or other plugins'. Its card lists them under **Tools its jobs use**, with a green check, or a red error when something is missing: a plugin a built-in tool needs (vnavmesh for `navigate_to`, for example), another plugin that isn't installed, is turned off, is older than the version asked for, hasn't registered the tool or isn't enabled in XIV MCP. Buttons open the plugin installer to install, enable or update it; for plugins outside Dalamud's main repository there are **Copy repository URL** and **Open Dalamud settings** (Experimental → Custom Plugin Repositories). XIV MCP never adds a repository itself. Plugins that only improve a tool (Penny Pincher's undercut settings) are hints, not errors.
+- **Tools its jobs use.** A plugin can declare the tools its background jobs use: XIV MCP's own, or other plugins'. Its card lists them under **Tools its jobs use**, with a green check, or a red error when something is missing: the plugin an integration tool needs (AutoDuty for `run_duty`, for example), another plugin that isn't installed, is turned off, is older than the version asked for, hasn't registered the tool or isn't enabled in XIV MCP. Buttons open the plugin installer to install, enable or update it; for plugins outside Dalamud's main repository there are **Copy repository URL** and **Open Dalamud settings** (Experimental → Custom Plugin Repositories). XIV MCP never adds a repository itself. Plugins one of XIV MCP's own tools can use (vnavmesh for `navigate_to`, Penny Pincher for undercuts) are hints, not errors, saying what XIV MCP does without them.
 - **Audit log.** Every call, decision and approval is listed under the plugin, with flagged entries highlighted. The full log is in `pluginConfigs/XivMcp/audit.jsonl`.
 - **Only trust what you know.** Even with all of this, an enabled plugin's code does what it was written to do. Enable plugins you trust, and read the capabilities they ask for.
 
@@ -132,11 +131,13 @@ Other plugins can offer their own tools to your assistant. Those tools run that 
 | `interact_with_object` | Targets and interacts with a nearby object or NPC, like clicking it (summoning bell, company chest, voyage panel, …) |
 | `get_menu` / `select_menu_option` | The choice menu the game shows after an interaction, and picking an entry or advancing dialogue |
 | `load_game_data` | Asks the game to send achievements or titles without opening their window |
-| `navigate_to` | Walks (vnavmesh) and travels (Lifestream) to a summoning bell, company chest, workshop, inn, house, apartment or a named object |
+| `navigate_to` | Walks and travels to a summoning bell, company chest, workshop, inn, house, apartment or a named object: by itself with vnavmesh (walking) and Lifestream (travel), otherwise by showing you the way and waiting (see below) |
 | `get_navigation_status` / `stop_navigation` | What is installed and moving, and an immediate stop |
 | `get_automation_status` | What XIV MCP detected about AutoRetainer, YesAlready and TextAdvance, and what it is pausing |
 
 Windows that act instead of opening something (Log Out, Exit Game, Return, Ready Check, Countdown, Stance) can't be triggered through `open_window`.
+
+**Without navigation plugins**, moving still works: XIV MCP asks you to do the part a plugin would have done, and waits until you have (a chat line, a notification and the flashing taskbar button tell you). Without vnavmesh it puts the flag on your map and you walk to it; without Lifestream it names the aetheryte (and aethernet shard) to teleport to, opening the map at it, or asks you to go into your inn room, house, apartment or workshop, and for `visit_world` to use World Visit or Data Center Travel. `buy_item` and `turn_in_collectables` do the same on their way. `stop_navigation` or the timeout (10 minutes by default for `navigate_to`) ends the wait.
 
 ### Maps and routes *(Game data, Game & navigation, Background jobs)*
 
@@ -156,7 +157,7 @@ XIV MCP only marks the way: you travel however you like (walking, mounting, tele
 | `list_characters` | The characters XIV MCP has seen (lobby lists and the character in game): worlds, data center, service account, and whether each is on the account in use |
 | `switch_character` | Logs out and into another character of the account, on any world, data center and service account, and waits until it is in game |
 | `refresh_character_list` | Logs out and straight back in, so XIV MCP learns this data center's character list |
-| `visit_world` | World visit or data center travel for the current character (needs Lifestream) |
+| `visit_world` | World visit or data center travel for the current character: with Lifestream by itself, otherwise it asks you to use World Visit or Data Center Travel and waits until you arrive |
 | `switch_gearset` | Changes job by equipping a gearset, by number, name or job (the highest item level set of that job) |
 
 Logging in is built in: XIV MCP goes through the game's own lobby (title screen, data center, service account, character list) and confirms only when the game's prompt names the right character. It remembers each character's service account. Accounts are told apart by what XIV MCP observes, so it never tries to reach a character of another account.
@@ -175,7 +176,7 @@ Logging in is built in: XIV MCP goes through the game's own lobby (title screen,
 | `find_ventures` | Which venture brings an item, which retainer can take it, and every retainer's current venture |
 | `assign_venture` | Sends a retainer (or a free one that can take it) on a venture. If all are busy it suggests which to recall: quick ventures first, then the long ones |
 | `recall_venture` | Recalls a retainer from a running venture, **only after you approve it in game** |
-| `turn_in_collectables` | Turns in collectables at a Collectable Appraiser for scrips (travels there if needed). Stops before the scrip cap: when the game warns that a trade would overcap, it answers No and stops |
+| `turn_in_collectables` | Turns in collectables at a Collectable Appraiser for scrips (takes you there if it knows where one stands, otherwise asks you to go to one). Stops before the scrip cap: when the game warns that a trade would overcap, it answers No and stops |
 
 Every move waits until the game and server confirmed the previous one, then pauses (random 500–800 ms by default, adjustable in `/xivmcp`). Nothing happens in combat, while crafting or gathering, in trades, cutscenes or zone changes. Equipped gear, currency, crystals and key items can't be moved.
 
@@ -187,7 +188,7 @@ Every move waits until the game and server confirmed the previous one, then paus
 |---|---|
 | `get_item_sources` | Where an item comes from: crafting, vendors, currency exchanges, gathering nodes, drops, duties, FATEs, ventures, voyages, desynthesis, … from FFXIV Teamcraft's data, optionally with the wiki page *(Online lookups)* |
 | `find_vendors` | NPCs that sell an item, with zone and map position, from the **Item Vendor Location** plugin |
-| `buy_item` | Travels to a vendor, opens its shop (gil shops, exchanges and the multi-page scrip exchanges) and buys in batches of up to 99. Gil shops buy directly; any other currency shows an approval popup in game while the shop is open, unless a standing approval is given *(Market & purchases)* |
+| `buy_item` | Gets you to a vendor (or, without Item Vendor Location, asks you to open a shop that sells the item), opens its shop (gil shops, exchanges and the multi-page scrip exchanges) and buys in batches of up to 99. Gil shops buy directly; any other currency shows an approval popup in game while the shop is open, unless a standing approval is given *(Market & purchases)* |
 | `request_spending_approval` | Asks you once in game to approve spending up to an amount of one currency (optionally only on given items, for a while), e.g. for a farming job. `buy_item` with that `approval` then doesn't ask again but never spends more than approved *(Market & purchases)* |
 | `list_approvals` / `revoke_approval` | Standing approvals with what is spent and left; revoke one (also in `/xivmcp` → Jobs) |
 | `get_market_prices` | Current listings, recent sales, averages and sales per day from universalis.app for your world, data center or region *(Online lookups)* |
@@ -289,9 +290,9 @@ XIV MCP detects these automatically and only mentions the installed ones in its 
 - **YesAlready and TextAdvance** are paused through their `StopRequests` sets while XIV MCP drives game windows.
 - **FCCH** handles FC chest transfers; item moves wait while it works.
 - **WaymarkPresetPlugin** provides its preset library.
-- **vnavmesh** and **Lifestream** do walking and travel; **Artisan** and **GatherBuddy Reborn** do crafting and gathering.
+- **vnavmesh** and **Lifestream** do walking and travel (without them, XIV MCP shows you the way and waits); **Artisan** and **GatherBuddy Reborn** do crafting and gathering.
 - **AutoDuty** runs and loops dungeons for the dungeon tools, which only exist while it is loaded.
-- **Item Vendor Location** finds vendors (an Install button appears under *Market & purchases* when it's missing); **Penny Pincher**'s settings drive undercuts.
+- **Item Vendor Location** finds vendors and appraisers (without it you open the shop or go to the appraiser yourself; an Install button appears under *Market & purchases*); **Penny Pincher**'s settings drive undercuts.
 
 Automating game actions is against the FFXIV ToS. XIV MCP sends the same requests as manual input, but use it at your own risk.
 

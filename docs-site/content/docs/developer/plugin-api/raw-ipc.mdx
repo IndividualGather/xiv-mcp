@@ -14,21 +14,21 @@ For plugins that do not use `XivMcpClient.cs`.
 
 | Gate | Signature | Returns / does |
 |---|---|---|
-| `ApiVersion` | `Func<int>` | `2` |
-| `IsReady` | `Func<bool>` | True while loaded |
-| `ListCapabilities` | `Func<string>` | `{"capabilities":[{"id","risk","title","description","default"}]}` |
-| `RegisterTool` | `Func<string owner, string definitionJson, string>` | `{"name","enabled","awaitingConsent","state","capabilities":[{"id","mode"}]}` |
-| `UnregisterTool` | `Func<string owner, string name, string>` | `{"removed": bool}` |
-| `UnregisterAll` | `Func<string owner, string>` | `{"removed": count}` |
-| `GetStatus` | `Func<string owner, string>` | `{"state","canRun","suspendReason","tools":[{"name","mode","own"}],"capabilities":[{"id","mode"}],"dependencies":[…]}` |
-| `DeclareDependencies` | `Func<string owner, string json, string>` | Declares the tools your jobs use (see below); returns `{"dependencies":[…]}` |
-| `CheckPermission` | `Func<string owner, string capability, string>` | `{"mode":"allow"\|"ask"\|"deny","enabled","suspended","state"}` |
-| `RequestApproval` | `Func<string callId, string requestJson, string>` | Request `{"capability","summary"}`; returns `{"approvalId","state"}` |
-| `GetApproval` | `Func<string approvalId, string>` | `{"state":"pending"\|"approved"\|"denied"}` |
-| `CompleteCall` | `Func<string callId, string resultJson, string>` | Finishes a pending call |
-| `FailCall` | `Func<string callId, string message, string>` | Fails a pending call |
-| `ReportProgress` | `Func<string callId, string text, string>` | Adds a job log line |
-| `StartJob` | `Func<string owner, string jobJson, string>` | Job `{"name","steps":[{"id","tool","args","note"}]}`; returns `{"job":{…}}` |
+| `ApiVersion` | `Func<int>{:csharp}` | `2` |
+| `IsReady` | `Func<bool>{:csharp}` | True while loaded |
+| `ListCapabilities` | `Func<string>{:csharp}` | `{"capabilities":[{"id","risk","title","description","default"}]}{:json}` |
+| `RegisterTool` | `Func<string owner, string definitionJson, string>{:csharp}` | `{"name","enabled","awaitingConsent","state","capabilities":[{"id","mode"}]}{:json}` |
+| `UnregisterTool` | `Func<string owner, string name, string>{:csharp}` | `{"removed": bool}{:json}` |
+| `UnregisterAll` | `Func<string owner, string>{:csharp}` | `{"removed": count}{:json}` |
+| `GetStatus` | `Func<string owner, string>{:csharp}` | `{"state","canRun","suspendReason","tools":[{"name","mode","own"}],"capabilities":[{"id","mode"}],"dependencies":[…]}{:json}` |
+| `DeclareDependencies` | `Func<string owner, string json, string>{:csharp}` | Declares the tools your jobs use (see below); returns `{"dependencies":[…]}` |
+| `CheckPermission` | `Func<string owner, string capability, string>{:csharp}` | `{"mode":"allow"\|"ask"\|"deny","enabled","suspended","state"}{:json}` |
+| `RequestApproval` | `Func<string callId, string requestJson, string>{:csharp}` | Request `{"capability","summary"}`; returns `{"approvalId","state"}` |
+| `GetApproval` | `Func<string approvalId, string>{:csharp}` | `{"state":"pending"\|"approved"\|"denied"}{:json}` |
+| `CompleteCall` | `Func<string callId, string resultJson, string>{:csharp}` | Finishes a pending call |
+| `FailCall` | `Func<string callId, string message, string>{:csharp}` | Fails a pending call |
+| `ReportProgress` | `Func<string callId, string text, string>{:csharp}` | Adds a job log line |
+| `StartJob` | `Func<string owner, string jobJson, string>{:csharp}` | Job `{"name","steps":[{"id","tool","args","note"}]}`; returns `{"job":{…}}` |
 | `GetJob` / `ListJobs` | `Func<string id \| owner, string>` | `{"job"}` / `{"jobs"}` |
 | `PauseJob` / `ResumeJob` / `CancelJob` | `Func<string id, string>` | Job control |
 | `Ready` / `Disposing` | messages | Register on `Ready`; stop running calls on `Disposing` |
@@ -77,54 +77,63 @@ Each entry of `dependencies` in the reply and in `GetStatus`:
 {
   "tool": "navigate_to",
   "plugin": null,
-  "state": "needs_plugin",
-  "message": "Needs vnavmesh, which is not installed or not enabled.",
+  "state": "ok",
+  "message": "Ready. Without vnavmesh: XIV MCP puts a flag on …",
   "install": [
     {
       "plugin": "vnavmesh", "name": "vnavmesh",
       "repo": "https://puni.sh/api/repository/veyn",
-      "needed": true, "installed": false, "outdated": false,
-      "reason": "Walks to the destination when it is not in sight."
+      "needed": false, "installed": false, "outdated": false,
+      "reason": "Walks there for you.",
+      "without": "XIV MCP puts a flag on your map and waits …"
     }
   ]
 }
 ```
 
-`state` is one of `ok`, `needs_plugin`, `plugin_missing`, `plugin_not_loaded`, `plugin_outdated`, `tool_missing` or `not_enabled`. `install` lists the plugins to install, enable or update; `needed: false` marks one that only improves the tool.
+`state` is one of `ok`, `needs_plugin`, `plugin_missing`, `plugin_not_loaded`, `plugin_outdated`, `tool_missing` or `not_enabled`. `install` lists the plugins to install, enable or update. `needed: true` is a plugin an integration tool cannot run without (`state` is then `needs_plugin`); `needed: false` is one an XIV MCP core tool can use, with `without` saying what XIV MCP does instead.
 
 ## Gates your plugin provides
 
 | Gate | Signature | Does |
 |---|---|---|
-| `<InternalName>.XivMcp.Invoke` | `Func<string callId, string tool, string argsJson, string>` | Runs a tool on the framework thread, after the permission checks. Reply with `{"result": …}`, `{"error": "…"}` or `{"pending": true}`; finish a pending call with `CompleteCall` / `FailCall`. |
-| `<InternalName>.XivMcp.Cancel` | `Action<string callId>` | Optional: stop a pending call. |
+| `<InternalName>.XivMcp.Invoke` | `Func<string callId, string tool, string argsJson, string>{:csharp}` | Runs a tool on the framework thread, after the permission checks. Reply with `{"result": …}`, `{"error": "…"}` or `{"pending": true}`; finish a pending call with `CompleteCall` / `FailCall`. |
+| `<InternalName>.XivMcp.Cancel` | `Action<string callId>{:csharp}` | Optional: stop a pending call. |
 
 `CompleteCall` and `RequestApproval` may be called from inside `Invoke`, before you reply.
 
 ## A call that takes a minute
 
-```text
-XivMcp → you   Invoke("c1", "myplugin_farm", "{\"minutes\":1}")
+<Mermaid
+  caption="A long-running call over raw IPC. The approval and the cancel only happen when they are needed."
+  chart={`sequenceDiagram
+  participant X as XIV MCP
+  participant Y as Your plugin
+  X->>Y: Invoke("c1", "myplugin_farm", args)
+  Y-->>X: {"pending": true}
+  Note over Y: start the work, return at once
+  loop any number of times
+    Y->>X: ReportProgress("c1", "12 kills")
+  end
+  opt at the risky moment
+    Y->>X: RequestApproval("c1", capability and summary)
+    X-->>Y: approvalId a7, pending
+    loop every 250 ms
+      Y->>X: GetApproval("a7")
+      X-->>Y: pending, then approved or denied
+    end
+  end
+  opt the job is paused or cancelled
+    X->>Y: Cancel("c1")
+    Note over Y: stop safely
+  end
+  alt done
+    Y->>X: CompleteCall("c1", result)
+  else failed
+    Y->>X: FailCall("c1", "Bags full after 31 kills.")
+  end`}
+/>
 
-you → XivMcp   reply {"pending": true}
-               (start the work, return at once)
-
-you → XivMcp   ReportProgress("c1", "12 kills")
-               (any number of times)
-
-you → XivMcp   RequestApproval("c1", request) with the request
-               {"capability":"spend_gil",
-                "summary":"Repair for 3,200 gil"}
-               → {"approvalId":"a7","state":"pending"}
-               poll GetApproval("a7") every ~250 ms
-               until approved or denied
-
-XivMcp → you   Cancel("c1")
-               (only if the job is paused or cancelled: stop safely)
-
-you → XivMcp   CompleteCall("c1", "{\"kills\":31}")
-               (the result itself, not wrapped in {"result": …})
-               or FailCall("c1", "Bags full after 31 kills.")
-```
+`CompleteCall` takes the result itself, not wrapped in `{"result": …}`. The approval request is `{"capability": "spend_gil", "summary": "Repair for 3,200 gil"}`.
 
 XIV MCP has no time limit of its own on pending calls. Approval windows decline after two minutes, and after a `Cancel` XIV MCP waits up to two minutes for your `CompleteCall` or `FailCall`.

@@ -11,7 +11,10 @@ using static XivMcp.Util.Navigation;
 
 namespace XivMcp.Tools;
 
-/// <summary>Travelling to an NPC anywhere in the world: teleport (aetheryte or aethernet shard closest to the NPC), then walk.</summary>
+/// <summary>
+/// Travelling to an NPC anywhere in the world: teleport (aetheryte or aethernet shard closest to the NPC), then walk. Without
+/// Lifestream or vnavmesh, the player is asked to teleport or to walk to the map flag, and XIV MCP waits.
+/// </summary>
 internal static partial class NavigationTools
 {
 
@@ -50,9 +53,10 @@ internal static partial class NavigationTools
         if (await WalkTo(spot.Name, o => o.BaseId == spot.NpcId, steps, ct).ConfigureAwait(false) is { } near) return near;
 
         var plan = await Game.Run(() => PlanTeleport(spot)).ConfigureAwait(false);
-        if (plan is not null)
+        if (plan is not null && !LifestreamLoaded)
+            await GuideTeleport(plan.Value.AetheryteId, plan.Value.Shard, spot.Territory, steps, ct).ConfigureAwait(false);
+        else if (plan is not null)
         {
-            if (!LifestreamLoaded) throw new ToolException($"{spot.Name} is in {TerritoryName(spot.Territory)}; travelling there needs a travel plugin, which isn't installed.");
             phase = $"travelling to {plan.Value.Label}";
             var ok = await Game.Run(() =>
             {
@@ -74,7 +78,13 @@ internal static partial class NavigationTools
         if (await WalkTo(spot.Name, o => o.BaseId == spot.NpcId, steps, ct).ConfigureAwait(false) is { } arrived) return arrived;
 
         // Not in sight yet: walk towards where it stands, then look again.
-        if (!VnavmeshLoaded) throw new ToolException($"{spot.Name} is not nearby; walking there needs a pathfinding plugin, which isn't installed.");
+        if (!VnavmeshLoaded)
+        {
+            await GuideWalk(spot.Territory, spot.Position, spot.Name, ArriveRange + 2,
+                () => Svc.Objects.Any(o => o.BaseId == spot.NpcId && Game.DistanceToPlayer(o.Position) <= ArriveRange + 1), steps, ct).ConfigureAwait(false);
+            return await WalkTo(spot.Name, o => o.BaseId == spot.NpcId, steps, ct).ConfigureAwait(false)
+                   ?? throw new ToolException($"You are where {spot.Name} should be, but the NPC is not there (it may only appear during a quest or event).");
+        }
         await WaitForMesh(ct).ConfigureAwait(false);
         var target = await Game.Run(() => spot.ExactHeight ? spot.Position
             : Ipc<Vector3, bool, float, Vector3?>("vnavmesh.Query.Mesh.PointOnFloor", spot.Position with { Y = 1024 }, false, 5f) ?? spot.Position).ConfigureAwait(false);
@@ -127,7 +137,7 @@ internal static partial class NavigationTools
         return (best.Row.RowId, Excel.Name(best.Row.AethernetName) ?? $"aethernet {best.Row.RowId}", true);
     }
 
-    private static Vector3? AetherytePosition(Aetheryte a)
+    internal static Vector3? AetherytePosition(Aetheryte a)
     {
         foreach (var level in a.Level)
             if (level.RowId != 0 && level.ValueNullable is { } l) return new Vector3(l.X, l.Y, l.Z);

@@ -47,6 +47,9 @@ public sealed partial class McpServer : IDisposable
 
     private readonly XivMcp.Permissions.ToolGate gate;
 
+    /// <summary>The tool calls running right now, for the activity overlay.</summary>
+    internal XivMcp.Ui.ActivityTracker Activity { get; } = new();
+
     internal McpServer(ToolRegistry tools, XivMcp.Permissions.ToolGate gate, Configuration config, Util.CacheRegistry caches)
     {
         this.tools = tools;
@@ -358,6 +361,7 @@ public sealed partial class McpServer : IDisposable
         string text;
         var isError = false;
         IReadOnlyList<ToolImage> images = [];
+        var activity = Activity.Begin(name, LastClient, DateTime.UtcNow);
         try
         {
             var result = await gate.InvokeAsync(tool, new ToolArgs(p?["arguments"] as JsonObject), ct).ConfigureAwait(false);
@@ -380,6 +384,7 @@ public sealed partial class McpServer : IDisposable
             isError = true;
         }
 
+        Activity.End(activity, isError, DateTime.UtcNow);
         var content = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = text });
         foreach (var image in images)
         {

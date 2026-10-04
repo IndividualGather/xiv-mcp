@@ -15,6 +15,23 @@ When a plugin registers tools, XIV MCP shows a notification naming it and what i
 - Nothing is offered to your assistant until you enable the plugin.
 - *Keep disabled* is remembered: you are not asked again unless the plugin's registration changes.
 
+## Where a plugin stands
+
+<Mermaid
+  caption="A third-party plugin's states. Only an enabled plugin's tools are offered to your assistant."
+  chart={`stateDiagram-v2
+  direction LR
+  [*] --> Undecided: registers tools
+  Undecided --> Enabled: Enable
+  Undecided --> KeptDisabled: Keep disabled
+  KeptDisabled --> Undecided: its registration changes
+  Enabled --> AwaitingConsent: new tool or capability
+  AwaitingConsent --> Enabled: you consent
+  Enabled --> Suspended: an undeclared change
+  Suspended --> Enabled: you lift it
+  Enabled --> KeptDisabled: switched off`}
+/>
+
 ## Changes need consent again
 
 If a plugin later registers a new tool or a new capability, you are asked again, for just the additions. If the plugin was enabled, its tools are paused (refused and hidden from your assistant) until you consent again. Removing tools never asks.
@@ -48,9 +65,9 @@ A plugin can run [background jobs](/docs/user/features/jobs) that use XIV MCP's 
 <Screenshot src="third-party-dependencies.png" alt="A plugin card listing the tools its jobs use: three ready, three with red errors and buttons to fix them" caption="Ready tools get a green check. A red error says what is missing, with a way to get it." width={620} />
 
 - **A green check** means the tool can run.
-- **A red error** means a job with that tool will be refused, or its step will fail. The card says why: a plugin that tool needs is not installed, is turned off, is too old, or is not enabled in XIV MCP.
+- **A red error** means a job with that tool will be refused. The card says why: a plugin that tool needs is not installed, is turned off, is too old, or is not enabled in XIV MCP.
 - **The buttons fix it.** **Install**, **Enable** and **Update** open Dalamud's plugin installer at that plugin. A plugin outside Dalamud's main repository shows its repository URL, with **Copy repository URL** and **Open Dalamud settings**. Add the URL under **Experimental** → **Custom Plugin Repositories**, then install it.
-- **A grey hint** names a plugin that only makes a tool better. Nothing fails without it.
+- **A grey hint** names a plugin one of XIV MCP's own tools can use, such as a walking plugin for `navigate_to`. The tool works without it, and asks you to do that part instead: walk to the map flag, or teleport.
 
 XIV MCP never adds a repository by itself. Only add repositories you trust: a plugin from them can do anything on your PC.
 

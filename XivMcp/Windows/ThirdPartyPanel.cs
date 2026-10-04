@@ -308,7 +308,7 @@ internal sealed class ThirdPartyPanel(IThirdPartyHost host)
         ImGui.TextUnformatted("Tools its jobs use");
         ImGui.SameLine();
         ImGui.TextColored(errors > 0 ? Red : Muted, errors > 0 ? $"{errors} of {p.Dependencies.Count} can't run" : $"{p.Dependencies.Count}, all ready");
-        Tooltip($"{p.DisplayName} declared these tools for its background jobs. A job with a tool that is not available is refused when it starts; a tool whose plugin is missing fails when its step runs.");
+        Tooltip($"{p.DisplayName} declared these tools for its background jobs. A job with a tool that is not available is refused when it starts. XIV MCP's own tools still run without the plugins they can use; they ask you to do that part instead.");
 
         foreach (var d in p.Dependencies)
         {

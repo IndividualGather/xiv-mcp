@@ -45,7 +45,7 @@ Your plugin itself must be enabled to start jobs at all. A job never gives a too
 - is not available right now: its plugin is not loaded, or the player has not enabled it in XIV MCP;
 - is turned off in `/xivmcp` → **Modules**.
 
-Some needs only show while a step runs. `navigate_to` exists without a walking plugin, for example, but cannot walk to a bell that is out of sight. That step then reports the problem, and the job waits as *pending*.
+XIV MCP's own tools need no plugin to run. Some hand a part to a plugin when it is installed, and otherwise ask the player to do it: `navigate_to` without a walking plugin flags the spot and waits for the player to walk there. A job with such a step is not refused, but that step waits for the player. Problems that only show while a step runs, such as a vendor that is not there, make the step fail and the job wait as *pending*.
 
 Declaring your dependencies lets the player see all of this before they start anything.
 
@@ -76,7 +76,7 @@ mcp.UsesTools(
 | `repo` | The `https://` URL of the `repo.json` it is installed from, or `"official"` for Dalamud's main repository | For another plugin's tool |
 | `minVersion` | The oldest version that has the tool as you use it, such as `"1.2.0"` | For another plugin's tool |
 
-- **Built-in tools take no plugin fields.** XIV MCP knows which plugins its tools need, and keeps that list up to date: see [Tools that need plugins](/docs/developer/plugin-api/tool-requirements). Naming a plugin for a built-in tool is refused.
+- **Built-in tools take no plugin fields.** XIV MCP knows which plugins its tools need or can use, and keeps that list up to date: see [Tools that need plugins](/docs/developer/plugin-api/tool-requirements). Naming a plugin for a built-in tool is refused.
 - **A name XIV MCP does not know is treated as another plugin's tool,** so a typo in a built-in name asks for the plugin fields. The error message says so.
 - **Calling `UsesTools` again replaces the list.** The client declares it again whenever XIV MCP loads, like your tools.
 - **Declaring is not consent.** It does not ask the player for anything, and does not allow anything. It only shows them what your jobs need.
@@ -90,13 +90,13 @@ Your plugin's card in `/xivmcp` → **Third-party plugins** gets a **Tools its j
 | State | Shown as | The player can |
 |---|---|---|
 | Ready | Green check | Nothing to do |
-| A built-in tool's plugin is missing | Error, with the plugin and what it is needed for | **Install** it (Dalamud's main repository), or copy its repository URL and open Dalamud's settings to add it first |
+| An integration tool's plugin is missing | Error, with the plugin and what it is needed for | **Install** it (Dalamud's main repository), or copy its repository URL and open Dalamud's settings to add it first |
 | Another plugin is not installed | Error, with its name, version and repository | The same |
 | Installed, but turned off in Dalamud | Error | **Enable** it in the plugin installer |
 | Older than `minVersion` | Error, with both versions | **Update** it |
 | Loaded, but the tool is not registered | Error | Update or reconfigure that plugin |
 | Not enabled in XIV MCP | Error | **Show** that plugin's card, to enable it |
-| A plugin that only improves a tool is missing | Hint, not an error | Install it if they like |
+| A plugin one of XIV MCP's own tools can use is missing | Hint, not an error, with what XIV MCP does without it | Install it if they like, or do that part themselves |
 
 The tab label and the card summary count the tools that cannot run. XIV MCP never adds a plugin repository on its own; the player does that in Dalamud's settings.
 

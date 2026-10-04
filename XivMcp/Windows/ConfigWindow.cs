@@ -44,8 +44,29 @@ internal sealed partial class ConfigWindow : Window
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(560, 440), MaximumSize = new Vector2(1600, 1400) };
     }
 
+    /// <summary>Presses of this window's controls requested by press_xivmcp_control (dev builds); see <see cref="XivMcp.Ui.UiControlQueue"/>.</summary>
+    public XivMcp.Ui.UiControlQueue Controls { get; } = new();
+
+    /// <summary>Where the window was drawn last, in game client pixels (for take_screenshot); null until it was open.</summary>
+    public (Vector2 Position, Vector2 Size)? Bounds { get; private set; }
+
+    /// <summary>The job to open and scroll to on the Jobs tab (show_xivmcp_window), once it is drawn.</summary>
+    private string? focusJob;
+
+
+    /// <summary>Opens the window on a tab ("Connect", "Modules", "Third-party", "Jobs", "Info"), focusing a job or a third-party plugin.</summary>
+    public void Show(string tab, string? jobId = null, string? pluginId = null)
+    {
+        IsOpen = true;
+        BringToFront();
+        selectTab = tab;
+        if (jobId is not null) focusJob = jobId;
+        if (pluginId is not null) ThirdParty.Focus(pluginId);
+    }
+
     public override void Draw()
     {
+        Bounds = (ImGui.GetWindowPos(), ImGui.GetWindowSize());
         Refresh();
         DrawHeader();
         ImGui.Spacing();
@@ -61,6 +82,7 @@ internal sealed partial class ConfigWindow : Window
         Tab(FontAwesomeIcon.UserShield, ThirdPartyTabLabel(), DrawThirdParty);
         var activeJobs = plugin.Jobs?.All().Count(j => !j.Finished) ?? 0;
         Tab(FontAwesomeIcon.Tasks, activeJobs > 0 ? $"Jobs ({activeJobs})" : "Jobs", DrawJobs);
+        Tab(FontAwesomeIcon.LayerGroup, "Overlay", DrawOverlaySettings);
         Tab(FontAwesomeIcon.InfoCircle, "Info", DrawInfo);
     }
 
@@ -99,7 +121,8 @@ internal sealed partial class ConfigWindow : Window
     private void Tab(FontAwesomeIcon icon, string label, Action draw)
     {
         var key = label.Split(' ')[0];
-        var flags = selectTab == key ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None;
+        var pressed = Controls.Consume($"tab:{key}");
+        var flags = selectTab == key || pressed ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None;
         if (flags != ImGuiTabItemFlags.None) selectTab = null;
         using var tab = ImRaii.TabItem($"{icon.ToIconString()}  {label}###{key}", flags);
         if (!tab) return;
@@ -200,9 +223,11 @@ internal sealed partial class ConfigWindow : Window
         SubTab(FontAwesomeIcon.Database, "Caches", DrawCaches);
     }
 
-    private static void SubTab(FontAwesomeIcon icon, string label, Action draw)
+    private void SubTab(FontAwesomeIcon icon, string label, Action draw)
     {
-        using var tab = ImRaii.TabItem($"{icon.ToIconString()}  {label}###info-{label.Split(' ')[0]}");
+        var key = label.Split(' ')[0];
+        var flags = Controls.Consume($"info:{key}") ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None;
+        using var tab = ImRaii.TabItem($"{icon.ToIconString()}  {label}###info-{key}", flags);
         if (!tab) return;
         ImGui.Spacing();
         using var child = ImRaii.Child($"##info-{label.Split(' ')[0]}", new Vector2(-1, -1), false);
@@ -274,7 +299,8 @@ internal sealed partial class ConfigWindow : Window
         var current = BellLocations.FirstOrDefault(b => b.Id == config.PreferredBellLocation).Label ?? BellLocations[0].Label;
         using var combo = ImRaii.Combo("##bell-location", current);
         if (!combo) return;
-        foreach (var (id, label) in BellLocations)
+        // Without the travel plugin its "preferred property" means the inn, so it isn't offered.
+        foreach (var (id, label) in BellLocations.Where(b => b.Id != "lifestream" || XivMcp.Util.Navigation.LifestreamLoaded))
             if (ImGui.Selectable(label, id == config.PreferredBellLocation))
             {
                 config.PreferredBellLocation = id;
@@ -368,99 +394,6 @@ internal sealed partial class ConfigWindow : Window
     }
 
     // ---------------------------------------------------------------- caches
-
-    // ---------------------------------------------------------------- jobs
-
-    private void DrawJobs()
-    {
-        var manager = plugin.Jobs;
-        if (manager is null) return;
-        ImGui.PushTextWrapPos();
-        ImGui.TextColored(Muted, "Background jobs started by your assistant: queues of tool calls that run here in game for as long as they take. " +
-                                 "A job whose step failed or was stopped waits as \"pending\" until the assistant fixes it, or you cancel it.");
-        ImGui.PopTextWrapPos();
-        ImGui.Spacing();
-        var all = manager.All();
-        var active = all.Where(j => !j.Finished).ToList();
-        if (active.Count == 0) ImGui.TextColored(Muted, "No active jobs.");
-        foreach (var job in active) DrawJob(manager, job);
-        var approvals = XivMcp.Util.Approvals.All().Where(a => a.Active).ToList();
-        if (approvals.Count > 0)
-        {
-            ImGui.Spacing();
-            Section(FontAwesomeIcon.CheckCircle, "Standing spending approvals");
-            foreach (var a in approvals)
-            {
-                using var aid = ImRaii.PushId(a.Id);
-                ImGui.TextColored(Accent, $"{a.Remaining:N0} / {a.MaxAmount:N0} {XivMcp.Util.Items.Name(a.CurrencyId)}");
-                ImGui.SameLine();
-                ImGui.TextColored(Muted, $"{a.Purpose} — until {a.ExpiresUtc.ToLocalTime():g}");
-                ImGui.SameLine();
-                if (ImGui.SmallButton("Revoke")) XivMcp.Util.Approvals.Revoke(a.Id);
-            }
-            ImGui.Spacing();
-        }
-        var finished = all.Where(j => j.Finished).ToList();
-        if (finished.Count > 0 && ImGui.CollapsingHeader($"Finished ({finished.Count})##finished-jobs"))
-            foreach (var job in finished) DrawJob(manager, job);
-    }
-
-    private static readonly Dictionary<XivMcp.Util.JobManager.JobState, Vector4> JobColors = new()
-    {
-        [XivMcp.Util.JobManager.JobState.Running] = Green, [XivMcp.Util.JobManager.JobState.Queued] = Cyan, [XivMcp.Util.JobManager.JobState.Paused] = Amber,
-        [XivMcp.Util.JobManager.JobState.Pending] = Amber, [XivMcp.Util.JobManager.JobState.Completed] = Muted, [XivMcp.Util.JobManager.JobState.Failed] = Red,
-        [XivMcp.Util.JobManager.JobState.Cancelled] = Muted,
-    };
-
-    private void DrawJob(XivMcp.Util.JobManager manager, XivMcp.Util.JobManager.Job job)
-    {
-        using var id = ImRaii.PushId(job.Id);
-        using var bg = ImRaii.PushColor(ImGuiCol.ChildBg, new Vector4(1, 1, 1, 0.04f));
-        var done = job.Steps.Count(s => s.State is XivMcp.Util.JobManager.StepState.Done or XivMcp.Util.JobManager.StepState.Skipped);
-        ImGui.TextColored(JobColors[job.State], job.State.ToString().ToLowerInvariant());
-        ImGui.SameLine();
-        ImGui.TextColored(Accent, job.Name);
-        ImGui.SameLine();
-        ImGui.TextColored(Muted, $"{done}/{job.Steps.Count} steps");
-        if (!job.Finished)
-        {
-            ImGui.SameLine();
-            try
-            {
-                if (job.State is XivMcp.Util.JobManager.JobState.Running or XivMcp.Util.JobManager.JobState.Queued)
-                {
-                    if (ImGui.SmallButton("Pause")) manager.Pause(job.Id, "Paused in game.");
-                }
-                else if (job.Current?.State != XivMcp.Util.JobManager.StepState.Failed && ImGui.SmallButton("Resume")) manager.Resume(job.Id);
-                ImGui.SameLine();
-                if (ImGui.SmallButton("Cancel")) manager.Cancel(job.Id);
-            }
-            catch (XivMcp.Mcp.ToolException ex) { Svc.Log.Warning($"[MCP] {ex.Message}"); }
-        }
-        if (job.Current is { } cur)
-        {
-            var since = cur.StartedUtc is { } s && cur.State == XivMcp.Util.JobManager.StepState.Running ? $" for {CacheFreshness.FormatAge(DateTime.UtcNow - s)}" : "";
-            ImGui.TextColored(Muted, $"Step {cur.Id}: {cur.Tool} ({cur.State.ToString().ToLowerInvariant()}{since})");
-        }
-        if (job.Reason is { } reason)
-        {
-            ImGui.PushTextWrapPos();
-            ImGui.TextColored(job.State == XivMcp.Util.JobManager.JobState.Pending ? Amber : Muted, reason);
-            ImGui.PopTextWrapPos();
-        }
-        if (ImGui.TreeNode($"Steps and log##{job.Id}"))
-        {
-            foreach (var step in job.Steps)
-            {
-                ImGui.TextUnformatted($"{step.Id}  {step.Tool}  —  {step.State.ToString().ToLowerInvariant()}{(step.Attempts > 1 ? $" (attempt {step.Attempts})" : "")}");
-                if (step.Error is { } e) { ImGui.PushTextWrapPos(); ImGui.TextColored(Red, e); ImGui.PopTextWrapPos(); }
-            }
-            ImGui.Separator();
-            foreach (var line in job.Log.TakeLast(12)) ImGui.TextColored(Muted, line);
-            ImGui.TreePop();
-        }
-        ImGui.Separator();
-    }
 
     private void DrawCaches()
     {

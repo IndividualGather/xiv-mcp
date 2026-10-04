@@ -7,6 +7,7 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import type { MDXComponents } from 'mdx/types';
 import type { ComponentProps } from 'react';
 import { BrandLogo, Screenshot } from '@/components/screenshot';
+import { Mermaid } from '@/components/mermaid';
 
 export function getMDXComponents(components?: MDXComponents) {
   return {
@@ -19,6 +20,7 @@ export function getMDXComponents(components?: MDXComponents) {
     Files,
     Folder,
     BrandLogo,
+    Mermaid,
     Screenshot,
     Step,
     Steps,

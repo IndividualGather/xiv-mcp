@@ -55,16 +55,20 @@ public static class ToolSummaries
         ["list_characters"] = "Lists the characters XIV MCP has seen on your worlds and accounts.",
         ["open_window"] = "Opens a game window, such as your armoury or currencies.",
         ["close_window"] = "Closes an open game window.",
+        ["show_xivmcp_window"] = "Opens the XIV MCP window on a tab, for example to show you a job or a plugin.",
+        ["press_xivmcp_control"] = "Presses a button in the XIV MCP window, for testing the plugin while it is developed.",
+        ["take_screenshot"] = "Looks at your screen: takes a screenshot of the game or of the XIV MCP window.",
         ["interact_with_object"] = "Talks to an NPC or uses an object near you, such as a summoning bell.",
         ["select_menu_option"] = "Clicks a choice in an open menu or dialogue. It can confirm purchases or discards.",
         ["load_game_data"] = "Has the game send your achievements or your titles, without opening their windows.",
-        ["navigate_to"] = "Walks or teleports you to a summoning bell, your house, an inn or a named place. Teleports cost gil.",
+        ["navigate_to"] = "Gets you to a bell, your house, an inn or a named place, or shows the way. Teleports cost gil.",
         ["stop_navigation"] = "Stops your character from walking or travelling.",
         ["switch_character"] = "Logs out and logs in as another of your characters, on any world.",
         ["refresh_character_list"] = "Logs out and back in, so XIV MCP learns your list of characters.",
         ["switch_gearset"] = "Changes your job by equipping one of your saved gear sets, never during combat.",
         ["leave_duty"] = "Leaves the duty you are in, once the current fight is over.",
         ["place_waymark_preset"] = "Places a saved set of waymarks in your current duty, outside of combat.",
+        ["visit_world"] = "Takes your character to another world or data center, or tells you how to get there.",
 
         // Items & retainers
         ["get_retainers"] = "Lists your retainers with their jobs, gil and current ventures.",
@@ -147,9 +151,6 @@ public static class ToolSummaries
         ["delete_gather_list"] = "Deletes a gathering list. The old lists are backed up first.",
         ["set_auto_gather"] = "Turns automatic gathering on or off. While it is on, your character moves and gathers on its own.",
         ["gather_until"] = "Gathers until you have the amounts you need, moving your character from node to node.",
-
-        // Lifestream
-        ["visit_world"] = "Takes your character to another world or data center.",
 
         // Item Vendor Location
         ["find_vendors"] = "Finds which NPCs sell an item and where they stand.",

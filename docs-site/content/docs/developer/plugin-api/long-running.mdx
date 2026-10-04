@@ -8,15 +8,42 @@ Use `AddLongRunningTool` for anything that waits: farming, crafting a list, walk
 
 ## Long-running tools and jobs
 
-A long-running tool is one tool. A [job](/docs/developer/plugin-api/jobs) is a queue of tool calls that XIV MCP runs in the game one after another, independent of the chat. The two are meant to be used together:
+A long-running tool is one tool. A [job](/docs/developer/plugin-api/jobs) is a way to run several calls: XIV MCP works through them on its own, without the AI model. A long-running tool can be called either way:
+
+<Mermaid
+  caption="The same long-running tool, called directly and as a job step."
+  chart={`sequenceDiagram
+  participant A as Assistant
+  participant X as XIV MCP
+  participant T as Your tool
+  rect rgba(63, 123, 255, 0.10)
+    Note over A,T: Called directly
+    A->>X: myplugin_farm
+    X->>T: runs
+    Note over A,X: the request stays open
+    T-->>X: done, or cancelled when<br/>the app stops waiting
+    X-->>A: result
+  end
+  rect rgba(59, 239, 196, 0.10)
+    Note over A,T: As a job step
+    A->>X: start_job with myplugin_farm
+    X-->>A: job started
+    X->>T: runs, for hours if needed
+    T-->>X: progress, then done
+    A->>X: get_job, whenever it likes
+    X-->>A: result
+  end`}
+/>
 
 - **As a job step,** the usual way, the tool can run for hours. The assistant (or your plugin, with `StartJob`) puts it into a job, and the job waits until it is done before starting the next step.
-- **Called directly,** it works too, but only within the AI app's own time limit for a request, which XIV MCP does not control.
+- **Called directly,** it works too, but only within the AI app's own time limit for a request, which XIV MCP does not control. XIV MCP sends nothing while it waits, and when the app gives up, the call is cancelled.
 - **Cancelling comes from the job.** Pausing or cancelling the job fires `call.Cancellation`, and so does an app that aborts a direct call.
 - **Progress goes to the job log,** shown in `/xivmcp` → **Jobs** and in `get_job`.
 - **Failing makes the job wait.** The step becomes *pending* until the assistant retries, skips or changes it.
 
-So write a long-running tool as if it were a job step: safe to stop at any moment, safe to run again, with a result the next step can use (`{{farm.kills}}`). How players see jobs is described in [Background jobs](/docs/user/features/jobs).
+So write a long-running tool as if it were a job step: safe to stop at any moment, safe to run again, with a result the next step can use (`{{farm.kills}}`).
+
+When the assistant should drive a task itself and when it should hand it to a job, with what each costs, is on [Step by step or as a job](/docs/developer/plugin-api/jobs-or-steps). How players see jobs is described in [Background jobs](/docs/user/features/jobs).
 
 ## Example
 

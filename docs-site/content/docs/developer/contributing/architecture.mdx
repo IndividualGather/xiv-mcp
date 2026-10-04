@@ -6,20 +6,19 @@ icon: Network
 
 ## The path of a tool call
 
-```text
-AI app
-  │  HTTP
-  ▼
-McpServer      localhost only, bearer token
-  ▼
-ToolRegistry   core, integrations, third-party
-  ▼
-ToolGate       Allow / Ask / Deny, approval window, audit
-  ▼
-handler        on the framework thread
-  ▼
-the game
-```
+<Mermaid
+  caption="One tool call, from the AI app to the game. Third-party tools also get a side-effect check around the call."
+  chart={`flowchart LR
+  A["AI app"] -- "HTTP, bearer token" --> S["McpServer<br/>localhost only"]
+  S --> R["ToolRegistry<br/>core, integrations,<br/>third-party"]
+  R --> G{{"ToolGate<br/>Allow / Ask / Deny"}}
+  G -- Ask --> W["Approval window"]
+  W -- approved --> H
+  G -- Allow --> H["Handler<br/>framework thread"]
+  G -- Deny --> X["Refused"]
+  H --> F["The game"]
+  H -. third-party .-> E["SideEffects<br/>and audit log"]`}
+/>
 
 1. **`McpServer`** (`XivMcp/Mcp`) implements MCP's Streamable HTTP transport with JSON responses, directly on `HttpListener`, because Dalamud does not ship ASP.NET Core. It only listens on localhost, checks the bearer token, and refuses browser requests from other origins.
 2. **`ToolRegistry`** (`XivMcp.Core/Mcp`) holds every tool: the core ones, the maintained integrations and those third-party plugins register at runtime. It is thread-safe and raises `Changed` when tools come or go, which becomes `notifications/tools/list_changed` for the apps.

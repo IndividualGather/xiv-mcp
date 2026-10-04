@@ -21,11 +21,38 @@ Windows that act instead of opening something (Log Out, Exit Game, Return, Ready
 
 | Tool | What it does |
 |---|---|
-| `navigate_to` | Walks (with vnavmesh) and travels (with Lifestream) to a summoning bell, the company chest, the workshop, an inn, your house or apartment, or a named object |
+| `navigate_to` | Gets you to a summoning bell, the company chest, the workshop, an inn, your house or apartment, or a named object. It walks and travels for you when a navigation plugin is installed, and shows you the way otherwise (see below). |
 | `get_navigation_status` / `stop_navigation` | What is installed and moving; an immediate stop |
 | `get_automation_status` | What XIV MCP detected about AutoRetainer, YesAlready and TextAdvance, and what it is pausing |
 
 Teleports cost gil. For flags on the map and routes through several spots, see [Maps and routes](/docs/user/features/maps-and-routes).
+
+### With or without navigation plugins
+
+Moving works without any other plugin. When a part of the way is something XIV MCP cannot do itself, it asks you to do it, and waits until you have. You see the request in chat and as a notification, and the game's taskbar button flashes.
+
+<Mermaid
+  caption="Each part of the way is done by a plugin if one is installed, and by you otherwise."
+  chart={`flowchart LR
+  D(["navigate_to"]) --> Z{{"In another zone<br/>or a house?"}}
+  Z -- yes --> T{{"Travel plugin?"}}
+  T -- yes --> TA["It teleports you<br/>or enters the place"]
+  T -- no --> TP["XIV MCP names the aetheryte<br/>or the place, and waits"]
+  Z -- no --> W
+  TA --> W{{"Walking plugin?"}}
+  TP --> W
+  W -- yes --> WA["It walks you there"]
+  W -- no --> WP["XIV MCP flags the spot<br/>on your map, and waits"]`}
+/>
+
+| Part of the way | With a plugin | Without one |
+|---|---|---|
+| Walking in the zone | Walks you there | Puts the flag on your map and asks you to walk to it |
+| Teleporting to another zone | Teleports you | Names the aetheryte (and the aethernet shard), opens the map at it, and asks you to teleport |
+| Inn room, house, apartment, workshop | Takes you inside | Asks you to go in |
+| Another world | Travels there | Asks you to use World Visit or Data Center Travel |
+
+The same applies to tools that take you somewhere on the way, such as `buy_item` and `turn_in_collectables`. The wait ends when you arrive, when you stop it with `stop_navigation`, or after the timeout (10 minutes by default). Which plugins can do which part is listed on [Tools that need plugins](/docs/developer/plugin-api/tool-requirements).
 
 ## Characters, worlds and jobs
 
@@ -34,7 +61,7 @@ Teleports cost gil. For flags on the map and routes through several spots, see [
 | `list_characters` | The characters XIV MCP has seen (in the lobby lists and in the game): worlds, data center, service account, and whether each is on the account in use |
 | `switch_character` | Logs out and into another character of the account, on any world, data center and service account, and waits until it is in the game |
 | `refresh_character_list` | Logs out and straight back in, so XIV MCP learns this data center's character list |
-| `visit_world` | World visit or data center travel for the current character (needs Lifestream; module **Lifestream**) |
+| `visit_world` | World visit or data center travel for the current character. A travel plugin travels for you; without one, XIV MCP asks you to use World Visit or Data Center Travel and waits until you arrive. |
 | `switch_gearset` | Changes job by equipping a gear set, by number, name or job (the set with the highest item level of that job) |
 | `leave_duty` | Leaves the current duty like the Duty Finder's Leave entry, once the current fight is over |
 

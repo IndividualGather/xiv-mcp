@@ -22,6 +22,14 @@ internal sealed class Canvas
         for (var i = 0; i < width * height; i++) Put(i * 4, background);
     }
 
+    /// <summary>A canvas holding existing pixels, such as a screenshot, to encode them as PNG.</summary>
+    public Canvas(XivMcp.Ui.Pixels pixels)
+    {
+        Width = pixels.Width;
+        Height = pixels.Height;
+        rgba = pixels.Rgba;
+    }
+
     private void Put(int offset, uint argb)
     {
         rgba[offset] = (byte)(argb >> 16);

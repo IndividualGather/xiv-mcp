@@ -14,6 +14,23 @@ They open an approval window in the game, and nothing happens until you answer.
 
 ## The approval window
 
+<Mermaid
+  caption="A call set to Ask waits for your answer before anything happens."
+  chart={`sequenceDiagram
+  participant A as Assistant
+  participant X as XIV MCP
+  actor P as You, in the game
+  A->>X: a tool set to Ask
+  X->>P: approval window, taskbar flashes
+  alt approved
+    P-->>X: once, this session or always
+    X-->>A: runs, and the result
+  else declined, or no answer in 2 minutes
+    P-->>X: decline
+    X-->>A: refused
+  end`}
+/>
+
 <Screenshot src="approval.png" alt="The approval window, asking whether to allow a tool call, with approve and decline buttons" caption="The approval window says who asks, what for, and with which arguments." width={560} />
 
 - **Who asks:** your assistant, or a named plugin.

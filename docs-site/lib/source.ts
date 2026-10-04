@@ -3,6 +3,8 @@ import { docsContentRoute, docsImageRoute, docsRoute } from './shared';
 import { defineDocs } from 'fumadocs-mdx/macro';
 import { metaSchema, pageSchema } from 'fumadocs-core/source/schema';
 import { lucideIconsPlugin } from 'fumadocs-core/source/plugins/lucide-icons';
+import { applyMdxPreset } from 'fumadocs-mdx/config';
+import { xivMcpDark } from './code-theme';
 
 const docs = defineDocs({
   dir: 'content/docs',
@@ -11,6 +13,13 @@ const docs = defineDocs({
     postprocess: {
       includeProcessedMarkdown: true,
     },
+    // Code in the brand colours; `code{:lang}` highlights inline code too (used in the reference tables).
+    mdxOptions: applyMdxPreset({
+      rehypeCodeOptions: {
+        themes: { light: 'github-light', dark: xivMcpDark },
+        inline: 'tailing-curly-colon',
+      },
+    }),
   },
   meta: {
     schema: metaSchema,

@@ -23,7 +23,8 @@ public sealed record PermissionGroup(string Id, string Title, string Description
 /// <summary>Which group each of XIV MCP's tools belongs to. Group ids are stored in the settings: never rename one.</summary>
 public static class PermissionCatalog
 {
-    private const PolicyMode A = PolicyMode.Allow, D = PolicyMode.Deny;
+    // K for asK (A is taken): the docs generator reads these letters.
+    private const PolicyMode A = PolicyMode.Allow, K = PolicyMode.Ask, D = PolicyMode.Deny;
 
     public static IReadOnlyList<PermissionGroup> Groups { get; } =
     [
@@ -36,6 +37,7 @@ public static class PermissionCatalog
         new("online", "Online lookups", "Item sources and market prices from the web.", D, D, HasWrite: false),
         new("plugin_management", "Plugin management", "Other plugins and their settings, which may contain secrets.", D, D),
         new("jobs", "Background jobs", "Background jobs; each step is checked against its own group.", A, A),
+        new("screen", "Screen", "Screenshots of your game, which can show chat, names and anything else on screen.", K, D, HasWrite: false),
         .. IntegrationCatalog.All.Select(i => new PermissionGroup(IntegrationGroupId(i.PluginId), i.DisplayName, i.Summary, A, D,
             // Tools that declare nothing beyond reading only read; the others change something.
             HasRead: i.Tools.Values.Any(c => c.Length == 0), HasWrite: i.Tools.Values.Any(c => c.Length > 0), PluginId: i.PluginId)),
@@ -59,7 +61,7 @@ public static class PermissionCatalog
             "list_windows", "get_menu", "get_automation_status", "get_navigation_status", "list_characters",
             "open_window", "close_window", "interact_with_object", "select_menu_option", "load_game_data", "navigate_to", "stop_navigation",
             "switch_character", "refresh_character_list", "switch_gearset", "leave_duty", "place_waymark_preset",
-            "set_map_flag", "clear_map_flag", "start_route",
+            "set_map_flag", "clear_map_flag", "start_route", "visit_world", "show_xivmcp_window", "press_xivmcp_control",
         ],
         ["items_retainers"] =
         [
@@ -75,6 +77,7 @@ public static class PermissionCatalog
         ["ui_editing"] = ["get_macros", "list_waymark_presets", "get_waymark_preset", "set_macro", "clear_macro", "set_waymark_preset"],
         ["online"] = ["get_item_sources", "get_market_prices"],
         ["plugin_management"] = ["list_plugin_config_files", "get_plugin_config", "set_plugin_enabled", "reload_plugin", "set_plugin_config"],
+        ["screen"] = ["take_screenshot"],
         ["jobs"] = ["list_jobs", "get_job", "start_job", "update_job", "pause_job", "resume_job", "cancel_job", "wait", "wait_until_arrived"],
     });
 
@@ -82,6 +85,9 @@ public static class PermissionCatalog
         byGroup.SelectMany(kv => kv.Value.Select(t => (Tool: t, Group: kv.Key))).ToDictionary(x => x.Tool, x => x.Group);
 
     private static readonly Dictionary<string, PermissionGroup> ById = Groups.ToDictionary(g => g.Id);
+
+    /// <summary>Tools only offered while XIV MCP runs as a dev plugin (for testing its own window); left out of the player docs.</summary>
+    public static IReadOnlySet<string> DevTools { get; } = new HashSet<string> { "press_xivmcp_control" };
 
     public static PermissionGroup? Find(string id) => ById.GetValueOrDefault(id);
 
@@ -154,7 +160,6 @@ public sealed class CorePolicy
         p.Set("plugin_management", Access.Read, M(s.PluginManagement));
         p.Set("plugin_management", Access.Write, M(s.PluginManagement));
         p.Set(PermissionCatalog.IntegrationGroupId("AutoDuty"), Access.Write, M(s.GameNavigation));
-        p.Set(PermissionCatalog.IntegrationGroupId("Lifestream"), Access.Write, M(s.GameNavigation));
         p.Set(PermissionCatalog.IntegrationGroupId("Artisan"), Access.Write, M(s.CraftingGathering));
         p.Set(PermissionCatalog.IntegrationGroupId("GatherbuddyReborn"), Access.Write, M(s.CraftingGathering));
         p.Set(PermissionCatalog.IntegrationGroupId("FCCH"), Access.Write, M(s.ItemsRetainers));

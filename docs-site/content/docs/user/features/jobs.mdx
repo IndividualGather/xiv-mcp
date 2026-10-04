@@ -14,6 +14,42 @@ A job is a queue of tool calls that XIV MCP runs in the game, one after another,
 | `pause_job` / `resume_job` / `cancel_job` | Controls a job |
 | `wait` | A step that waits a number of seconds, or until a time |
 
+## Step by step or as a job
+
+Your assistant can get a task with several steps done in two ways:
+
+<Mermaid
+  caption="Step by step, the assistant goes round the loop for every step. As a job, XIV MCP does."
+  chart={`flowchart LR
+  subgraph steps["Step by step"]
+    direction TB
+    a1["Assistant calls a tool"] --> a2["XIV MCP answers"]
+    a2 --> a3["Assistant reads it<br/>and picks the next"]
+    a3 --> a1
+  end
+  subgraph job["As a job"]
+    direction TB
+    b1["Assistant sends the<br/>whole list once"] --> b2["XIV MCP runs<br/>step 1, 2, 3 ..."]
+    b2 --> b3["Assistant checks in<br/>when it wants"]
+  end
+  steps ~~~ job`}
+/>
+
+| | Step by step | As a job |
+|---|---|---|
+| **Tokens** | Every call and every result costs tokens. Waiting costs the most: to know whether something has happened, the assistant keeps asking. | Starting costs one call. The steps cost nothing. |
+| **Surprises** | Handled as they come: full bags, a missing NPC, a price that moved. The assistant sees every result and adapts. | The job follows its plan. Something unexpected stops the step, and the job waits as *pending* until your assistant fixes it. |
+| **Long tasks** | Each call has to finish within your app's time limit. | Steps can take hours. |
+| **The chat** | Has to stay open. | Can be closed. |
+
+Your settings in `/xivmcp` apply the same way to both.
+
+**What to ask for:**
+
+- **For long or repetitive work,** say "run it as a job": farming a dungeon, gathering and crafting a list, a route with several stops. It is far cheaper, and keeps going without the chat.
+- **For work that needs judgement,** let the assistant go step by step, or ask it to check with you: selling at good prices, sorting out a full inventory, anything where the next step depends on what just happened.
+- **Mixing both works well.** The assistant can look around step by step, start a job for the long stretch, and decide what to do with the result.
+
 ## In the game
 
 `/xivmcp` → **Jobs** lists every job with its progress, and has **Pause**, **Resume** and **Cancel** buttons. Your standing spending approvals are listed there too.

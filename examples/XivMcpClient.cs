@@ -124,7 +124,7 @@ public sealed record McpDependency(string Tool)
 }
 
 /// <summary>
-/// Where a declared tool stands: <see cref="State"/> is "ok", "needs_plugin" (a built-in tool's plugin is missing),
+/// Where a declared tool stands: <see cref="State"/> is "ok", "needs_plugin" (an integration tool's plugin is missing),
 /// "plugin_missing", "plugin_not_loaded", "plugin_outdated", "tool_missing" or "not_enabled" (the player hasn't enabled that
 /// plugin in XIV MCP). Anything but "ok" means StartJob refuses jobs with that tool, or its step fails when it runs.
 /// </summary>

@@ -1,0 +1,97 @@
+---
+title: Step by step or as a job
+description: Who runs the steps of a task, the assistant or XIV MCP, and what each costs.
+icon: GitFork
+---
+
+A **long-running tool** is one tool that takes a while, such as `run_duty`. A **job** is a list of tool calls that XIV MCP runs by itself. Any task with several steps can be run either way. The difference is who runs the steps: the assistant, or XIV MCP.
+
+## Step by step
+
+The assistant calls a tool, reads the result, and picks the next call.
+
+<Mermaid
+  caption="Every call, and every check while waiting, is a request to the AI model."
+  chart={`sequenceDiagram
+  actor P as Player
+  participant A as Assistant
+  participant X as XIV MCP
+  P->>A: Flag 21.4, 18.2 and tell me when I am there
+  A->>X: set_map_flag x 21.4, y 18.2
+  X-->>A: flag set, 310 yalms away
+  loop until the player is there
+    A->>X: get_position
+    X-->>A: 120 yalms to the flag
+  end
+  A-->>P: You are there`}
+/>
+
+- It adapts to every result: full bags, a missing NPC, a price that moved.
+- It is expensive. Each call is a model request, and waiting means asking again and again.
+- Each call has to finish within the AI app's time limit, and the chat has to stay open.
+
+## As a job
+
+The assistant sends the whole list once. XIV MCP runs the steps, passes results from one to the next, and needs no model while it does.
+
+<Mermaid
+  caption="XIV MCP works through the steps itself. The assistant only starts the job and looks in when it wants to."
+  chart={`sequenceDiagram
+  actor P as Player
+  participant A as Assistant
+  participant X as XIV MCP
+  participant G as Game
+  P->>A: Craft collectables and turn them in
+  A->>X: start_job with 4 steps
+  X-->>A: job started
+  rect rgba(59, 239, 196, 0.14)
+    Note over X,G: XIV MCP runs every step itself, no model involved
+    X->>G: 1. prepare_craft_plan
+    G-->>X: plan, list 7
+    X->>G: 2. gather_until (40 min)
+    G-->>X: materials in the bags
+    X->>G: 3. run_crafting_list, list 7 (25 min)
+    G-->>X: 20 crafted
+    X->>G: 4. turn_in_collectables
+    G-->>X: 2,400 scrips
+  end
+  A->>X: get_job
+  X-->>A: done`}
+/>
+
+- It is cheap. Starting costs one request; the steps cost none.
+- Steps can take hours, and the chat can be closed.
+- It follows the plan and cannot decide anything on its own. If a step fails, the job waits as *pending* until someone retries, skips or changes it.
+
+## Side by side
+
+| | Step by step | As a job |
+|---|---|---|
+| **Who runs the steps** | The assistant | XIV MCP |
+| **Model requests** | One per call and per check | One to start, plus any checks |
+| **Surprises** | Handled after every step | The step fails, the job waits |
+| **Long steps** | Within the app's time limit | Hours |
+| **The chat** | Must stay open | Can be closed |
+
+Both follow the same permission settings.
+
+## Which one to use
+
+<Mermaid
+  caption="A rule of thumb."
+  chart={`flowchart LR
+  T(["A task with<br/>several steps"]) --> L{{"A step takes longer than<br/>the app waits for a call?"}}
+  L -- yes --> J["As a job"]
+  L -- no --> K{{"Plan known<br/>before it starts?"}}
+  K -- yes --> J
+  K -- "no, each step depends<br/>on what happened" --> S["Step by step"]`}
+/>
+
+They mix well: look around step by step, hand the long stretch to a job, then decide what to do with its result.
+
+## For your plugin
+
+- Make long-running tools safe to stop and to run again, and return results the next step can use. See [Long-running tools](/docs/developer/plugin-api/long-running).
+- Fail with what is left ("3 Iron Ore still missing"), so whoever fixes the pending step knows what to do.
+- Jobs your plugin starts have no assistant watching. Check `GetJob(id)` and handle a *pending* job yourself, or tell the player.
+- Offer quick, read-only status tools, so checks are cheap when the assistant drives.

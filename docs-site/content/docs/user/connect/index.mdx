@@ -7,6 +7,22 @@ Open `/xivmcp` → **Connect** and pick your app. Most apps have a one-click but
 
 <Screenshot src="connect.png" alt="The Connect tab of XIV MCP, with large tiles for ChatGPT, Claude Desktop and LM Studio and smaller tiles for other apps" caption="The Connect tab. Each tile shows whether XIV MCP is set up in that app." />
 
+## How it connects
+
+<Mermaid
+  caption="Everything stays on your PC: the app talks to the server inside the game."
+  chart={`flowchart LR
+  subgraph pc["Your PC"]
+    A["AI app<br/>ChatGPT, Claude, LM Studio ..."] -- "HTTP with your token" --> S["XIV MCP server<br/>localhost:37521/mcp"]
+    subgraph game["Final Fantasy XIV"]
+      S --> T["Tools"] --> G["The game"]
+    end
+  end
+  M[("AI model")] <-. "the app's own connection" .-> A`}
+/>
+
+The AI model itself usually runs in the cloud and only sees what the app sends it: your messages and the tool results. With LM Studio it runs on your PC too.
+
 ## Which app to pick
 
 <Cards>

@@ -278,7 +278,6 @@ public class CorePolicyToolTests
 public class IntegrationGroupAccessTests
 {
     [Theory]
-    [InlineData("Lifestream", false, true)]          // visit_world only changes
     [InlineData("ItemVendorLocation", true, false)]  // find_vendors only reads
     [InlineData("FCCH", false, true)]
     [InlineData("AutoDuty", true, true)]

@@ -17,6 +17,8 @@ public sealed class Plugin : IDalamudPlugin
 
     private readonly WindowSystem windows = new("XivMcp");
     private readonly ConfigWindow configWindow;
+    private readonly OverlayWindow overlayWindow;
+    internal OverlayWindow Overlay => overlayWindow;
     private readonly ConsentWindow consentWindow;
     private readonly WorkshopTracker workshop;
     private readonly RetainerTracker retainers;
@@ -59,6 +61,7 @@ public sealed class Plugin : IDalamudPlugin
         {
             Config = saved;
             if (Config.Migrate()) Config.Save();
+            Config.Overlay.Normalize();
         }
         else
         {
@@ -115,6 +118,7 @@ public sealed class Plugin : IDalamudPlugin
             .Append(SelfTest.Tool())
             .Concat(JobTools.Create(() => jobs!, () => Server?.LastClient))
             .Concat(MapTools.Create(() => jobs!, () => Server?.LastClient))
+            .Concat(XivMcpWindowTools.Create(() => configWindow, () => overlayWindow, () => jobs, pluginInterface.IsDev))
             .ToList();
         // Tools that drive one other plugin belong to that plugin's integration (same provider + capability contract as third-party tools).
         tools = XivMcp.Integrations.IntegrationCatalog.Apply(tools, PluginCompat.IsLoaded).ToList();
@@ -142,6 +146,9 @@ public sealed class Plugin : IDalamudPlugin
         configWindow.RestoreAfterReload();
         consentWindow = new ConsentWindow();
         windows.AddWindow(consentWindow);
+        // After the settings window: both press controls through its queue, whose frame starts in the overlay's Update.
+        overlayWindow = new OverlayWindow(this, configWindow);
+        windows.AddWindow(overlayWindow);
         pluginInterface.UiBuilder.Draw += windows.Draw;
         pluginInterface.UiBuilder.OpenConfigUi += configWindow.Toggle;
         pluginInterface.UiBuilder.OpenMainUi += configWindow.Toggle;

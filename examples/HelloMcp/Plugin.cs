@@ -132,7 +132,8 @@ public sealed class Plugin : IDalamudPlugin
             });
 
         // 5. The tools our jobs use besides our own. XIV MCP shows them on Hello MCP's page in /xivmcp → Third-party plugins, and
-        //    tells the player what is missing: navigate_to needs a walking and a travel plugin, which XIV MCP knows by itself.
+        //    tells the player what is missing. navigate_to can use a walking and a travel plugin (XIV MCP knows which); without
+        //    them it shows the player the way and waits, so the card shows a hint, not an error.
         //    Another plugin's tool would be declared with McpDependency.FromPlugin(tool, plugin, name, repo, minVersion).
         mcp.UsesTools(
             McpDependency.BuiltIn("get_game_status"),

@@ -191,7 +191,7 @@ internal sealed partial class ConfigWindow
         // Untested apps are dimmed and can't be picked.
         var dim = app.Untested;
         var alpha = dim ? 0.4f : 1f;
-        if (ImGui.InvisibleButton("##tile", size) && !selected && !dim)
+        if ((ImGui.InvisibleButton("##tile", size) | Controls.Consume($"app:{app.Id}")) && !selected && !dim)
         {
             plugin.Config.ConnectClient = app.Id;
             plugin.Config.Save();

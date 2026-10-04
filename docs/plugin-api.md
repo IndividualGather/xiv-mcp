@@ -200,7 +200,7 @@ Steps can call XIV MCP's own tools and other plugins' tools. Each step is checke
 
 ```csharp
 mcp.UsesTools(
-    McpDependency.BuiltIn("navigate_to"),          // XIV MCP knows it needs vnavmesh and Lifestream
+    McpDependency.BuiltIn("navigate_to"),          // XIV MCP knows which plugins it can use
     McpDependency.FromPlugin("otherplugin_announce",
         plugin: "OtherPlugin",                       // its internal name
         pluginName: "Other Plugin",                  // its name in the installer

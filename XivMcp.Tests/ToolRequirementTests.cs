@@ -16,6 +16,21 @@ public class ToolRequirementTests
     }
 
     [Fact]
+    public void Core_tools_work_without_plugins_and_say_what_changes_without_them()
+    {
+        Assert.All(ToolRequirements.Core.SelectMany(kv => kv.Value), r =>
+        {
+            Assert.Equal(Need.Improves, r.Need);
+            Assert.False(string.IsNullOrWhiteSpace(r.Without), r.PluginId);
+        });
+    }
+
+    [Fact]
+    public void Only_integration_tools_need_their_plugin() =>
+        Assert.All(ToolRequirements.Tools.Where(t => ToolRequirements.For(t).Any(r => r.Need == Need.Needed)),
+            t => Assert.NotNull(IntegrationCatalog.For(t)));
+
+    [Fact]
     public void Requirements_are_only_listed_for_core_tools()
     {
         var core = PermissionCatalog.CoreTools.Keys.ToHashSet();

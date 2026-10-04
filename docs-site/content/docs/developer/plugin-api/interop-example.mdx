@@ -6,7 +6,7 @@ icon: Route
 
 This page builds **Restock Helper**, a small plugin that keeps a list of consumables topped up. It does only the part that is its own, deciding what is short, and leaves everything else to tools that already exist:
 
-| Step | Tool | From | Needs |
+| Step | Tool | From | Uses if installed |
 |---|---|---|---|
 | 1. Decide what to buy | `restock_plan` | Restock Helper | Nothing |
 | 2. Buy it | `buy_item` | XIV MCP | Item Vendor Location, vnavmesh, Lifestream |
@@ -133,7 +133,7 @@ public sealed class Plugin : IDalamudPlugin
 </Step>
 <Step>
 
-**On its card**, under **Tools its jobs use**, the player sees all three. Say vnavmesh is missing and Chat Bridge is not installed. Then `buy_item` and `navigate_to` show errors naming vnavmesh, with its repository and buttons to add it. `chatbridge_post` shows an error with Chat Bridge's repository and version. The tab label says that something is missing.
+**On its card**, under **Tools its jobs use**, the player sees all three. Say vnavmesh is missing and Chat Bridge is not installed. Then `buy_item` and `navigate_to` show a grey hint: they still work, but XIV MCP will put the flag on the map and wait for the player to walk. `chatbridge_post` shows a red error with Chat Bridge's repository and version, and the tab label says that something is missing.
 
 </Step>
 <Step>
@@ -160,4 +160,4 @@ public sealed class Plugin : IDalamudPlugin
 
 ## Trying the same thing with Hello MCP
 
-[Hello MCP](/docs/developer/plugin-api/hello-mcp) declares `get_game_status` and `navigate_to`. `/hellomcp bell` starts a job that walks to a summoning bell with `navigate_to`, then prints the result with its own `hellomcp_print`. Disable vnavmesh in the plugin installer, and Hello MCP's card shows the error and the button to enable it again.
+[Hello MCP](/docs/developer/plugin-api/hello-mcp) declares `get_game_status` and `navigate_to`. `/hellomcp bell` starts a job that walks to a summoning bell with `navigate_to`, then prints the result with its own `hellomcp_print`. Disable vnavmesh in the plugin installer, and Hello MCP's card shows a hint for `navigate_to`, with a button to enable it again. The job still runs: XIV MCP flags the bell and waits while you walk.

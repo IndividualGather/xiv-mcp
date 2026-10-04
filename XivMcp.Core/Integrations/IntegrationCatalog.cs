@@ -10,7 +10,7 @@ namespace XivMcp.Integrations;
 /// The integrations XIV MCP maintains: tools whose whole purpose is driving one other plugin. They register through the same
 /// provider + capability contract as third-party plugins, under a <see cref="ProviderTrust.Maintained"/> provider named after the
 /// plugin they drive, and are only offered while that plugin is loaded. Core tools that merely use a plugin as an optional backend
-/// (navigate_to with vnavmesh / Lifestream, buy_item with Item Vendor Location, …) stay core.
+/// (navigate_to and visit_world with vnavmesh / Lifestream, buy_item with Item Vendor Location, …) stay core: they also work without.
 /// </summary>
 public static class IntegrationCatalog
 {
@@ -46,10 +46,6 @@ public static class IntegrationCatalog
             ["delete_gather_list"] = [EditSettings],
             ["set_auto_gather"] = [MoveCharacter, GameUi],
             ["gather_until"] = [MoveCharacter, GameUi, EditSettings],
-        }),
-        new("Lifestream", "Lifestream", "World visits and data center travel.", new Dictionary<string, string[]>
-        {
-            ["visit_world"] = [MoveCharacter, SpendGil],
         }),
         new("ItemVendorLocation", "Item Vendor Location", "Which NPCs sell an item and where they stand.", new Dictionary<string, string[]>
         {

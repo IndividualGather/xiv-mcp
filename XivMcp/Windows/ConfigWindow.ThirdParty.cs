@@ -32,10 +32,11 @@ internal sealed partial class ConfigWindow
         public bool IsInstalled(string pluginId) => Svc.PluginInterface.InstalledPlugins.Any(p => p.InternalName.Equals(pluginId, StringComparison.OrdinalIgnoreCase));
         public bool IsLoaded(string pluginId) => PluginCompat.IsLoaded(pluginId);
         public void ToolsChanged() => window.plugin.Server.NotifyIfToolsChanged();
+        public bool Press(string controlId) => window.Controls.Consume(controlId);
 
         public Action? Options(string groupId) => groupId switch
         {
-            "game_navigation" when window.compat is { } n && (n.Vnavmesh || n.Lifestream) => window.DrawBellPreference,
+            "game_navigation" => window.DrawBellPreference,
             "items_retainers" => window.DrawMoveDelay,
             "market" => () =>
             {
