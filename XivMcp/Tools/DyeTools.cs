@@ -155,12 +155,14 @@ internal static class DyeTools
     {
         var texts = DyeMenuTexts.Select(r => Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Addon>().GetRowOrDefault(r)?.Text.ExtractText()).Where(t => !string.IsNullOrEmpty(t)).ToHashSet();
         var menu = (AtkUnitBase*)RetainerUi.Ptr("ContextMenu").Address;
-        // ContextMenu values: [0] = entry count, entry texts from [7] on.
+        // ContextMenu values: [0] = entry count, entry texts from [8] on (as ECommons' tested ContextMenu reads them). Only values
+        // that are text are read: reading another value as a text pointer crashes the game.
         var count = (int)menu->AtkValues[0].UInt;
-        for (var i = 0; i < count && 7 + i < menu->AtkValuesCount; i++)
+        for (var i = 0; i < count && 8 + i < menu->AtkValuesCount; i++)
         {
-            var v = menu->AtkValues[7 + i];
-            var text = v.String.HasValue ? v.String.ToString() : "";
+            var v = menu->AtkValues[8 + i];
+            if (v.Type is not (AtkValueType.String or AtkValueType.ManagedString or AtkValueType.String8) || v.String.Value == null) continue;
+            var text = Dalamud.Memory.MemoryHelper.ReadSeStringNullTerminated((nint)v.String.Value).TextValue;
             if (texts.Contains(text))
             {
                 RetainerUi.Fire(menu, true, 0, i, 0u);
