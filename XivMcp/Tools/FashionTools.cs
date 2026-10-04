@@ -1,4 +1,5 @@
 using System;
+using Dalamud.Game.ClientState.Conditions;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
@@ -560,7 +561,8 @@ internal static class FashionTools
                 await Game.Run(() => Interact(o => o.BaseId == MaskedRose)).ConfigureAwait(false);
                 talkedAt = DateTime.UtcNow;
             }
-            else if (judged && DateTime.UtcNow - quietSince > TimeSpan.FromSeconds(2)) break;
+            // Her closing lines come a while after the results, so only stop once the event is over.
+            else if (judged && DateTime.UtcNow - quietSince > TimeSpan.FromSeconds(2) && !await Game.Run(InEvent).ConfigureAwait(false)) break;
             await Task.Delay(400, ct).ConfigureAwait(false);
         }
         if (!judged) throw new ToolException("The judging did not happen: the Masked Rose's dialogue went differently than expected.");
@@ -592,6 +594,9 @@ internal static class FashionTools
     }
 
     // ---------------------------------------------------------------- helpers (framework thread)
+
+    private static bool InEvent() =>
+        Svc.Condition[ConditionFlag.OccupiedInEvent] || Svc.Condition[ConditionFlag.OccupiedInQuestEvent] || Svc.Condition[ConditionFlag.OccupiedInCutSceneEvent];
 
     private static unsafe bool Interact(Func<IGameObject, bool> match)
     {
