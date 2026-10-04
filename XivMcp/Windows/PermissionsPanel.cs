@@ -70,10 +70,24 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
                           .GroupBy(t => PermissionCatalog.GroupOf(t)?.Id ?? "")
                           .ToDictionary(g => g.Key, g => g.OrderBy(t => t.Name).ToList());
 
-        Section(FontAwesomeIcon.ShieldAlt, "XIV MCP");
-        CardGrid("core", PermissionCatalog.Groups.Where(g => g.PluginId is null).ToList(), g => DrawCard(g, byGroup.GetValueOrDefault(g.Id) ?? []));
+        // Search: filters sections and tool calls as you type.
+        DrawSearch();
+        var found = PermissionCatalog.Groups.ToDictionary(g => g.Id, g => ModuleSearch.Match(search, g.Title, g.Description,
+            (byGroup.GetValueOrDefault(g.Id) ?? []).Select(t => new ModuleSearch.Tool(t.Name, ToolSummaries.For(t.Name) ?? ShortDescription(t.Description))).ToList()));
+        void Card(PermissionGroup g) => DrawCard(g, byGroup.GetValueOrDefault(g.Id) ?? [], found[g.Id].Tools);
 
-        var installed = PermissionCatalog.Groups.Where(g => g.PluginId is { } id && host.IsInstalled(id)).ToList();
+        var core = PermissionCatalog.Groups.Where(g => g.PluginId is null && found[g.Id].Visible).ToList();
+        var installed = PermissionCatalog.Groups.Where(g => g.PluginId is { } id && host.IsInstalled(id) && found[g.Id].Visible).ToList();
+        if (core.Count + installed.Count == 0)
+        {
+            ImGui.TextColored(Muted, $"Nothing matches \"{search.Trim()}\".");
+            return;
+        }
+        if (core.Count > 0)
+        {
+            Section(FontAwesomeIcon.ShieldAlt, "XIV MCP");
+            CardGrid("core", core, Card);
+        }
         if (installed.Count == 0) return;
         ImGui.Spacing();
         Section(FontAwesomeIcon.Link, "Integrations maintained by XIV MCP");
@@ -81,7 +95,26 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
         ImGui.TextColored(Muted, "XIV MCP's own tools for these plugins, only while the plugin is loaded. Independent of the groups above.");
         ImGui.PopTextWrapPos();
         ImGui.Spacing();
-        CardGrid("integrations", installed, g => DrawCard(g, byGroup.GetValueOrDefault(g.Id) ?? []));
+        CardGrid("integrations", installed, Card);
+    }
+
+    private string search = "";
+
+    /// <summary>The search field: a magnifier, the input, and a clear button while there is text.</summary>
+    private void DrawSearch()
+    {
+        var scale = Ui.Scale;
+        IconText(FontAwesomeIcon.Search, Muted);
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(Math.Min(ImGui.GetContentRegionAvail().X - 40 * scale, 360 * scale));
+        ImGui.InputTextWithHint("##modules-search", "Search sections and tool calls", ref search, 100);
+        if (search.Length > 0)
+        {
+            ImGui.SameLine();
+            if (ImGuiComponents.IconButton("##clear-search", FontAwesomeIcon.Times)) search = "";
+            Tooltip("Clear the search");
+        }
+        ImGui.Spacing();
     }
 
     /// <summary>Two columns when there's room (one in a narrow window).</summary>
@@ -97,7 +130,8 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
         }
     }
 
-    private void DrawCard(PermissionGroup g, List<McpTool> tools)
+    /// <param name="only">The tool calls the search matched (their rows open, other tools hidden); null shows the card as usual.</param>
+    private void DrawCard(PermissionGroup g, List<McpTool> tools, IReadOnlyList<string>? only = null)
     {
         using var id = ImRaii.PushId($"card-{g.Id}");
         var scale = Ui.Scale;
@@ -147,9 +181,9 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
             {
                 Divider(inner, Lines);
                 var labelWidth = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemSpacing.X + Math.Max(ImGui.CalcTextSize("Reading").X, ImGui.CalcTextSize("Changes").X) + 12 * scale;
-                Segmented(g, Access.Read, "Reading", tools, left, labelWidth, inner);
+                Segmented(g, Access.Read, "Reading", tools, left, labelWidth, inner, only);
                 Divider(inner, Lines);
-                Segmented(g, Access.Write, "Changes", tools, left, labelWidth, inner);
+                Segmented(g, Access.Write, "Changes", tools, left, labelWidth, inner, only);
 
                 if (host.Options(g.Id) is { } options && write is not null and not PolicyMode.Deny)
                 {
@@ -197,12 +231,13 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
     /// "▸ Reading  [Allow][Ask][Deny]": an arrow that expands the row's tools, the label in a fixed column, then three equal buttons
     /// filling the rest of the card. Expanded, every tool of the row is listed with a short description and its own setting.
     /// </summary>
-    private void Segmented(PermissionGroup g, Access access, string label, List<McpTool> tools, float left, float labelWidth, float inner)
+    private void Segmented(PermissionGroup g, Access access, string label, List<McpTool> tools, float left, float labelWidth, float inner, IReadOnlyList<string>? only = null)
     {
         using var id = ImRaii.PushId(label);
         var key = $"{g.Id}:{access}";
-        var mine = tools.Where(t => PermissionCatalog.AccessOf(t) == access).ToList();
-        var open = expanded.Contains(key);
+        var mine = tools.Where(t => PermissionCatalog.AccessOf(t) == access && (only is null || only.Contains(t.Name))).ToList();
+        // While searching, rows with matching tools are open; the others stay closed and show no tools.
+        var open = only is null ? expanded.Contains(key) : mine.Count > 0;
         var frame = ImGui.GetFrameHeight();
         var rowStart = ImGui.GetCursorPos();
         var hovered = false;

@@ -101,8 +101,8 @@ internal static class VentureTools
                           "with a summoning bell). A finished report is collected first (its items go to the retainer, as usual). Running ventures are " +
                           "never interrupted: if all suitable retainers are busy it says so and suggests which venture to recall (quick ones first, then " +
                           "the long 18-24 hour ones) — recalling is a separate step (recall_venture) that the player must approve in game. " +
-                          "Costs venture tokens like assigning by hand. If AutoRetainer is installed it is paused meanwhile; note that its own venture " +
-                          "settings apply again the next time it processes this retainer. Requires 'Items & retainers' in /xivmcp.",
+                          "Costs venture tokens like assigning by hand. A retainer automation plugin, if one is running, is paused meanwhile; its own " +
+                          "venture settings apply again the next time it processes this retainer. Requires 'Items & retainers' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",

@@ -120,8 +120,8 @@ internal static class RetainerTools
         {
             Name = "close_retainer",
             Description = "Closes the currently open retainer (inventory window, then \"Quit\" in the retainer menu) and returns to the retainer list. " +
-                          "With close_list=true the retainer list is closed as well, ending the summoning bell session (AutoRetainer, if installed, " +
-                          "resumes then). Requires 'Items & retainers' in /xivmcp.",
+                          "With close_list=true the retainer list is closed as well, ending the summoning bell session (a paused retainer automation " +
+                          "plugin resumes then). Requires 'Items & retainers' in /xivmcp.",
             InputSchema = """
                 { "type": "object", "properties": { "close_list": { "type": "boolean", "description": "Also close the retainer list / leave the bell (default false)." } } }
                 """,
@@ -215,8 +215,8 @@ internal static class RetainerTools
             Description = "Refreshes the cached inventories of the character's retainers by opening each retainer's inventory once at a summoning bell " +
                           "(the game only sends a retainer's inventory when it is opened — automation plugins usually don't). Opens the nearest bell " +
                           "itself if the retainer list isn't open (stand within ~8 yalms). Only opens and closes windows, never moves items. " +
-                          "Choose retainers by name, or only those whose snapshot is older than older_than_hours. AutoRetainer, YesAlready and " +
-                          "TextAdvance are paused while it runs. Requires 'Game & navigation' in /xivmcp.",
+                          "Choose retainers by name, or only those whose snapshot is older than older_than_hours. Retainer automation and " +
+                          "dialogue-skipping plugins, if running, are paused while it runs. Requires 'Game & navigation' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",

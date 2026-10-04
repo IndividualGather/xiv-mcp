@@ -52,7 +52,7 @@ internal static partial class NavigationTools
         var plan = await Game.Run(() => PlanTeleport(spot)).ConfigureAwait(false);
         if (plan is not null)
         {
-            if (!LifestreamLoaded) throw new ToolException($"{spot.Name} is in {TerritoryName(spot.Territory)}; travelling there needs Lifestream, which is not installed.");
+            if (!LifestreamLoaded) throw new ToolException($"{spot.Name} is in {TerritoryName(spot.Territory)}; travelling there needs a travel plugin, which isn't installed.");
             phase = $"travelling to {plan.Value.Label}";
             var ok = await Game.Run(() =>
             {
@@ -74,7 +74,7 @@ internal static partial class NavigationTools
         if (await WalkTo(spot.Name, o => o.BaseId == spot.NpcId, steps, ct).ConfigureAwait(false) is { } arrived) return arrived;
 
         // Not in sight yet: walk towards where it stands, then look again.
-        if (!VnavmeshLoaded) throw new ToolException($"{spot.Name} is not nearby; walking there needs vnavmesh, which is not installed.");
+        if (!VnavmeshLoaded) throw new ToolException($"{spot.Name} is not nearby; walking there needs a pathfinding plugin, which isn't installed.");
         await WaitForMesh(ct).ConfigureAwait(false);
         var target = await Game.Run(() => spot.ExactHeight ? spot.Position
             : Ipc<Vector3, bool, float, Vector3?>("vnavmesh.Query.Mesh.PointOnFloor", spot.Position with { Y = 1024 }, false, 5f) ?? spot.Position).ConfigureAwait(false);

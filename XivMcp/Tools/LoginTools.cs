@@ -63,7 +63,7 @@ internal static class LoginTools
                           "accounts — and waits until it is in game. Built in: it goes through the game's own lobby (title screen, service account, " +
                           "data center, world, character) and only confirms when the game's prompt names the right character. Characters XIV MCP " +
                           "hasn't seen in a character list yet need their home 'world' (and 'service_account' if there are several). Refused in " +
-                          "duties, combat, while crafting/gathering automation or AutoRetainer multi mode run. Requires 'Game & navigation' in /xivmcp.",
+                          "duties, combat, and while crafting, gathering or multi-character retainer automation runs. Requires 'Game & navigation' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",

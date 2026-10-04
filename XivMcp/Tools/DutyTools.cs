@@ -98,8 +98,8 @@ internal static class DutyTools
         yield return new McpTool
         {
             Name = "leave_duty",
-            Description = "Leaves the current duty like the Duty Finder's Leave entry. If AutoDuty is running it keeps fighting until you are out " +
-                          "of combat, then it is stopped and the duty left right away (never mid-fight). Needs 'Game & navigation' in /xivmcp.",
+            Description = "Leaves the current duty like the Duty Finder's Leave entry. If a dungeon automation plugin is running the duty, it keeps " +
+                          "fighting until you are out of combat, then it is stopped and the duty left right away (never mid-fight). Needs 'Game & navigation' in /xivmcp.",
             ReadOnly = false,
             Handler = async (_, ct) =>
             {

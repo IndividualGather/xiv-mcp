@@ -33,10 +33,10 @@ internal static class CraftPlanTools
             Name = "plan_craft",
             Description = "Plans a crafting project without changing anything: resolves the full recipe tree, picks recipes your jobs can craft, " +
                           "orders the crafts (intermediates first), nets materials against your bags and cached retainer inventories, and lists what " +
-                          "is still missing with where to get it (gathering via GatherBuddy, gil vendors, retainer ventures, and — with 'Online " +
-                          "lookups' — exchanges, drops and more). It simulates bag space through the whole project and splits it into batches when it " +
-                          "would not fit. With Artisan installed it also shows, per recipe, the stats Artisan will craft with (gearset + food + potion) " +
-                          "and whether a Raphael solution is already cached for exactly those stats. Then use prepare_craft_plan.",
+                          "is still missing with where to get it (gathering, gil vendors, retainer ventures, and — with 'Online lookups' — exchanges, " +
+                          "drops and more). It simulates bag space through the whole project and splits it into batches when it would not fit. With a " +
+                          "crafting automation plugin installed it also shows, per recipe, the stats it will craft with (gearset + food + potion) and " +
+                          "whether a solver solution is already cached for exactly those stats.",
             InputSchema = $$"""{ "type": "object", "properties": { {{ItemsSchema}} }, "required": ["items"] }""",
             Handler = async (args, ct) =>
             {
@@ -304,7 +304,7 @@ internal static class CraftPlanTools
             switch (ShopTools.SoldByVendor(id))
             {
                 case true: options.Add(new { how = "buy", from = "NPC vendor", tool = "find_vendors / buy_item" }); break;
-                case null: options.Add(new { how = "buy?", hint = "install Item Vendor Location to see vendors (/xivmcp → Modules → Market & purchases)" }); break;
+                case null: options.Add(new { how = "buy?", hint = "a vendor-location plugin would show which vendors sell it" }); break;
             }
             if (Ventured.Value.Contains(id))
                 options.Add(new { how = "venture", tool = "find_ventures / assign_venture" });

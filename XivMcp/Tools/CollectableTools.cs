@@ -31,7 +31,7 @@ internal static class CollectableTools
         {
             Name = "turn_in_collectables",
             Description = "Turns in collectables from your bags at a Collectable Appraiser for scrips, one by one, like clicking Trade. Goes to an " +
-                          "appraiser first if none is nearby (needs Item Vendor Location for the NPC's position and 'Game & navigation'). " +
+                          "appraiser first if none is nearby (needs a vendor-location plugin for the NPC's position, and 'Game & navigation'). " +
                           "Stops before the scrip cap: when the game warns that a trade would overcap a currency, it answers No and stops — " +
                           "nothing is lost. Without 'items' it turns in every collectable the appraiser accepts. Reports scrips before/after and " +
                           "what is left. Requires 'Items & retainers' in /xivmcp.",
@@ -70,7 +70,7 @@ internal static class CollectableTools
                 {
                     if (!config.AllowGameNavigation) throw new ToolException("No Collectable Appraiser nearby and 'Game & navigation' is off; go to one first.");
                     var spot = await Game.Run(() => AppraiserSpot(args.UInt("npc"), plan.Npcs)).ConfigureAwait(false)
-                               ?? throw new ToolException("Don't know where a Collectable Appraiser stands (needs the Item Vendor Location plugin); go to one first.");
+                               ?? throw new ToolException("Don't know where a Collectable Appraiser stands (that needs a vendor-location plugin); go to one first.");
                     await NavigationTools.GoToNpc(spot, steps, ct).ConfigureAwait(false);
                     npc = await Game.Run(() => NearbyAppraiser(plan.Npcs)).ConfigureAwait(false) ?? throw new ToolException("Arrived, but no appraiser is in reach.");
                 }

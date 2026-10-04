@@ -52,13 +52,14 @@ public static class PermissionCatalog
             "list_unlock_categories", "check_unlocks", "get_active_quests", "check_quests", "get_party", "get_targets", "get_nearby_objects",
             "get_fates", "get_aetherytes", "get_companions", "get_submersibles", "list_game_sheets", "search_game_data", "get_game_data_row",
             "inspect_window", "get_collections", "get_armoire", "get_glamour_dresser", "get_job_actions", "get_hotbars", "list_gearsets",
-            "get_cache_status", "wait_for_cache_refresh", "run_self_test", "plan_craft", "list_plugins",
+            "get_cache_status", "wait_for_cache_refresh", "run_self_test", "plan_craft", "list_plugins", "get_position",
         ],
         ["game_navigation"] =
         [
             "list_windows", "get_menu", "get_automation_status", "get_navigation_status", "list_characters",
             "open_window", "close_window", "interact_with_object", "select_menu_option", "load_game_data", "navigate_to", "stop_navigation",
             "switch_character", "refresh_character_list", "switch_gearset", "leave_duty", "place_waymark_preset",
+            "set_map_flag", "clear_map_flag", "start_route",
         ],
         ["items_retainers"] =
         [
@@ -74,7 +75,7 @@ public static class PermissionCatalog
         ["ui_editing"] = ["get_macros", "list_waymark_presets", "get_waymark_preset", "set_macro", "clear_macro", "set_waymark_preset"],
         ["online"] = ["get_item_sources", "get_market_prices"],
         ["plugin_management"] = ["list_plugin_config_files", "get_plugin_config", "set_plugin_enabled", "reload_plugin", "set_plugin_config"],
-        ["jobs"] = ["list_jobs", "get_job", "start_job", "update_job", "pause_job", "resume_job", "cancel_job", "wait"],
+        ["jobs"] = ["list_jobs", "get_job", "start_job", "update_job", "pause_job", "resume_job", "cancel_job", "wait", "wait_until_arrived"],
     });
 
     private static Dictionary<string, string> Map(Dictionary<string, string[]> byGroup) =>

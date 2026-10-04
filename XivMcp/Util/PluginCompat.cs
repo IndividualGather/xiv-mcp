@@ -132,24 +132,27 @@ internal sealed class PluginCompat : IDisposable
                         IsLoaded("ItemVendorLocation"));
     }
 
-    public object Status() => new
+    /// <summary>
+    /// The automation plugins XIV MCP works around, and what it pauses. Only loaded plugins are listed: the assistant shouldn't learn
+    /// about (and suggest) plugins the player doesn't use.
+    /// </summary>
+    public object Status()
     {
-        autoRetainer = AutoRetainerLoaded
-            ? new
+        var plugins = new Dictionary<string, object?>();
+        if (AutoRetainerLoaded)
+            plugins["AutoRetainer"] = new
             {
-                loaded = true,
                 busy = Ipc<bool>("AutoRetainer.PluginState.IsBusy"),
                 multiMode = Ipc<bool>("AutoRetainer.GetMultiModeEnabled"),
                 suppressed = Ipc<bool>("AutoRetainer.GetSuppressed"),
                 suppressedByXivMcp = suppressedAutoRetainer,
-            }
-            : (object)new { loaded = false },
-        yesAlready = new { loaded = IsLoaded("YesAlready"), pausedByXivMcp = pausedClickers && IsLoaded("YesAlready") },
-        textAdvance = new { loaded = IsLoaded("TextAdvance"), pausedByXivMcp = pausedClickers && IsLoaded("TextAdvance") },
-        fcch = FcchLoaded ? new { loaded = true, busy = Ipc<bool>("FCCH.IsBusy") } : (object)new { loaded = false },
-        waymarkPresetPlugin = new { loaded = IsLoaded("WaymarkPresetPlugin") },
-        holdingBell,
-    };
+            };
+        if (IsLoaded("YesAlready")) plugins["YesAlready"] = new { pausedByXivMcp = pausedClickers };
+        if (IsLoaded("TextAdvance")) plugins["TextAdvance"] = new { pausedByXivMcp = pausedClickers };
+        if (FcchLoaded) plugins["FCCH"] = new { busy = Ipc<bool>("FCCH.IsBusy") };
+        if (IsLoaded("WaymarkPresetPlugin")) plugins["WaymarkPresetPlugin"] = new { };
+        return new { plugins, holdingBell };
+    }
 
     internal static T? Ipc<T>(string name) where T : struct
     {

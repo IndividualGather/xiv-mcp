@@ -120,6 +120,11 @@ public static class ToolSummaries
         ["resume_job"] = "Continues a paused background job.",
         ["cancel_job"] = "Stops a background job.",
         ["wait"] = "Waits a while, as a step of a background job.",
+        ["wait_until_arrived"] = "Waits until you reach a spot on the map, as a step of a background job.",
+        ["get_position"] = "Looks at where you are: zone, area, map coordinates and the flag on your map.",
+        ["set_map_flag"] = "Places the flag on your map at a spot in any zone, and can open the map.",
+        ["clear_map_flag"] = "Removes the flag from your map.",
+        ["start_route"] = "Plans a route as a background job: flags each stop on your map once you reach the one before.",
 
         // AutoDuty
         ["list_duties"] = "Lists the duties that can be run for you, with their levels and modes.",

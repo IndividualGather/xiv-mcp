@@ -139,8 +139,8 @@ internal static class InteractionTools
             Name = "interact_with_object",
             Description = "Targets and interacts with a nearby object, exactly like clicking it: summoning bell, company chest, voyage control panel, " +
                           "NPCs, aetherytes, ... Choose by name (nearest match) or gameObjectId from get_nearby_objects. The character does not move: " +
-                          $"the object must be within about {MaxInteractDistance} yalms. Summoning bell: if AutoRetainer is installed it is paused while XIV MCP " +
-                          "uses the bell (so it doesn't start processing ventures) and resumes when the bell is closed; YesAlready/TextAdvance are paused too. " +
+                          $"the object must be within about {MaxInteractDistance} yalms. Summoning bell: retainer automation and dialogue-skipping plugins, " +
+                          "if running, are paused while XIV MCP uses the bell (so they don't start processing ventures) and resume when the bell is closed. " +
                           "Returns which windows opened. Requires 'Game & navigation' in /xivmcp.",
             InputSchema = """
                 {
@@ -319,8 +319,9 @@ internal static class InteractionTools
         yield return new McpTool
         {
             Name = "get_automation_status",
-            Description = "Shows how XIV MCP cooperates with automation plugins: whether AutoRetainer, YesAlready and TextAdvance are loaded, " +
-                          "AutoRetainer's busy / multi mode / suppressed state, and what XIV MCP currently pauses.",
+            Description = "Shows how XIV MCP cooperates with the automation plugins the player has installed (retainer automation, dialogue " +
+                          "skipping): which of them are loaded, whether they are busy, and what XIV MCP currently pauses. Plugins that aren't installed " +
+                          "aren't listed.",
             Handler = (_, _) => Game.Run<object?>(compat.Status),
         };
     }

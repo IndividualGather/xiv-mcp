@@ -46,7 +46,7 @@ internal static class WaymarkTools
         yield return new McpTool
         {
             Name = "list_waymark_presets",
-            Description = "Lists waymark presets: the game's 30 preset slots (source \"game\") and, if WaymarkPresetPlugin is installed, its preset " +
+            Description = "Lists waymark presets: the game's 30 preset slots (source \"game\") and, if a waymark preset plugin is installed, its preset " +
                           "library (source \"library\"), with duty, active markers and save time. Filter by duty name or preset name. " +
                           "Use get_waymark_preset to see coordinates and a picture of the arena.",
             InputSchema = """
@@ -90,7 +90,7 @@ internal static class WaymarkTools
         yield return new McpTool
         {
             Name = "get_waymark_preset",
-            Description = "Shows one waymark preset — a game slot (source \"game\", number 1-30), a WaymarkPresetPlugin library preset (source \"library\", " +
+            Description = "Shows one waymark preset — a game slot (source \"game\", number 1-30), a preset from a waymark plugin's library (source \"library\", " +
                           "by number or name), or the waymarks currently placed (source \"current\") — with every marker's coordinates and, by default, " +
                           "a picture of the arena map with the waymarks drawn in.",
             InputSchema = """
@@ -115,7 +115,7 @@ internal static class WaymarkTools
         {
             Name = "set_waymark_preset",
             Description = "Writes one of the game's 30 waymark preset slots. Either copy from another preset (from_source + from_number/from_name: " +
-                          "a game slot, a WaymarkPresetPlugin library preset, or \"current\" for the waymarks placed right now), and/or give markers " +
+                          "a game slot, a preset from a waymark plugin's library, or \"current\" for the waymarks placed right now), and/or give markers " +
                           "explicitly as { \"A\": {\"x\":100,\"y\":0,\"z\":90}, \"1\": null, ... } (null removes a marker; omitted markers keep their value). " +
                           "duty is the duty (ContentFinderCondition id or name) the preset belongs to. Returns before/after with a picture; clear=true empties the slot. " +
                           "Requires 'UI editing' in /xivmcp.",
@@ -191,7 +191,7 @@ internal static class WaymarkTools
         {
             Name = "place_waymark_preset",
             Description = "Places a waymark preset in the current duty, like loading it from the Waymarks window. Works only inside a duty and out of " +
-                          "combat (the game's rule for presets). Library presets are placed through WaymarkPresetPlugin when it is installed. " +
+                          "combat (the game's rule for presets). Library presets are placed through the waymark preset plugin, if one is installed. " +
                           "Requires 'Game & navigation' in /xivmcp.",
             InputSchema = """
                 {
@@ -213,7 +213,7 @@ internal static class WaymarkTools
                     EnsureCanPlace();
                     if (source == "library")
                     {
-                        if (!PluginCompat.IsLoaded(WaymarkPlugin)) throw new ToolException("Library presets need WaymarkPresetPlugin.");
+                        if (!PluginCompat.IsLoaded(WaymarkPlugin)) throw new ToolException("Library presets need a waymark preset plugin, which isn't installed.");
                         var name = args.String("name");
                         var number = args.UInt("number");
                         bool placed;
@@ -301,7 +301,7 @@ internal static class WaymarkTools
                          : LibraryPresets().FirstOrDefault(p => p.Number == number))
                      ?? throw new ToolException(PluginCompat.IsLoaded(WaymarkPlugin)
                          ? "No such library preset. Use list_waymark_presets."
-                         : "The preset library needs WaymarkPresetPlugin."),
+                         : "The preset library needs a waymark preset plugin, which isn't installed."),
         "game" => number is { } n and >= 1 and <= 30 ? GamePresets()[(int)n - 1] : throw new ToolException("Give the game slot 'number' (1-30)."),
         _ => throw new ToolException("source must be game, library or current."),
     };

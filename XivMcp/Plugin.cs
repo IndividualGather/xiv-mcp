@@ -114,6 +114,7 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(CacheTools.Create(caches))
             .Append(SelfTest.Tool())
             .Concat(JobTools.Create(() => jobs!, () => Server?.LastClient))
+            .Concat(MapTools.Create(() => jobs!, () => Server?.LastClient))
             .ToList();
         // Tools that drive one other plugin belong to that plugin's integration (same provider + capability contract as third-party tools).
         tools = XivMcp.Integrations.IntegrationCatalog.Apply(tools, PluginCompat.IsLoaded).ToList();

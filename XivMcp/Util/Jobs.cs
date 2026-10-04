@@ -57,6 +57,9 @@ internal sealed class JobManager : IDisposable, ICache
     /// <summary>Tools that may not be steps (job control itself).</summary>
     public static readonly HashSet<string> ControlTools = ["start_job", "list_jobs", "get_job", "update_job", "pause_job", "resume_job", "cancel_job"];
 
+    /// <summary>Steps that only wait (for time, or for the player to get somewhere): while they run, the agent may still act.</summary>
+    public static readonly HashSet<string> PassiveTools = ["wait", "wait_until_arrived"];
+
     private readonly ToolRegistry tools;
     private readonly string file = Path.Combine(Svc.PluginInterface.GetPluginConfigDirectory(), "jobs.json");
     private readonly List<Job> jobs;
@@ -109,6 +112,14 @@ internal sealed class JobManager : IDisposable, ICache
     {
         get { lock (sync) return runningJobId is not null; }
     }
+
+    /// <summary>True while a step that acts in the game is running. Waiting steps (<see cref="PassiveTools"/>) don't block other calls.</summary>
+    public bool ActingStepRunning
+    {
+        get { lock (sync) return runningJobId is not null && !runningPassive; }
+    }
+
+    private bool runningPassive;
 
     /// <summary>Adds a progress line to the running job's log if its current step is <paramref name="tool"/> (used by plugin tools).</summary>
     public void StepProgress(string tool, string text)
@@ -280,6 +291,7 @@ internal sealed class JobManager : IDisposable, ICache
                 step.StartedUtc = DateTime.UtcNow;
                 step.Attempts++;
                 runningJobId = job.Id;
+                runningPassive = PassiveTools.Contains(step.Tool);
                 stepCts = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
                 AddLog(job, $"Step {step.Id}: {step.Tool} started.");
                 Changed();
@@ -301,6 +313,7 @@ internal sealed class JobManager : IDisposable, ICache
             lock (sync)
             {
                 runningJobId = null;
+                runningPassive = false;
                 step.FinishedUtc = DateTime.UtcNow;
                 if (interrupted)
                 {

@@ -29,6 +29,8 @@ Every tool of XIV MCP belongs to one **group**, and every group has two settings
 - **Ask** shows the approval window first: approve once, approve for this session, always allow (sets just that tool to *Allow*), or decline.
 - **Deny** refuses it before it runs, and tells your assistant which setting to change.
 
+**Searching.** The search field at the top of the **Modules** tab filters as you type. It matches section names and descriptions, and tool calls by name or by what they do; every word has to match. Sections with matching tool calls open those rows and show only the matching tools.
+
 **Turning a group off.** The switch in each card's top right removes the group's tools from your assistant entirely: they disappear from its tool list (clients are told the list changed), calls and job steps are refused, and the card shows only its description. Unlike *Deny*, which keeps the tools listed so the assistant can tell you they're blocked, this keeps the assistant's tool list short. Turn the group back on to bring the tools back with their settings.
 
 | Group | Reading | Changes | Covers |
@@ -129,6 +131,17 @@ Other plugins can offer their own tools to your assistant. Those tools run that 
 | `get_automation_status` | What XIV MCP detected about AutoRetainer, YesAlready and TextAdvance, and what it is pausing |
 
 Windows that act instead of opening something (Log Out, Exit Game, Return, Ready Check, Countdown, Stance) can't be triggered through `open_window`.
+
+### Maps and routes *(Game data, Game & navigation, Background jobs)*
+
+| Tool | What it does |
+|---|---|
+| `get_position` | Where you are: zone, region, area and sub-area, the map, map coordinates as the in-game map shows them, the world position, and the map flag if one is set (with its distance) |
+| `set_map_flag` / `clear_map_flag` | Places the flag on your map at map coordinates in any zone (zone by name or territory id), optionally opening the map there; or removes it |
+| `wait_until_arrived` | A job step that waits until you are in a zone and within a radius of map coordinates there (or the flag) |
+| `start_route` | A route as a background job: flags the first stop, waits until you get there, flags the next, and clears the flag after the last. Zones can change between stops |
+
+XIV MCP only marks the way: you travel however you like (walking, mounting, teleporting). While a route waits for you, your assistant can still use other tools, since waiting steps don't hold up the rest. Pause, extend or change a route with the usual job tools.
 
 ### Characters, worlds and jobs *(Game & navigation)*
 

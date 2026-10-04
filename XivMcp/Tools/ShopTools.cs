@@ -69,8 +69,8 @@ internal static class ShopTools
         yield return new McpTool
         {
             Name = "buy_item",
-            Description = "Buys an item from an NPC vendor (found with the Item Vendor Location plugin, required): picks a vendor (gil vendors and " +
-                          "the current zone first, or the one you name), travels there if needed (vnavmesh / Lifestream, needs 'Game & navigation'), " +
+            Description = "Buys an item from an NPC vendor (needs a vendor-location plugin to know where vendors stand): picks a vendor (gil vendors " +
+                          "and the current zone first, or the one you name), travels there if needed (with the navigation plugins installed, needs 'Game & navigation'), " +
                           "opens the shop through the NPC's menu and buys the quantity in batches of up to 99, confirming like a player. Checks free " +
                           "bag slots (and gil for gil shops) first and verifies what arrived. Gil shops buy directly. Any other shop (tomestones, " +
                           "scrips, seals, items) shows an approval popup in game while its window is open, and only buys when the player clicks " +
@@ -279,7 +279,7 @@ internal static class ShopTools
     private static void RequireVendorPlugin()
     {
         if (!ItemVendorLocationLoaded)
-            throw new ToolException("Finding vendors needs the Item Vendor Location plugin, which is not installed or not enabled. Install it from /xivmcp → Modules → Market & purchases.");
+            throw new ToolException("Finding vendors needs a vendor-location plugin, which isn't installed or enabled.");
     }
 
     /// <summary>Vendors of an item from Item Vendor Location: gil vendors first, then the current zone, then the rest. Framework thread.</summary>

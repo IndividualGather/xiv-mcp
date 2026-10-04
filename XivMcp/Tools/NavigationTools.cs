@@ -31,9 +31,9 @@ internal static partial class NavigationTools
         yield return new McpTool
         {
             Name = "navigate_to",
-            Description = "Moves the character to a destination using vnavmesh (walking/pathfinding in the current zone) and Lifestream (teleports, " +
-                          "housing, inns, workshop), if installed. Destinations: summoning_bell (nearby one, otherwise the preferred bell location from " +
-                          "/xivmcp — by default Lifestream's own property priority, falling back to the inn), company_chest (FC house), workshop (FC " +
+            Description = "Moves the character to a destination with the navigation plugins the player has installed (pathfinding for walking in " +
+                          "the current zone; travel for teleports, housing, inns and the workshop). Destinations: summoning_bell (nearby one, otherwise the " +
+                          "preferred bell location from /xivmcp — by default the travel plugin's own property priority, falling back to the inn), company_chest (FC house), workshop (FC " +
                           "workshop, walks to the voyage control panel), inn, home, fc_house, apartment, or object (by name in the current zone). " +
                           "Waits until arrived (or the timeout) and returns the steps taken; then use interact_with_object. stop_navigation aborts. " +
                           "Teleports cost gil as usual. Requires 'Game & navigation' in /xivmcp.",
@@ -54,7 +54,7 @@ internal static partial class NavigationTools
                 if (!config.AllowGameNavigation)
                     throw new ToolException("Navigation is disabled. Enable \"Game & navigation\" in the XIV MCP settings window (/xivmcp) in game.");
                 if (!VnavmeshLoaded && !LifestreamLoaded)
-                    throw new ToolException("Navigation needs vnavmesh (walking) and/or Lifestream (travel); neither is installed.");
+                    throw new ToolException("Navigation needs a navigation plugin (for walking or for travel), and none is installed.");
                 var destination = args.String("destination")?.ToLowerInvariant() ?? throw new ToolException("'destination' is required.");
                 if (!Destinations.Contains(destination)) throw new ToolException($"Unknown destination '{destination}'.");
                 var name = args.String("name");
@@ -93,21 +93,29 @@ internal static partial class NavigationTools
         yield return new McpTool
         {
             Name = "get_navigation_status",
-            Description = "Whether vnavmesh / Lifestream are installed and ready, whether something is moving the character right now, and the phase of a " +
-                          "running navigate_to.",
-            Handler = (_, _) => Game.Run<object?>(() => new
+            Description = "Whether walking (pathfinding) and travel (teleports, housing) are available, whether something is moving the character " +
+                          "right now, and the phase of a running navigate_to. Only the navigation plugins the player has installed are listed.",
+            Handler = (_, _) => Game.Run<object?>(() =>
             {
-                vnavmesh = VnavmeshLoaded ? new { installed = true, meshReady = SafeBool(() => NavReady), moving = SafeBool(() => PathRunning) } : (object)new { installed = false },
-                lifestream = LifestreamLoaded ? new { installed = true, busy = SafeBool(() => LifestreamBusy) } : (object)new { installed = false },
-                navigation = running is null ? "idle" : phase,
-                preferredBellLocation = config.PreferredBellLocation,
+                // Plugins that aren't installed are left out, so the assistant doesn't learn about (and suggest) them.
+                var plugins = new Dictionary<string, object?>();
+                if (VnavmeshLoaded) plugins["vnavmesh"] = new { meshReady = SafeBool(() => NavReady), moving = SafeBool(() => PathRunning) };
+                if (LifestreamLoaded) plugins["Lifestream"] = new { busy = SafeBool(() => LifestreamBusy) };
+                return new
+                {
+                    walking = VnavmeshLoaded,
+                    travel = LifestreamLoaded,
+                    plugins,
+                    navigation = running is null ? "idle" : phase,
+                    preferredBellLocation = config.PreferredBellLocation,
+                };
             }),
         };
 
         yield return new McpTool
         {
             Name = "stop_navigation",
-            Description = "Stops a running navigate_to and any vnavmesh movement / Lifestream task immediately.",
+            Description = "Stops a running navigate_to, and any walking or travel the navigation plugins are doing, immediately.",
             ReadOnly = false,
             Handler = (_, _) =>
             {
@@ -167,7 +175,7 @@ internal static partial class NavigationTools
     /// <summary>Travel with Lifestream: "lifestream" (its property priority), "inn", "fc", "home", "apartment" or "workshop".</summary>
     private static async Task TravelTo(string where, List<string> steps, CancellationToken ct)
     {
-        if (!LifestreamLoaded) throw new ToolException("Getting there needs Lifestream (teleport / housing), which is not installed.");
+        if (!LifestreamLoaded) throw new ToolException("Getting there needs a travel plugin (teleports, housing), which isn't installed.");
         await Game.RunLoggedIn(() =>
         {
             EnsureCanTravel();
@@ -231,7 +239,7 @@ internal static partial class NavigationTools
 
         if (t.Distance > ArriveRange + 0.5f)
         {
-            if (!VnavmeshLoaded) throw new ToolException($"{t.Name} is {t.Distance:0.#} yalms away; walking there needs vnavmesh, which is not installed.");
+            if (!VnavmeshLoaded) throw new ToolException($"{t.Name} is {t.Distance:0.#} yalms away; walking there needs a pathfinding plugin, which isn't installed.");
             phase = $"waiting for the navmesh ({label})";
             var waited = DateTime.UtcNow;
             while (!await Game.Run(() => NavReady).ConfigureAwait(false))
