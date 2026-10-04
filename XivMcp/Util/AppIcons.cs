@@ -24,7 +24,8 @@ internal static class AppIcons
     /// <summary>The icon for an app id, or null (not installed, or no icon found). Looked up once per app, then kept.</summary>
     public static IDalamudTextureWrap? Get(string appId)
     {
-        if (!Cache.TryGetValue(appId, out var icon)) Cache[appId] = icon = Find(appId);
+        // The installed app's own icon first; a logo that ships with XIV MCP (branding/apps) when it isn't installed.
+        if (!Cache.TryGetValue(appId, out var icon)) Cache[appId] = icon = Find(appId) ?? Shipped(appId);
         // Logo files go through Dalamud's texture cache (it owns them); program icons were made here.
         if (icon?.File is { } file) return Svc.Textures.GetFromFile(file).GetWrapOrDefault();
         return icon?.Texture;
@@ -37,6 +38,13 @@ internal static class AppIcons
         Cache.Clear();
     }
 
+    /// <summary>A logo next to the plugin (images/apps/&lt;id&gt;.png), for apps without an icon on this PC.</summary>
+    private static Icon? Shipped(string appId)
+    {
+        var path = Path.Combine(Svc.PluginInterface.AssemblyLocation.DirectoryName ?? "", "images", "apps", $"{appId}.png");
+        return File.Exists(path) ? new Icon(path, null) : null;
+    }
+
     private static Icon? Find(string appId)
     {
         try
@@ -45,9 +53,11 @@ internal static class AppIcons
             {
                 "claude-desktop" or "claude" => StoreLogo("Claude_") ?? ExeIcon(LocalApp("AnthropicClaude", "claude.exe")),
                 "codex" => StoreLogo("OpenAI.Codex_") ?? StoreLogo("OpenAI.ChatGPT"),
+                "copilot" => ClientInstaller.InstalledApp("GitHub Copilot") is { Length: > 0 } copilotExe ? ExeIcon(copilotExe) : null,
                 "vscode" => ExeIcon(SchemeExe("vscode") ?? LocalApp(Path.Combine("Programs", "Microsoft VS Code"), "Code.exe")),
                 "cursor" => ExeIcon(SchemeExe("cursor") ?? LocalApp(Path.Combine("Programs", "cursor"), "Cursor.exe")),
-                "lmstudio" => ExeIcon(SchemeExe("lmstudio") ?? LocalApp(Path.Combine("Programs", "LM Studio"), "LM Studio.exe")),
+                // LM Studio's desktop app is now Bionic (its own link scheme and folder).
+                "lmstudio" => ExeIcon(SchemeExe("bionic") ?? SchemeExe("lmstudio") ?? ProgramFile("Bionic", "Bionic.exe") ?? LocalApp(Path.Combine("Programs", "LM Studio"), "LM Studio.exe")),
                 _ => null,
             };
         }
@@ -92,6 +102,12 @@ internal static class AppIcons
         using var key = Registry.ClassesRoot.OpenSubKey($@"{scheme}\shell\open\command");
         var exe = AppLogos.ExeFromCommand(key?.GetValue(null) as string);
         return exe is not null && File.Exists(exe) ? exe : null;
+    }
+
+    private static string? ProgramFile(string folder, string exe)
+    {
+        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), folder, exe);
+        return File.Exists(path) ? path : null;
     }
 
     private static string? LocalApp(string folder, string exe)

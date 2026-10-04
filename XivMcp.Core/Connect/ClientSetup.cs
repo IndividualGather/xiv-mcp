@@ -118,6 +118,51 @@ public static class ClientSetup
 
     private static string Base64(JsonObject json) => Uri.EscapeDataString(Convert.ToBase64String(Encoding.UTF8.GetBytes(json.ToJsonString())));
 
+    // ---------------------------------------------------------------- JSON configs
+
+    /// <summary>
+    /// A JSON MCP config (e.g. LM Studio's mcp.json) with XIV MCP added or replaced under <paramref name="key"/>; everything else is
+    /// kept. An empty file counts as an empty config; a file that isn't JSON throws <see cref="FormatException"/> instead of being lost.
+    /// </summary>
+    public static string MergeJsonServer(string existing, string key, string endpoint, string? token)
+    {
+        var root = ParseConfig(existing);
+        if (root[key] is not JsonObject servers) root[key] = servers = new JsonObject();
+        servers[ServerName] = HttpServer(endpoint, token);
+        return root.ToJsonString(Indented);
+    }
+
+    /// <summary>GitHub Copilot's ~/.copilot/mcp-config.json: an HTTP server with every tool enabled.</summary>
+    public static string MergeCopilotConfig(string existing, string endpoint, string? token)
+    {
+        var root = ParseConfig(existing);
+        if (root["mcpServers"] is not JsonObject servers) root["mcpServers"] = servers = new JsonObject();
+        var server = new JsonObject { ["type"] = "http" };
+        foreach (var (k, v) in HttpServer(endpoint, token)) server[k] = v?.DeepClone();
+        server["tools"] = new JsonArray("*");
+        servers[ServerName] = server;
+        return root.ToJsonString(Indented);
+    }
+
+    /// <summary>The JSON config without XIV MCP; unchanged (but reformatted) when it wasn't there.</summary>
+    public static string RemoveJsonServer(string existing, string key)
+    {
+        var root = ParseConfig(existing);
+        if (root[key] is JsonObject servers) servers.Remove(ServerName);
+        return root.ToJsonString(existing.Trim() == "{}" ? new JsonSerializerOptions() : Indented);
+    }
+
+    private static JsonObject ParseConfig(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new JsonObject();
+        try
+        {
+            return JsonNode.Parse(json, documentOptions: new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true }) as JsonObject
+                   ?? throw new FormatException("The config isn't a JSON object.");
+        }
+        catch (JsonException ex) { throw new FormatException($"The config isn't valid JSON: {ex.Message}", ex); }
+    }
+
     // ---------------------------------------------------------------- Claude Code
 
     /// <summary>Arguments for <c>claude</c> that add XIV MCP for all the player's projects (user scope).</summary>
@@ -141,13 +186,18 @@ public static class ClientSetup
     /// Codex's config.toml (shared by the Codex CLI, IDE extension and app) with the XIV MCP entry added or replaced in place. Every
     /// other line is kept as it was, and the file's line endings are kept.
     /// </summary>
-    public static string MergeCodexConfig(string existing, string endpoint, string? token)
+    public static string MergeCodexConfig(string existing, string endpoint, string? token) => MergeTomlConfig(existing, endpoint, token, "http_headers");
+
+    /// <summary>Grok Build's ~/.grok/config.toml: Codex's format, but the header table is called "headers".</summary>
+    public static string MergeGrokConfig(string existing, string endpoint, string? token) => MergeTomlConfig(existing, endpoint, token, "headers");
+
+    private static string MergeTomlConfig(string existing, string endpoint, string? token, string headersKey)
     {
         var newline = existing.Contains("\r\n") ? "\r\n" : "\n";
         var entry = new StringBuilder()
             .Append($"[mcp_servers.{ServerName}]").Append(newline)
             .Append($"url = {Quote(endpoint)}").Append(newline);
-        if (token is not null) entry.Append($"http_headers = {{ \"Authorization\" = {Quote("Bearer " + token)} }}").Append(newline);
+        if (token is not null) entry.Append($"{headersKey} = {{ \"Authorization\" = {Quote("Bearer " + token)} }}").Append(newline);
 
         var lines = SplitLines(existing);
         var start = lines.FindIndex(l => OwnHeader.IsMatch(l));

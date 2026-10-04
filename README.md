@@ -320,7 +320,7 @@ It only reads.
 
 ## Connecting a client
 
-Open `/xivmcp` → **Connect** and pick your app. Most have a one-click button; the rest have copy buttons with your token already filled in. The app tiles show each app's own icon, read from the app installed on your PC. XIV MCP doesn't ship any logos, so apps that aren't installed show a plain symbol. Under each name: **Connected** when XIV MCP is set up in that app (read from the app's own MCP settings), **Installed** when the app is on your PC but XIV MCP isn't set up in it yet, or **Not found**.
+Open `/xivmcp` → **Connect** and pick your app. Most have a one-click button; the rest have copy buttons with your token already filled in. The app tiles show each app's own icon, read from the app installed on your PC. For GitHub Copilot, Cursor and Grok, XIV MCP also ships their logos (from [LobeHub Icons](https://github.com/lobehub/lobe-icons), MIT; see `branding/apps`), so they show even when the app isn't installed. Under each name: **Connected** when XIV MCP is set up in that app (read from the app's own MCP settings), **Installed** when the app is on your PC but XIV MCP isn't set up in it yet, or **Not found**. ChatGPT, Claude Desktop and LM Studio have large tiles; the rest are below them. Every app except LM Studio is marked **Paid**: their free plans run out quickly with game control.
 
 | App | What the button does |
 |---|---|
@@ -328,7 +328,9 @@ Open `/xivmcp` → **Connect** and pick your app. Most have a one-click button; 
 | **ChatGPT** (Codex) | Adds XIV MCP to `~/.codex/config.toml`, which Codex in the ChatGPT desktop app, the Codex CLI and the IDE extension share. The rest of the file is kept, and the old one is saved as `config.toml.xivmcp-backup`. |
 | **VS Code** (GitHub Copilot) | Opens VS Code's own "install MCP server" prompt, for your user profile. |
 | **Cursor** | Opens Cursor's install prompt. |
-| **LM Studio** | Opens LM Studio's install prompt. |
+| **GitHub Copilot** (app and CLI) | Adds XIV MCP to `~/.copilot/mcp-config.json`, which the Copilot CLI reads and, by GitHub's docs, the GitHub Copilot app too. |
+| **Grok** (Grok Build, in the terminal) | Adds XIV MCP to `~/.grok/config.toml`. grok.com only connects to servers on the internet, so it can't reach the game. |
+| **LM Studio** (its desktop app is now called Bionic) | Adds XIV MCP to `~/.lmstudio/mcp.json`, which LM Studio reads for its MCP servers. The rest of the file is kept, and the old one is saved as `mcp.json.xivmcp-backup`. |
 | **Claude Code** | Runs `claude mcp add` for you (no console window), for all your projects. An earlier user-wide `ffxiv` entry is replaced. Project entries are left alone. |
 | Other apps | Copy the JSON (below). |
 
@@ -383,13 +385,13 @@ XIV MCP is free, but the AI app you connect it to is usually not:
 - **Every request uses tokens.** Each time your assistant reads the game or acts in it, the AI model handles a request. Controlling the game uses many: every tool call is a request, and a job such as a dungeon run can make hundreds of them.
 - **Free plans run out quickly.** Claude, ChatGPT, GitHub Copilot and Cursor include a small amount of use on their free plans. For regular use you need a paid plan.
 - **API keys bill every token.** There is no limit unless you set one with the provider.
-- **LM Studio is the free option.** It runs models on your own PC, but small models handle this many tools poorly.
+- **LM Studio is the free option.** Models on your own PC work fine with XIV MCP and cost nothing per request. Pick one with tool support and a large context window, for example **GPT-OSS 20B** (built for tool use, runs on a graphics card with 16 GB of memory) or **Qwen3.6 35B A3B** (fast for its size, needs more memory). Running a model locally is a strain on your hardware, though: it takes a lot of graphics and system memory, and while you play it shares the graphics card with the game, so expect a lower frame rate. Bionic's cloud models are paid by use.
 
 XIV MCP cannot see how many tokens your assistant uses, so check the usage page of your plan.
 
 ### Removing XIV MCP from an app
 
-Each app in the **Connect** tab has a **Remove XIV MCP from …** section:
+Each app XIV MCP is set up in gets a **Remove XIV MCP from …** section in the **Connect** tab:
 
 | App | How |
 |---|---|
@@ -398,7 +400,9 @@ Each app in the **Connect** tab has a **Remove XIV MCP from …** section:
 | **Claude Desktop** | Settings → Extensions → **Final Fantasy XIV (XIV MCP)** → Uninstall, or switch it off there. |
 | **VS Code** | Extensions view → **MCP Servers – Installed** → right-click `ffxiv` → **Uninstall**. |
 | **Cursor** | Delete the `ffxiv` entry from `~/.cursor/mcp.json`. |
-| **LM Studio** | Program tab → Install → Edit `mcp.json`, and delete the `ffxiv` entry. |
+| **GitHub Copilot** | **Remove from GitHub Copilot** deletes the entry from `~/.copilot/mcp-config.json` (with a backup). |
+| **Grok Build** | **Remove from Grok Build** deletes the entry from `~/.grok/config.toml` (with a backup). |
+| **LM Studio** | **Remove from LM Studio** deletes the entry from `~/.lmstudio/mcp.json` (with a backup). |
 
 To cut off every app at once, switch off the server in `/xivmcp` or generate a new access token.
 

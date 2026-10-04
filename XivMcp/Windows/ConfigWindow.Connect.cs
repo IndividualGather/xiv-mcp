@@ -16,22 +16,28 @@ namespace XivMcp.Windows;
 /// </summary>
 internal sealed partial class ConfigWindow
 {
-    /// <summary>An AI app XIV MCP can connect to. <see cref="Detect"/> says whether it seems installed (null: can't tell).</summary>
-    private sealed record ClientApp(string Id, string Name, FontAwesomeIcon Icon, Func<bool?> Detect, Func<string, bool> Matches);
+    /// <summary>
+    /// An AI app XIV MCP can connect to. <see cref="Detect"/> says whether it seems installed (null: can't tell). <see cref="Main"/> apps
+    /// get the large tiles in the first row; <see cref="Paid"/> apps need a paid plan for regular use.
+    /// </summary>
+    private sealed record ClientApp(string Id, string Name, FontAwesomeIcon Icon, Func<bool?> Detect, Func<string, bool> Matches, bool Main = false, bool Paid = true);
+
+    private static bool Has(string name, string part) => name.Contains(part, StringComparison.OrdinalIgnoreCase);
 
     private static readonly ClientApp[] Clients =
     [
         // Codex lives in the ChatGPT desktop app (since July 2026); the id stays "codex" for saved settings.
-        new("codex", "ChatGPT", FontAwesomeIcon.Code, () => ClientInstaller.CodexInstalled || AppIcons.StorePackage("OpenAI.Codex_") is not null || AppIcons.StorePackage("OpenAI.ChatGPT") is not null, n => n.Contains("codex", StringComparison.OrdinalIgnoreCase)),
-        new("claude-desktop", "Claude Desktop", FontAwesomeIcon.Desktop, () => ClientInstaller.ClaudeDesktopInstalled,
-            n => n.Contains("claude", StringComparison.OrdinalIgnoreCase) && !n.Contains("claude-code", StringComparison.OrdinalIgnoreCase)),
-        new("claude", "Claude Code", FontAwesomeIcon.Terminal, () => ClientInstaller.FindClaudeCli() is not null, n => n.Contains("claude-code", StringComparison.OrdinalIgnoreCase)),
-        new("vscode", "VS Code", FontAwesomeIcon.FileCode, () => ClientInstaller.IsRegistered("vscode"),
-            n => n.Contains("visual studio code", StringComparison.OrdinalIgnoreCase) || n.Contains("vscode", StringComparison.OrdinalIgnoreCase)),
-        new("cursor", "Cursor", FontAwesomeIcon.MousePointer, () => ClientInstaller.IsRegistered("cursor"), n => n.Contains("cursor", StringComparison.OrdinalIgnoreCase)),
-        new("lmstudio", "LM Studio", FontAwesomeIcon.Microchip, () => ClientInstaller.IsRegistered("lmstudio"),
-            n => n.Contains("lm studio", StringComparison.OrdinalIgnoreCase) || n.Contains("lmstudio", StringComparison.OrdinalIgnoreCase)),
-        new("other", "Other app", FontAwesomeIcon.EllipsisH, () => null, _ => false),
+        new("codex", "ChatGPT", FontAwesomeIcon.Code, () => ClientInstaller.CodexInstalled || AppIcons.StorePackage("OpenAI.Codex_") is not null || AppIcons.StorePackage("OpenAI.ChatGPT") is not null,
+            n => Has(n, "codex"), Main: true),
+        new("claude-desktop", "Claude Desktop", FontAwesomeIcon.Desktop, () => ClientInstaller.ClaudeDesktopInstalled, n => Has(n, "claude") && !Has(n, "claude-code"), Main: true),
+        new("lmstudio", "LM Studio", FontAwesomeIcon.Microchip, () => ClientInstaller.LmStudioInstalled,
+            n => Has(n, "lm studio") || Has(n, "lmstudio") || Has(n, "bionic"), Main: true, Paid: false),
+        new("claude", "Claude Code", FontAwesomeIcon.Terminal, () => ClientInstaller.FindClaudeCli() is not null, n => Has(n, "claude-code")),
+        new("copilot", "GitHub Copilot", FontAwesomeIcon.Robot, () => ClientInstaller.CopilotInstalled, n => Has(n, "copilot") && !Has(n, "visual studio code")),
+        new("vscode", "VS Code", FontAwesomeIcon.FileCode, () => ClientInstaller.IsRegistered("vscode"), n => Has(n, "visual studio code") || Has(n, "vscode")),
+        new("cursor", "Cursor", FontAwesomeIcon.MousePointer, () => ClientInstaller.IsRegistered("cursor"), n => Has(n, "cursor")),
+        new("grok", "Grok", FontAwesomeIcon.Terminal, () => ClientInstaller.GrokInstalled, n => Has(n, "grok")),
+        new("other", "Other app", FontAwesomeIcon.EllipsisH, () => null, _ => false, Paid: false),
     ];
 
     /// <summary>Installed or not, per app; read when the tab opens and every few seconds (registry reads).</summary>
@@ -56,7 +62,7 @@ internal sealed partial class ConfigWindow
         if (DateTime.UtcNow >= nextDetect)
         {
             detected = Clients.Select(c => c.Detect()).ToArray();
-            connected = Clients.Select(c => ClientInstaller.IsConnected(c.Id)).ToArray();
+            connected = Clients.Select(c => ClientInstaller.IsConnected(c.Id, endpoint)).ToArray();
             nextDetect = DateTime.UtcNow.AddSeconds(5);
         }
         var chosen = Array.FindIndex(Clients, c => c.Id == config.ConnectClient);
@@ -96,12 +102,19 @@ internal sealed partial class ConfigWindow
                         "Adds XIV MCP to Cursor.",
                         ["When Cursor asks to install the server, click Install.", "Ask the agent about your character."], null);
                     break;
-                case "lmstudio":
-                    DrawLinkApp(app, detected[chosen], ClientSetup.LmStudioLink(endpoint, token), "https://lmstudio.ai/",
-                        "Adds XIV MCP to LM Studio, for models running on your PC.",
-                        ["When LM Studio asks to install the server, click Install.", "Load a model that supports tool use and ask about your character."],
-                        "Small models often struggle with this many tools. Larger ones work better.");
+                case "copilot":
+                    DrawConfigApp("copilot", detected[chosen], "https://github.com/features/ai/github-app",
+                        "Adds XIV MCP to the GitHub Copilot app and the Copilot CLI. They share one configuration.", "Add to GitHub Copilot",
+                        () => ClientInstaller.AddToCopilot(endpoint, token), ClientInstaller.CopilotConfigPath,
+                        ["Restart the GitHub Copilot app, or start a new Copilot CLI session.", "Ask about your character."]);
                     break;
+                case "grok":
+                    DrawConfigApp("grok", detected[chosen], "https://docs.x.ai/build",
+                        "Adds XIV MCP to Grok Build, xAI's agent for your terminal. grok.com only connects to servers on the internet, so it can't reach the game.",
+                        "Add to Grok Build", () => ClientInstaller.AddToGrok(endpoint, token), ClientInstaller.GrokConfigPath,
+                        ["Start a new grok session.", "Ask about your character."]);
+                    break;
+                case "lmstudio": DrawLmStudio(endpoint, token, detected[chosen]); break;
                 default: DrawOtherApp(endpoint, token); break;
             }
         }
@@ -122,9 +135,11 @@ internal sealed partial class ConfigWindow
 
         // 4. Taking it out again, and what using an AI app costs.
         Gap(10);
-        using (ImRaii.PushId(app.Id)) DrawRemoval(app);
+        // Only for apps XIV MCP is set up in: there is nothing to remove otherwise.
+        if (connected[chosen])
+            using (ImRaii.PushId(app.Id)) DrawRemoval(app);
         Gap(14);
-        DrawCosts();
+        DrawCosts(app);
 
         // 5. Rarely needed details.
         Gap(10);
@@ -136,64 +151,93 @@ internal sealed partial class ConfigWindow
 
     private static int Index(string appId) => Array.FindIndex(Clients, c => c.Id == appId);
 
-    /// <summary>One tile per app, wrapping to the next line when the row is full. The chosen one is highlighted.</summary>
+    /// <summary>
+    /// The app tiles: the main apps large in the first row (sharing its width), the others smaller below, wrapping when a row is full.
+    /// The chosen one is highlighted.
+    /// </summary>
     private void DrawClientTiles(int chosen)
     {
         var scale = Ui.Scale;
-        var size = new Vector2(144 * scale, 62 * scale);
         var gap = ImGui.GetStyle().ItemSpacing.X;
-        var right = ImGui.GetContentRegionAvail().X;
-        var x = 0f;
-        for (var i = 0; i < Clients.Length; i++)
+        var avail = ImGui.GetContentRegionAvail().X;
+        var main = Enumerable.Range(0, Clients.Length).Where(i => Clients[i].Main).ToList();
+        var mainSize = new Vector2(Math.Min(260 * scale, (avail - gap * (main.Count - 1)) / main.Count), 76 * scale);
+        for (var k = 0; k < main.Count; k++)
         {
-            var app = Clients[i];
-            if (i > 0)
-            {
-                if (x + gap + size.X <= right) ImGui.SameLine(0, gap);
-                else x = 0;
-            }
-            x += (x > 0 ? gap : 0) + size.X;
-
-            using var id = ImRaii.PushId(app.Id);
-            var start = ImGui.GetCursorScreenPos();
-            var selected = i == chosen;
-            if (ImGui.InvisibleButton("##tile", size) && !selected)
-            {
-                plugin.Config.ConnectClient = app.Id;
-                plugin.Config.Save();
-            }
-            var hovered = ImGui.IsItemHovered();
-            var dl = ImGui.GetWindowDrawList();
-            var accent = selected ? Accent : hovered ? Accent with { W = 0.6f } : new Vector4(1, 1, 1, 0.12f);
-            dl.AddRectFilled(start, start + size, ImGui.GetColorU32(selected ? Accent with { W = 0.10f } : new Vector4(1, 1, 1, hovered ? 0.06f : 0.03f)), 6 * scale);
-            dl.AddRect(start, start + size, ImGui.GetColorU32(accent), 6 * scale, ImDrawFlags.None, selected ? 2 * scale : 1 * scale);
-
-            var textColor = ImGui.GetColorU32(selected ? Accent : ImGui.GetStyle().Colors[(int)ImGuiCol.Text]);
-            // The app's own icon when it's installed; a generic symbol otherwise.
-            var iconSize = 26 * scale;
-            if (AppIcons.Get(app.Id) is { } logo)
-            {
-                var at = start + new Vector2(10 * scale, (size.Y - iconSize) / 2);
-                dl.AddImage(logo.Handle, at, at + new Vector2(iconSize));
-            }
-            else
-                using (Ui.IconFont())
-                {
-                    var icon = app.Icon.ToIconString();
-                    var iconWidth = ImGui.CalcTextSize(icon);
-                    dl.AddText(start + new Vector2(10 * scale + (iconSize - iconWidth.X) / 2, (size.Y - iconWidth.Y) / 2), textColor, icon);
-                }
-            var textX = start.X + 46 * scale;
-            var line = ImGui.GetTextLineHeight();
-            var top = start.Y + (size.Y - 2 * line) / 2;
-            dl.AddText(new Vector2(textX, top), textColor, app.Name);
-            // Connected: XIV MCP is set up in the app. Recommended only until any app is connected.
-            var recommended = app.Id == "claude-desktop" && !connected.Any(x => x) && detected[i] != false;
-            var (note, noteColor) = connected[i] ? ("Connected", Green) : recommended ? ("Recommended", Accent)
-                : detected[i] == false ? ("Not found", Muted) : detected[i] == true ? ("Installed", Muted) : ("", Muted);
-            if (note.Length > 0) dl.AddText(new Vector2(textX, top + line), ImGui.GetColorU32(noteColor), note);
-            if (hovered) Tooltip(connected[i] ? $"XIV MCP is set up in {app.Name}." : detected[i] == false ? $"{app.Name} doesn't seem to be installed on this PC." : $"Connect {app.Name}");
+            if (k > 0) ImGui.SameLine(0, gap);
+            DrawTile(main[k], chosen, mainSize, 34 * scale);
         }
+        Gap(4);
+        var small = new Vector2(150 * scale, 52 * scale);
+        var x = 0f;
+        foreach (var i in Enumerable.Range(0, Clients.Length).Where(i => !Clients[i].Main))
+        {
+            if (x > 0 && x + gap + small.X <= avail) ImGui.SameLine(0, gap);
+            else x = 0;
+            x += (x > 0 ? gap : 0) + small.X;
+            DrawTile(i, chosen, small, 20 * scale);
+        }
+    }
+
+    /// <summary>One app tile: its icon, name and state (Connected, Recommended, Installed, Not found), and a "Paid" label if it needs a plan.</summary>
+    private void DrawTile(int i, int chosen, Vector2 size, float iconSize)
+    {
+        var app = Clients[i];
+        var scale = Ui.Scale;
+        using var id = ImRaii.PushId(app.Id);
+        var start = ImGui.GetCursorScreenPos();
+        var selected = i == chosen;
+        if (ImGui.InvisibleButton("##tile", size) && !selected)
+        {
+            plugin.Config.ConnectClient = app.Id;
+            plugin.Config.Save();
+        }
+        var hovered = ImGui.IsItemHovered();
+        var dl = ImGui.GetWindowDrawList();
+        var accent = selected ? Accent : hovered ? Accent with { W = 0.6f } : new Vector4(1, 1, 1, 0.12f);
+        dl.AddRectFilled(start, start + size, ImGui.GetColorU32(selected ? Accent with { W = 0.10f } : new Vector4(1, 1, 1, hovered ? 0.06f : 0.03f)), 6 * scale);
+        dl.AddRect(start, start + size, ImGui.GetColorU32(accent), 6 * scale, ImDrawFlags.None, selected ? 2 * scale : 1 * scale);
+
+        var textColor = ImGui.GetColorU32(selected ? Accent : ImGui.GetStyle().Colors[(int)ImGuiCol.Text]);
+        var pad = (size.Y - iconSize) / 2;
+        var left = Math.Min(pad, 12 * scale);
+        // The app's own icon when it's installed; a generic symbol otherwise.
+        if (AppIcons.Get(app.Id) is { } logo)
+        {
+            var at = start + new Vector2(left, pad);
+            dl.AddImage(logo.Handle, at, at + new Vector2(iconSize));
+        }
+        else
+            using (Ui.IconFont())
+            {
+                var icon = app.Icon.ToIconString();
+                var glyph = ImGui.CalcTextSize(icon);
+                dl.AddText(start + new Vector2(left + (iconSize - glyph.X) / 2, (size.Y - glyph.Y) / 2), textColor, icon);
+            }
+        var textX = start.X + left + iconSize + 10 * scale;
+        var line = ImGui.GetTextLineHeight();
+        var top = start.Y + (size.Y - 2 * line) / 2;
+        dl.AddText(new Vector2(textX, top), textColor, app.Name);
+        // Connected: XIV MCP is set up in the app. Recommended only until any app is connected.
+        var recommended = app.Id == "claude-desktop" && !connected.Any(c => c) && detected[i] != false;
+        var (note, noteColor) = connected[i] ? ("Connected", Green) : recommended ? ("Recommended", Accent)
+            : detected[i] == false ? ("Not found", Muted) : detected[i] == true ? ("Installed", Muted) : ("", Muted);
+        if (note.Length > 0) dl.AddText(new Vector2(textX, top + line), ImGui.GetColorU32(noteColor), note);
+
+        // "Paid": a small amber label, top right on the large tiles, bottom right on the small ones (clear of long names).
+        if (app.Paid)
+        {
+            ImGui.SetWindowFontScale(0.78f);
+            var label = ImGui.CalcTextSize("Paid");
+            var at = new Vector2(start.X + size.X - label.X - 10 * scale, app.Main ? start.Y + 6 * scale : start.Y + size.Y - label.Y - 7 * scale);
+            dl.AddRect(at - new Vector2(4, 1) * scale, at + label + new Vector2(4, 1) * scale, ImGui.GetColorU32(Amber with { W = 0.6f }), 3 * scale);
+            dl.AddText(ImGui.GetFont(), ImGui.GetFontSize(), at, ImGui.GetColorU32(Amber), "Paid");
+            ImGui.SetWindowFontScale(1f);
+        }
+
+        if (hovered)
+            Tooltip((connected[i] ? $"XIV MCP is set up in {app.Name}." : detected[i] == false ? $"{app.Name} doesn't seem to be installed on this PC." : $"Connect {app.Name}") +
+                    (app.Paid ? "\nNeeds a paid plan for regular use: the free plan's limits run out quickly with game control." : app.Id == "lmstudio" ? "\nFree: runs models on your own PC." : ""));
     }
 
     private void DrawClaudeDesktop(string endpoint, string? token, bool? installed)
@@ -267,6 +311,63 @@ internal sealed partial class ConfigWindow
         }
     }
 
+    /// <summary>
+    /// LM Studio. Its current desktop app, Bionic, adds MCP servers in its own settings, so XIV MCP gives the values to paste there.
+    /// The old LM Studio app reads mcp.json, which XIV MCP can write directly.
+    /// </summary>
+    private void DrawLmStudio(string endpoint, string? token, bool? installed)
+    {
+        if (ClientInstaller.IsBionic)
+        {
+            Paragraph("Adds XIV MCP to LM Studio (Bionic), for models running on your PC. Bionic adds MCP servers in its own settings, so paste these values there:");
+            CopyRow("Name", ClientSetup.ServerName);
+            CopyRow("URL", endpoint);
+            if (token is not null) CopyRow("Header", "Authorization", $"Bearer {token}", $"Bearer {token[..6]}…");
+            Steps(["In Bionic, open Settings → Integrations → MCP and add a custom server.", "Enter the name and URL above" + (token is null ? "." : ", and add the header with its value."),
+                   "Load a model that supports tool use and ask about your character."]);
+            Hint("Local models work fine. Costs, below, suggests two that handle XIV MCP's tools well.");
+            return;
+        }
+        Paragraph("Adds XIV MCP to LM Studio, for models running on your PC.");
+        if (installed == false) NotInstalled("LM Studio", "https://lmstudio.ai/");
+        if (PrimaryButton(FontAwesomeIcon.Plus, connected[Index("lmstudio")] ? "Update in LM Studio" : "Add to LM Studio"))
+            results["lmstudio"] = ClientInstaller.AddToLmStudio(endpoint, token);
+        Tooltip($"Writes the entry to {ClientInstaller.LmStudioConfigPath}. Everything else in the file is kept, and the old file is backed up.");
+        ResultLine("lmstudio");
+        Steps(["In LM Studio, check that ffxiv is listed under Integrations → MCP.", "Load a model that supports tool use and ask about your character."]);
+        Hint("Local models work fine. Costs, below, suggests two that handle XIV MCP's tools well.");
+    }
+
+    /// <summary>A label, a value (shown masked if <paramref name="shown"/> is given) and a copy button, for pasting into an app's form.</summary>
+    private void CopyRow(string label, string value, string? secondValue = null, string? shown = null)
+    {
+        using var id = ImRaii.PushId(label);
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextColored(Muted, label);
+        ImGui.SameLine(textLeft + 70 * Ui.Scale);
+        using (Ui.MonoFont()) ImGui.TextColored(Cyan, secondValue is null ? value : $"{value}: {shown ?? secondValue}");
+        ImGui.SameLine();
+        if (ImGui.SmallButton(secondValue is null ? "Copy" : "Copy name")) ImGui.SetClipboardText(value);
+        if (secondValue is not null)
+        {
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Copy value")) ImGui.SetClipboardText(secondValue);
+            Tooltip("The value includes your access token.");
+        }
+    }
+
+    /// <summary>An app XIV MCP sets up by writing its config file: what it does, the button, then the steps after clicking.</summary>
+    private void DrawConfigApp(string appId, bool? installed, string download, string what, string button, Func<ClientInstaller.Result> add, string file, string[] steps)
+    {
+        var app = Clients[Index(appId)];
+        Paragraph(what);
+        if (installed == false) NotInstalled(app.Name, download);
+        if (PrimaryButton(FontAwesomeIcon.Plus, connected[Index(appId)] ? button.Replace("Add to", "Update in") : button)) results[appId] = add();
+        Tooltip($"Writes the entry to {file}. Everything else in the file is kept, and the old file is backed up.");
+        ResultLine(appId);
+        Steps(steps);
+    }
+
     private void DrawLinkApp(ClientApp app, bool? installed, string link, string download, string what, string[] steps, string? note)
     {
         Paragraph(what);
@@ -321,8 +422,23 @@ internal sealed partial class ConfigWindow
             case "cursor":
                 RemovalSteps(["Open ~/.cursor/mcp.json in your user folder. Cursor's settings also list it under MCP.", "Delete the ffxiv entry and save the file."]);
                 break;
+            case "copilot":
+                if (SecondaryButton(FontAwesomeIcon.Trash, "Remove from GitHub Copilot")) results["copilot-remove"] = ClientInstaller.RemoveFromCopilot();
+                Tooltip($"Deletes the XIV MCP entry from {ClientInstaller.CopilotConfigPath}. Everything else in the file is kept, and the old file is backed up.");
+                ResultLine("copilot-remove");
+                break;
+            case "grok":
+                if (SecondaryButton(FontAwesomeIcon.Trash, "Remove from Grok Build")) results["grok-remove"] = ClientInstaller.RemoveFromGrok();
+                Tooltip($"Deletes the XIV MCP entry from {ClientInstaller.GrokConfigPath}. Everything else in the file is kept, and the old file is backed up.");
+                ResultLine("grok-remove");
+                break;
+            case "lmstudio" when ClientInstaller.IsBionic:
+                RemovalSteps(["In Bionic, open Settings → Integrations → MCP.", "Remove ffxiv."]);
+                break;
             case "lmstudio":
-                RemovalSteps(["In LM Studio, open the Program tab, then Install → Edit mcp.json.", "Delete the ffxiv entry and save the file."]);
+                if (SecondaryButton(FontAwesomeIcon.Trash, "Remove from LM Studio")) results["lmstudio-remove"] = ClientInstaller.RemoveFromLmStudio();
+                Tooltip($"Deletes the XIV MCP entry from {ClientInstaller.LmStudioConfigPath}. Everything else in the file is kept, and the old file is backed up.");
+                ResultLine("lmstudio-remove");
                 break;
             default:
                 RemovalSteps(["Delete the ffxiv entry from the app's MCP server settings."]);
@@ -344,12 +460,31 @@ internal sealed partial class ConfigWindow
         }
     }
 
-    /// <summary>What using an AI app with XIV MCP costs: tokens, and with them the provider's plan or usage billing.</summary>
-    private void DrawCosts()
+    /// <summary>
+    /// What using the chosen app with XIV MCP costs: for LM Studio, the hardware the model runs on (and Bionic's cloud models); for the
+    /// others, tokens, and with them the provider's plan or usage billing.
+    /// </summary>
+    private void DrawCosts(ClientApp app)
     {
         Status(FontAwesomeIcon.Coins, Amber, "Costs");
         Gap(4);
-        using (ImRaii.PushIndent(ImGui.GetFrameHeight(), false))
+        using var indent = ImRaii.PushIndent(ImGui.GetFrameHeight(), false);
+        if (app.Id == "lmstudio")
+        {
+            Hint("Models that run on your own PC work fine with XIV MCP and cost nothing per request. Pick one with tool support and a " +
+                 "large context window. Two that handle this well, both in Bionic's staff picks:");
+            Gap(2);
+            Bullet("GPT-OSS 20B", "OpenAI's open model, built for tool use. Runs on a graphics card with 16 GB of memory.");
+            Bullet("Qwen3.6 35B A3B", "Fast for its size and good with tools, but needs more memory.");
+            Gap(4);
+            Status(FontAwesomeIcon.ExclamationTriangle, Amber, "Running a model locally is a strain on your hardware. It takes a lot of graphics and " +
+                   "system memory, and while you play it shares the graphics card with the game: expect a lower frame rate and a hotter, louder PC.");
+            Gap(4);
+            Hint("Bionic can also use models in the cloud. Those are paid by use: see Settings → Billing and Usage in Bionic.");
+            Gap(4);
+            Hint("XIV MCP itself is free.");
+            return;
+        }
         {
             Hint("Every time your assistant reads the game or acts in it, the AI model handles a request, and that uses tokens. Controlling " +
                  "the game uses many: each tool call is a request, and a job such as a dungeon run can make hundreds of them.");
@@ -361,6 +496,16 @@ internal sealed partial class ConfigWindow
             Gap(4);
             Hint("XIV MCP itself is free. It cannot see how many tokens your assistant uses, so check the usage page of your plan.");
         }
+    }
+
+    /// <summary>A bulleted line: a bold-ish name, then a muted explanation; wrapped lines stay indented under the text.</summary>
+    private void Bullet(string name, string text)
+    {
+        ImGui.TextColored(Accent, "•");
+        ImGui.SameLine();
+        ImGui.TextUnformatted(name);
+        ImGui.SameLine();
+        using (Wrap()) ImGui.TextColored(Muted, text);
     }
 
     private void DrawOtherApp(string endpoint, string? token)

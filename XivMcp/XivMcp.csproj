@@ -16,5 +16,7 @@
     <!-- Dalamud shows images/icon.png next to the DLL as the plugin icon. Regenerate with images/draw-icon.ps1. -->
     <Content Include="images\icon.png" CopyToOutputDirectory="PreserveNewest" Link="images\icon.png" />
     <None Remove="images\draw-icon.ps1" />
+    <!-- Logos of AI apps that aren't installed, for the Connect tab (see branding/apps). -->
+    <Content Include="images\apps\*.png" CopyToOutputDirectory="PreserveNewest" Link="images\apps\%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

@@ -162,13 +162,145 @@ internal static class ClientInstaller
         }
     }
 
+    // ---------------------------------------------------------------- LM Studio
+
+    /// <summary>LM Studio's MCP config. Its desktop app is now called Bionic and keeps its data in the same folder.</summary>
+    public static string LmStudioConfigPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".lmstudio", "mcp.json");
+
+    /// <summary>LM Studio or its successor Bionic: a registered link scheme, or its data folder.</summary>
+    public static bool LmStudioInstalled => IsRegistered("lmstudio") || IsBionic || Directory.Exists(Path.GetDirectoryName(LmStudioConfigPath));
+
+    /// <summary>
+    /// The current LM Studio desktop app, Bionic. It adds MCP servers in its own settings (Integrations → MCP) and doesn't read the old
+    /// app's mcp.json.
+    /// </summary>
+    public static bool IsBionic => IsRegistered("bionic") || File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Bionic", "Bionic.exe"));
+
+    /// <summary>
+    /// Where Bionic may keep the servers added in its settings. Not documented: these are the places its own code names (ng-mcp.json);
+    /// a file there that mentions XIV MCP's address counts as set up.
+    /// </summary>
+    private static System.Collections.Generic.IEnumerable<string> BionicConfigCandidates()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        yield return Path.Combine(home, ".lmstudio", "ng-mcp.json");
+        yield return Path.Combine(home, ".lmstudio", ".internal", "ng-mcp.json");
+        yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bionic", "ng-mcp.json");
+    }
+
+    private static bool BionicHasServer(string endpoint) =>
+        BionicConfigCandidates().Select(Read).Any(text => text is not null && text.Contains(endpoint.Replace("http://", ""), StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Adds (or updates) XIV MCP in LM Studio's mcp.json, keeping a backup of the previous file.</summary>
+    public static Result AddToLmStudio(string endpoint, string? token) => EditJsonConfig(LmStudioConfigPath, "mcpServers",
+        existing => ClientSetup.MergeJsonServer(existing, "mcpServers", endpoint, token),
+        "Added to LM Studio. If it doesn't show up under Integrations → MCP, restart LM Studio.", "Already set up with this address and token.");
+
+    public static Result RemoveFromLmStudio() => EditJsonConfig(LmStudioConfigPath, "mcpServers",
+        existing => ClientSetup.RemoveJsonServer(existing, "mcpServers"), "Removed from LM Studio.", "Not set up: XIV MCP isn't in LM Studio's mcp.json.");
+
+    private static Result EditJsonConfig(string path, string key, Func<string, string> edit, string done, string unchanged)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var existing = File.Exists(path) ? File.ReadAllText(path) : "";
+            var edited = edit(existing);
+            if (SetupStatus.HasServer(existing, key) == SetupStatus.HasServer(edited, key) && Normalize(existing) == Normalize(edited)) return new Result(true, unchanged);
+            if (existing.Length > 0) File.Copy(path, path + ".xivmcp-backup", overwrite: true);
+            File.WriteAllText(path, edited);
+            return new Result(true, existing.Length > 0 ? $"{done} (Previous file saved as {Path.GetFileName(path)}.xivmcp-backup.)" : done);
+        }
+        catch (FormatException ex) { return new Result(false, $"{Path.GetFileName(path)} couldn't be read, so it was left alone: {ex.Message}"); }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning(ex, $"[MCP] Could not update {path}.");
+            return new Result(false, $"Couldn't update {Path.GetFileName(path)}: {ex.Message}");
+        }
+    }
+
+    private static string Normalize(string json)
+    {
+        try { return System.Text.Json.Nodes.JsonNode.Parse(json)?.ToJsonString() ?? ""; }
+        catch { return json; }
+    }
+
+    // ---------------------------------------------------------------- GitHub Copilot and Grok Build
+
+    /// <summary>GitHub Copilot's MCP config, read by the Copilot CLI and (by its docs) the GitHub Copilot app.</summary>
+    public static string CopilotConfigPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".copilot", "mcp-config.json");
+
+    public static bool CopilotInstalled => InstalledApp("GitHub Copilot") is not null || OnPath("copilot") || File.Exists(CopilotConfigPath);
+
+    public static Result AddToCopilot(string endpoint, string? token) => EditJsonConfig(CopilotConfigPath, "mcpServers",
+        existing => ClientSetup.MergeCopilotConfig(existing, endpoint, token),
+        "Added to GitHub Copilot. Restart the Copilot app (or start a new Copilot CLI session) to load it.", "Already set up with this address and token.");
+
+    public static Result RemoveFromCopilot() => EditJsonConfig(CopilotConfigPath, "mcpServers",
+        existing => ClientSetup.RemoveJsonServer(existing, "mcpServers"), "Removed from GitHub Copilot.", "Not set up: XIV MCP isn't in Copilot's mcp-config.json.");
+
+    /// <summary>Grok Build's user config. (grok.com only reaches servers on the internet; Grok Build runs on this PC.)</summary>
+    public static string GrokConfigPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".grok", "config.toml");
+
+    public static bool GrokInstalled => OnPath("grok") || Directory.Exists(Path.GetDirectoryName(GrokConfigPath));
+
+    public static Result AddToGrok(string endpoint, string? token) => EditTomlConfig(GrokConfigPath,
+        existing => ClientSetup.MergeGrokConfig(existing, endpoint, token), "Added to Grok Build. Start a new grok session to use it.");
+
+    public static Result RemoveFromGrok() => EditTomlConfig(GrokConfigPath, ClientSetup.RemoveCodexEntry, "Removed from Grok Build.");
+
+    private static Result EditTomlConfig(string path, Func<string, string> edit, string done)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var existing = File.Exists(path) ? File.ReadAllText(path) : "";
+            var edited = edit(existing);
+            if (edited == existing) return new Result(true, ClientSetup.HasCodexEntry(existing) ? "Already set up with this address and token." : "Not set up: nothing to remove.");
+            if (existing.Length > 0) File.Copy(path, path + ".xivmcp-backup", overwrite: true);
+            File.WriteAllText(path, edited);
+            return new Result(true, existing.Length > 0 ? $"{done} (Previous file saved as {Path.GetFileName(path)}.xivmcp-backup.)" : done);
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning(ex, $"[MCP] Could not update {path}.");
+            return new Result(false, $"Couldn't update {Path.GetFileName(path)}: {ex.Message}");
+        }
+    }
+
+    /// <summary>A program on PATH (exe or cmd), e.g. a CLI installed with npm or winget.</summary>
+    private static bool OnPath(string name) =>
+        (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Any(d => { try { return File.Exists(Path.Combine(d.Trim('"'), name + ".exe")) || File.Exists(Path.Combine(d.Trim('"'), name + ".cmd")); } catch { return false; } });
+
+    /// <summary>
+    /// An app in Windows' list of installed programs whose name contains <paramref name="name"/>: its icon file (the program, usually),
+    /// or null if it isn't installed.
+    /// </summary>
+    public static string? InstalledApp(string name)
+    {
+        foreach (var hive in new[] { Registry.CurrentUser, Registry.LocalMachine })
+        {
+            using var uninstall = hive.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall");
+            if (uninstall is null) continue;
+            foreach (var sub in uninstall.GetSubKeyNames())
+            {
+                using var key = uninstall.OpenSubKey(sub);
+                if (key?.GetValue("DisplayName") is not string display || !display.Contains(name, StringComparison.OrdinalIgnoreCase)) continue;
+                var icon = (key.GetValue("DisplayIcon") as string)?.Split(',')[0].Trim('"');
+                return icon is not null && File.Exists(icon) ? icon : "";
+            }
+        }
+        return null;
+    }
+
     // ---------------------------------------------------------------- set up?
 
     /// <summary>
     /// Whether XIV MCP is set up in the app (its own configuration lists it), so the app connects whenever it runs. Read from each app's
     /// config files; anything unreadable counts as not set up.
     /// </summary>
-    public static bool IsConnected(string appId)
+    public static bool IsConnected(string appId, string endpoint)
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
@@ -179,9 +311,12 @@ internal static class ClientInstaller
                 "claude-desktop" => ClaudeDesktopRoots().Any(ClaudeExtensionEnabled),
                 "claude" => Read(Path.Combine(home, ".claude.json")) is { } j && SetupStatus.ClaudeCodeHasServer(j),
                 "codex" => CodexHasEntry(),
+                "copilot" => Read(CopilotConfigPath) is { } cp && SetupStatus.HasServer(cp, "mcpServers"),
+                "grok" => Read(GrokConfigPath) is { } gk && ClientSetup.HasCodexEntry(gk),
                 "vscode" => Read(Path.Combine(appData, "Code", "User", "mcp.json")) is { } v && SetupStatus.HasServer(v, "servers"),
                 "cursor" => Read(Path.Combine(home, ".cursor", "mcp.json")) is { } c && SetupStatus.HasServer(c, "mcpServers"),
-                "lmstudio" => Read(Path.Combine(home, ".lmstudio", "mcp.json")) is { } l && SetupStatus.HasServer(l, "mcpServers"),
+                // Bionic keeps its servers in its own settings; only the old LM Studio app reads mcp.json.
+                "lmstudio" => IsBionic ? BionicHasServer(endpoint) : Read(LmStudioConfigPath) is { } l && SetupStatus.HasServer(l, "mcpServers"),
                 _ => false,
             };
         }

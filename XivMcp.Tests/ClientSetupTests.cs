@@ -114,6 +114,68 @@ public class ClientSetupTests
     public void Claude_Code_removes_only_the_user_entry_before_adding_again() =>
         Assert.Equal(["mcp", "remove", "--scope", "user", "ffxiv"], ClientSetup.ClaudeCodeRemoveArgs());
 
+    // ---- JSON configs (LM Studio's ~/.lmstudio/mcp.json)
+
+    [Fact]
+    public void A_json_entry_is_added_to_an_empty_or_missing_config()
+    {
+        foreach (var existing in new[] { "", "{}" })
+        {
+            var server = Json(ClientSetup.MergeJsonServer(existing, "mcpServers", Endpoint, Token))["mcpServers"]!["ffxiv"]!;
+            Assert.Equal(Endpoint, server["url"]!.GetValue<string>());
+            Assert.Equal($"Bearer {Token}", server["headers"]!["Authorization"]!.GetValue<string>());
+        }
+    }
+
+    [Fact]
+    public void A_json_entry_keeps_the_other_servers_and_settings_and_replaces_an_older_one()
+    {
+        const string existing = """{ "mcpServers": { "other": { "command": "npx" }, "ffxiv": { "url": "http://localhost:1/mcp" } }, "keep": true }""";
+        var json = Json(ClientSetup.MergeJsonServer(existing, "mcpServers", Endpoint, null));
+        Assert.Equal("npx", json["mcpServers"]!["other"]!["command"]!.GetValue<string>());
+        Assert.Equal(Endpoint, json["mcpServers"]!["ffxiv"]!["url"]!.GetValue<string>());
+        Assert.False(json["mcpServers"]!["ffxiv"]!.AsObject().ContainsKey("headers"));
+        Assert.True(json["keep"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public void Removing_a_json_entry_keeps_everything_else()
+    {
+        const string existing = """{ "mcpServers": { "other": {}, "ffxiv": { "url": "x" } } }""";
+        var json = Json(ClientSetup.RemoveJsonServer(existing, "mcpServers"));
+        Assert.True(json["mcpServers"]!.AsObject().ContainsKey("other"));
+        Assert.False(json["mcpServers"]!.AsObject().ContainsKey("ffxiv"));
+        Assert.Equal("{}", ClientSetup.RemoveJsonServer("{}", "mcpServers"));
+    }
+
+    [Fact]
+    public void A_json_config_that_cannot_be_read_is_not_overwritten() =>
+        Assert.Throws<FormatException>(() => ClientSetup.MergeJsonServer("{ not json", "mcpServers", Endpoint, Token));
+
+    // ---- GitHub Copilot: ~/.copilot/mcp-config.json
+
+    [Fact]
+    public void Copilot_entries_are_http_servers_with_all_tools()
+    {
+        var server = Json(ClientSetup.MergeCopilotConfig("""{ "mcpServers": { "other": {} } }""", Endpoint, Token))["mcpServers"]!;
+        Assert.NotNull(server["other"]);
+        Assert.Equal("http", server["ffxiv"]!["type"]!.GetValue<string>());
+        Assert.Equal(Endpoint, server["ffxiv"]!["url"]!.GetValue<string>());
+        Assert.Equal($"Bearer {Token}", server["ffxiv"]!["headers"]!["Authorization"]!.GetValue<string>());
+        Assert.Equal("*", Assert.Single(server["ffxiv"]!["tools"]!.AsArray())!.GetValue<string>());
+    }
+
+    // ---- Grok Build: ~/.grok/config.toml (Codex's format, with "headers")
+
+    [Fact]
+    public void Grok_entries_use_the_headers_key()
+    {
+        var toml = ClientSetup.MergeGrokConfig("", Endpoint, Token);
+        Assert.Equal($"[mcp_servers.ffxiv]\nurl = \"{Endpoint}\"\nheaders = {{ \"Authorization\" = \"Bearer {Token}\" }}\n", toml);
+        Assert.True(ClientSetup.HasCodexEntry(toml));
+        Assert.Equal("", ClientSetup.RemoveCodexEntry(toml));
+    }
+
     // ---- Codex: ~/.codex/config.toml
 
     [Fact]
