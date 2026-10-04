@@ -43,6 +43,7 @@ public static class IntegrationCatalog
             ["get_duty_status"] = [],
             ["stop_duty"] = [Combat],
             ["run_duty"] = [Combat, MoveCharacter, GameUi],
+            ["farm_duty_item"] = [Combat, MoveCharacter, GameUi, Network],
         }),
         new("Artisan", "Artisan", "Crafts and crafting lists, and Raphael solutions prepared ahead of time.", new Dictionary<string, string[]>
         {

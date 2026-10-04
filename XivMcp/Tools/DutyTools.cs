@@ -19,7 +19,7 @@ internal static class DutyTools
 {
     private static readonly string[] Modes = ["Support", "Trust", "Squadron", "Regular", "Trial", "Raid", "Variant"];
 
-    public static IEnumerable<McpTool> Create(Configuration config)
+    public static IEnumerable<McpTool> Create(Configuration config, Func<JobManager> jobs, Func<string?> client)
     {
         void RequireEnabled()
         {
@@ -117,6 +117,66 @@ internal static class DutyTools
 
         yield return new McpTool
         {
+            Name = "farm_duty_item",
+            Description = "Farms an item in a dungeon with AutoDuty until the player has 'quantity' of it: finds the duties that drop it (FFXIV " +
+                          "Teamcraft's data) and picks one AutoDuty has a path for, preferring one it can run with NPCs (Support, Trust) and then " +
+                          "the lowest level, unless 'duty' is given. Starts a background job with run_duty, which runs with a copy of the player's " +
+                          "default AutoDuty profile whose stop condition is the item and quantity, and switches back to the previous profile after. " +
+                          "Follow it with get_job. Looking up the drops goes online (Online lookups in /xivmcp).",
+            InputSchema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "item": { "type": "string", "description": "Item name or id." },
+                    "quantity": { "type": "integer", "minimum": 1, "description": "How many to have (default 1)." },
+                    "duty": { "type": "string", "description": "The duty to farm in (name or territory id); found automatically when left out." },
+                    "mode": { "type": "string", "enum": ["Support", "Trust", "Squadron", "Regular", "Trial", "Raid", "Variant"], "description": "Duty mode (default: the chosen duty's best mode)." },
+                    "gearset": { "type": "string", "description": "Switch to this gearset first (number, name or job), e.g. when on a crafter." },
+                    "max_runs": { "type": "integer", "minimum": 1, "maximum": 999, "description": "Give up after this many runs (default 99)." }
+                  },
+                  "required": ["item"]
+                }
+                """,
+            ReadOnly = false,
+            Available = Available,
+            Handler = async (args, ct) =>
+            {
+                RequireEnabled();
+                var query = args.String("item") ?? throw new ToolException("'item' is required.");
+                var quantity = args.Int("quantity", 1, 1);
+                var (itemId, name, have) = await Game.RunLoggedIn(() =>
+                {
+                    var item = Items.Resolve(query);
+                    return (item.RowId, item.Name.ExtractText(), Have(item.RowId));
+                }).ConfigureAwait(false);
+                if (have >= quantity) throw new ToolException($"You already have {have} {name}.");
+
+                string duty;
+                string? mode = args.String("mode");
+                if (args.String("duty") is { } given) duty = given;
+                else
+                {
+                    if (config.CorePolicy.ModeFor("online", Permissions.Access.Read) == Permissions.PolicyMode.Deny)
+                        throw new ToolException("Finding where it drops reads FFXIV Teamcraft's data online: allow 'Online lookups' in /xivmcp, or give 'duty'.");
+                    var found = await FindFarmDuty(itemId, ct).ConfigureAwait(false)
+                                ?? throw new ToolException($"No duty AutoDuty can run drops {name} (see get_item_sources for other ways).");
+                    duty = found.TerritoryType.ToString();
+                    mode ??= found.Mode;
+                }
+
+                var until = new JsonArray(new JsonObject { ["item"] = itemId.ToString(), ["quantity"] = quantity });
+                var stepArgs = new JsonObject { ["duty"] = duty, ["until"] = until, ["loops"] = args.Int("max_runs", 99, 1, 999) };
+                if (mode is not null) stepArgs["mode"] = mode;
+                if (args.String("gearset") is { } gearset) stepArgs["gearset"] = gearset;
+                var dutyName = await Game.Run(() => ResolveDuty(AutoDutyBridge.Duties(), duty).Name).ConfigureAwait(false);
+                var job = jobs().Start($"Farm {name} in {dutyName}",
+                    [new JobManager.Step { Id = "farm", Tool = "run_duty", Args = stepArgs, Note = $"Runs {dutyName} until you have {quantity} {name}" }], client());
+                return new { started = JobManager.Describe(job), item = name, have, quantity, duty = dutyName, mode, poll = $"get_job id={job.Id}" };
+            },
+        };
+
+        yield return new McpTool
+        {
             Name = "stop_duty",
             Description = "Stops AutoDuty, but never mid-fight: it keeps fighting until you are out of combat (it may leave you inside the duty; leave_duty leaves it). A running run_duty job step is stopped with pause_job / cancel_job instead. " +
                           "Only available while AutoDuty is loaded.",
@@ -135,8 +195,8 @@ internal static class DutyTools
             Name = "run_duty",
             Description = "Runs a duty with AutoDuty, in a loop: 'loops' times, or — with 'until' — until the inventory holds the wanted items or " +
                           "currency (e.g. a dungeon drop, or tomestones), at most 'loops' runs. AutoDuty does the running and the looping; its " +
-                          "loop settings (loop count, duty mode, unsynced, stop conditions) are set for this run only and restored afterwards, and " +
-                          "its own termination action is set to do nothing. 'until' entries: { item, quantity } = how many you want to have, or " +
+                          "loop settings (loop count, duty mode, unsynced, stop conditions) are set for this run only, and " +
+                          "its own termination action is set to do nothing: XIV MCP runs it with a copy of the player's default AutoDuty profile (the character's, else the global one) that carries these settings, and switches back to the previous profile afterwards. 'until' entries: { item, quantity } = how many you want to have, or " +
                           "{ item, gain } = how many more than now. Returns the runs done and the counts; fails (job: pending) if AutoDuty stops " +
                           "before the target or the loop count is reached. A run takes ~20 minutes: use it as a job step (start_job). Pausing or " +
                           "cancelling the job stops AutoDuty. Only available while AutoDuty is loaded; needs 'Game & navigation' in /xivmcp.",
@@ -196,7 +256,7 @@ internal static class DutyTools
                         throw new ToolException("AutoDuty is already running; stop it first (stop_duty) or wait for it.");
                     var duty = ResolveDuty(AutoDutyBridge.Duties(), dutyArg);
                     if (!duty.HasPath) throw new ToolException($"AutoDuty has no path for {duty.Name}.");
-                    var current = AutoDutyBridge.GetConfig("DutyModeEnum");
+                    var current = AutoDutyBridge.GetConfig("Meta.DutyModeEnum");
                     string mode;
                     if (modeArg is not null)
                     {
@@ -239,30 +299,8 @@ internal static class DutyTools
                 if (targets.Count > 0 && await Game.Run(() => Met(Counts())).ConfigureAwait(false))
                     return new { done = true, runs = 0, note = "The targets are already reached.", items = Describe(targets, plan.Start, await Game.Run(Counts).ConfigureAwait(false)) };
 
-                // AutoDuty's loop settings for this run; all reverted by PopOverrides.
-                List<DictionaryEntry>? previousStopItems = null;
-                await Game.Run(() =>
-                {
-                    var required = new List<(string, string)>
-                    {
-                        ("AutoDutyModeEnum", "Looping"), ("LoopTimes", loops.ToString()), ("DutyModeEnum", plan.Mode),
-                        ("EnableTerminationActions", "true"), ("StopItemQty", targets.Count > 0 ? "true" : "false"),
-                        ("StopItemAll", untilAll ? "true" : "false"), ("TerminationMethodEnum", "Do_Nothing"),
-                    };
-                    if (unsynced is { } u) required.Add(("Unsynced", u ? "true" : "false"));
-                    foreach (var (k, v) in required)
-                        if (!AutoDutyBridge.Override(k, v))
-                        {
-                            AutoDutyBridge.PopOverrides();
-                            throw new ToolException($"AutoDuty rejected the setting {k}={v}; this AutoDuty version may not be supported.");
-                        }
-                    // Only our conditions end the loop (AutoDuty's own inventory-full stop stays as the player set it).
-                    foreach (var k in new[] { "StopLevel", "StopNoRestedXP", "StopWhenDutyGathered", "TerminationiLvl", "TerminationBLUSpellsEnabled" })
-                        AutoDutyBridge.Override(k, "false");
-                    try { if (targets.Count > 0) previousStopItems = AutoDutyBridge.SetStopItems(targets); }
-                    catch { AutoDutyBridge.PopOverrides(); throw; }
-                    return true;
-                }).ConfigureAwait(false);
+                // A copy of the player's default AutoDuty profile with this run's settings and stop condition; switched back after.
+                var farm = await Game.Run(() => AutoDutyBridge.UseFarmProfile(plan.Mode, unsynced, targets, untilAll)).ConfigureAwait(false);
 
                 var started = DateTime.UtcNow;
                 var runsStarted = 0;
@@ -318,13 +356,7 @@ internal static class DutyTools
                 }
                 finally
                 {
-                    await Game.Run(() =>
-                    {
-                        try { if (previousStopItems is not null) AutoDutyBridge.RestoreStopItems(previousStopItems); }
-                        catch (Exception ex) { Svc.Log.Warning($"[MCP] Could not restore AutoDuty's item stop list: {ex.Message}"); }
-                        AutoDutyBridge.PopOverrides();
-                        return true;
-                    }).ConfigureAwait(false);
+                    await Game.Run(() => { AutoDutyBridge.EndFarmProfile(farm); return true; }).ConfigureAwait(false);
                 }
 
                 var have = await Game.Run(Counts).ConfigureAwait(false);
@@ -336,7 +368,7 @@ internal static class DutyTools
                         throw new ToolException($"AutoDuty stopped after {runsDone} of at most {loops} runs of {plan.Duty.Name} before the target was reached " +
                                                 $"({string.Join(", ", targets.Select(t => $"{Items.Name(t.Key)} {have[t.Key]:N0}/{t.Value:N0}"))})" +
                                                 (inDuty ? "; you are still inside the duty." : "."));
-                    return new { done = true, duty = plan.Duty.Name, mode = plan.Mode, gearset = switchedTo?.Name, runs = runsDone, minutes, items = Describe(targets, plan.Start, have), note = stopReason == "" ? null : stopReason };
+                    return new { done = true, duty = plan.Duty.Name, mode = plan.Mode, gearset = switchedTo?.Name, runs = runsDone, minutes, items = Describe(targets, plan.Start, have), profile = farm.Source, note = stopReason == "" ? null : stopReason };
                 }
                 if (runsDone < loops)
                     throw new ToolException($"AutoDuty stopped after {runsDone} of {loops} runs of {plan.Duty.Name}" + (inDuty ? "; you are still inside the duty." : "."));
@@ -372,7 +404,7 @@ internal static class DutyTools
                         // We stopped it and a fight started: let AutoDuty fight it (one loop, from where the path is).
                         await Game.Run(() =>
                         {
-                            if (!pushed) { AutoDutyBridge.Override("AutoDutyModeEnum", "Looping"); AutoDutyBridge.Override("LoopTimes", "1"); pushed = true; }
+                            if (!pushed) { AutoDutyBridge.Override("Meta.AutoDutyModeEnum", "Looping"); AutoDutyBridge.Override("Meta.LoopTimes", "1"); pushed = true; }
                             AutoDutyBridge.Resume();
                             return true;
                         }).ConfigureAwait(false);
@@ -417,6 +449,29 @@ internal static class DutyTools
             Svc.Log.Warning($"[MCP] Stopping AutoDuty / leaving the duty: {ex.Message}");
             return false;
         }
+    }
+
+    /// <summary>
+    /// The duty to farm an item in: the duties FFXIV Teamcraft lists as dropping it (InstanceContent ids → ContentFinderCondition),
+    /// matched to AutoDuty's duties, best by <see cref="XivMcp.Duties.DutyChoice"/>. Null if AutoDuty can run none (or isn't loaded).
+    /// </summary>
+    internal static async Task<(uint TerritoryType, string Name, string Mode)?> FindFarmDuty(uint itemId, CancellationToken ct)
+    {
+        if (!AutoDutyBridge.Loaded) return null;
+        var sources = await Teamcraft.Sources(itemId, ct).ConfigureAwait(false);
+        var instances = (sources ?? []).OfType<JsonObject>().Where(s => s["type"]?.GetValue<int>() == 6)
+            .SelectMany(s => s["data"] as JsonArray ?? [])
+            .Select(d => d is JsonValue v && v.TryGetValue<uint>(out var id) ? id : d?["id"]?.GetValue<uint>() ?? 0)
+            .Where(id => id != 0).ToHashSet();
+        if (instances.Count == 0) return null;
+        return await Game.Run(() =>
+        {
+            var cfcs = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.ContentFinderCondition>()
+                          .Where(c => c.ContentLinkType == 1 && instances.Contains(c.Content.RowId)).Select(c => c.RowId).ToHashSet();
+            var options = AutoDutyBridge.Duties().Where(d => cfcs.Contains(d.ContentFinderCondition))
+                                        .Select(d => new XivMcp.Duties.DutyOption(d.Name, d.TerritoryType, d.Level, d.HasPath, d.Modes)).ToList();
+            return XivMcp.Duties.DutyChoice.Best(options) is { } best ? (best.Duty.TerritoryType, best.Duty.Name, best.Mode) : ((uint, string, string)?)null;
+        }).ConfigureAwait(false);
     }
 
     private static AutoDutyBridge.Duty ResolveDuty(List<AutoDutyBridge.Duty> duties, string query)

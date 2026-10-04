@@ -154,7 +154,7 @@ internal static class FashionTools
             Name = "complete_fashion_report",
             Description = "Does this week's Fashion Report with a ready-made set from fashionreportxiv.com ('easy80' by default, or 'easy100'): " +
                           "plans how to get each piece the player doesn't carry (from a retainer at a summoning bell, the glamour dresser or " +
-                          "armoire in an inn room, a vendor, or the market board up to 'max_market_price'), the dyes, and starts one background job that gets the pieces, dyes them, puts " +
+                          "armoire in an inn room, a vendor, the market board up to 'max_market_price', or a dungeon with AutoDuty), the dyes, and starts one background job that gets the pieces, dyes them, puts " +
                           "them on and presents the outfit to the Masked Rose. Pieces with no known way to get them stop it before it starts " +
                           "(see get_item_sources). Follow it with get_job. Goes online for the report (Online lookups in /xivmcp); each step " +
                           "follows its own module.",
@@ -177,7 +177,12 @@ internal static class FashionTools
                 var set = setName == "easy100" ? report.Easy100 : report.Easy80;
                 if (set.Pieces.Count == 0) throw new ToolException($"fashionreportxiv.com has no {setName} set this week yet.");
                 var pieces = await Game.RunLoggedIn(() => set.Pieces.Select(p => Inspect(p, retainers)).ToList()).ConfigureAwait(false);
-                return Plan(report, setName, set, pieces, jobs(), client(), args.Int("max_market_price", 50_000, 1, int.MaxValue));
+                // Pieces with no other way: a dungeon that drops them, if AutoDuty can run one.
+                var duties = new Dictionary<uint, (uint TerritoryType, string Name, string Mode)>();
+                foreach (var p in pieces.Where(p => p.Source == ItemSource.None))
+                    if (await DutyTools.FindFarmDuty(p.ItemId, ct).ConfigureAwait(false) is { } duty) duties[p.ItemId] = duty;
+                pieces = pieces.Select(p => duties.ContainsKey(p.ItemId) ? p with { Source = ItemSource.Duty } : p).ToList();
+                return Plan(report, setName, set, pieces, jobs(), client(), args.Int("max_market_price", 50_000, 1, int.MaxValue), duties);
             },
         };
     }
@@ -228,12 +233,13 @@ internal static class FashionTools
     }
 
     /// <summary>The job: get the pieces (grouped by place), dye them, and present at the end.</summary>
-    private static object Plan(WeeklyReport report, string setName, FashionSet set, List<PieceState> pieces, JobManager jobs, string? client, int maxMarketPrice)
+    private static object Plan(WeeklyReport report, string setName, FashionSet set, List<PieceState> pieces, JobManager jobs, string? client, int maxMarketPrice,
+                               Dictionary<uint, (uint TerritoryType, string Name, string Mode)> duties)
     {
         var missing = pieces.Where(p => p.Source == ItemSource.None).ToList();
         if (missing.Count > 0)
             throw new ToolException($"No known way to get {string.Join(", ", missing.Select(p => p.Name))}: not carried, not with a retainer, " +
-                                    "not in the glamour dresser or armoire, no vendor sells it and it can't be traded. Check get_item_sources for drops or crafting.");
+                                    "not in the glamour dresser or armoire, no vendor sells it, it can't be traded, and no dungeon AutoDuty can run drops it. Check get_item_sources for drops or crafting.");
 
         var steps = new List<JobManager.Step>();
         void Add(string tool, JsonObject args, string note) => steps.Add(new JobManager.Step { Id = $"s{steps.Count + 1}", Tool = tool, Args = args, Note = note });
@@ -255,6 +261,15 @@ internal static class FashionTools
         }
         foreach (var p in pieces.Where(p => p.Source == ItemSource.Vendor))
             Add("buy_item", new JsonObject { ["item"] = p.ItemId, ["quantity"] = 1 }, $"Buys {p.Name}");
+        foreach (var p in pieces.Where(p => p.Source == ItemSource.Duty))
+        {
+            var duty = duties[p.ItemId];
+            Add("run_duty", new JsonObject
+            {
+                ["duty"] = duty.TerritoryType.ToString(), ["mode"] = duty.Mode, ["loops"] = 99,
+                ["until"] = new JsonArray(new JsonObject { ["item"] = p.ItemId.ToString(), ["quantity"] = 1 }),
+            }, $"Runs {duty.Name} ({duty.Mode}) until {p.Name} drops");
+        }
         foreach (var p in pieces.Where(p => p.Source == ItemSource.Market))
             Add("buy_from_market_board", new JsonObject { ["item"] = p.ItemId, ["quantity"] = 1, ["max_unit_price"] = maxMarketPrice },
                 $"Buys {p.Name} on the market board (at most {maxMarketPrice:N0} gil)");

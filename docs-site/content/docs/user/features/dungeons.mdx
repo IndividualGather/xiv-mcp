@@ -16,6 +16,7 @@ To let your assistant farm a dungeon:
 |---|---|
 | `list_duties` | Duties AutoDuty has a path for, with level and item level, and the modes it can run them in: with NPC allies (*Duty Support*, *Trust*, *Squadron*), with a party (*Regular*) and more |
 | `run_duty` | Runs a duty `loops` times, or `until` your inventory holds the items or currency you want |
+| `farm_duty_item` | Finds a dungeon that drops an item and starts a job that runs it until you have as many as you want |
 | `get_duty_status` / `stop_duty` | What AutoDuty is doing (stage, duty, loop); stops it after the current fight |
 | `leave_duty` | Leaves the current duty like the Duty Finder's Leave entry. If AutoDuty is running, it is stopped first, after the current fight. Works without AutoDuty too (module **Game & navigation**). |
 
@@ -29,6 +30,17 @@ One `run_duty` step loops the dungeon until the target is reached:
 
 Use `{ "item", "quantity" }` for "until I have this many" and `{ "item", "gain" }` for "until I have this many more". `gearset` switches to a combat job first; on a crafter or gatherer it is required.
 
+## Farming an item without knowing where it drops
+
+`farm_duty_item` looks up which duties drop the item (in FFXIV Teamcraft's data, so it goes online: *Online lookups*), and picks one AutoDuty has a path for:
+
+- one it can run with NPC allies (Duty Support, then Trust, then Squadron) before one that needs a party,
+- then the lowest level.
+
+It starts a job with one `run_duty` step until you have the quantity you asked for. Give `duty` to choose the dungeon yourself.
+
+> "Farm the Cotton Dress Shoes in a dungeon."
+
 <Callout type="warn">Your character fights for real, and can be defeated.</Callout>
 
 ## Stopping safely
@@ -37,4 +49,11 @@ A run takes about 20 minutes, so your assistant runs `run_duty` as a [job step](
 
 ## What XIV MCP changes in AutoDuty
 
-For a run, AutoDuty's loop count, duty mode, unsynced setting and stop conditions are set temporarily (never saved), and its action after the run is set to do nothing. Everything is restored afterwards. Its "stop at item quantity" list is swapped in memory while the run lasts and put back after. This may need an update when AutoDuty changes.
+AutoDuty keeps its settings in profiles. For a run, XIV MCP:
+
+1. copies your default profile (your character's default if you set one, otherwise AutoDuty's global default), so the run uses your settings for repairs, food and the like;
+2. sets the copy's duty mode and unsynced setting, its stop condition (the items and quantities you asked for, under *Stop at item quantity*), turns off the other stop conditions, and sets the action after the run to do nothing;
+3. switches AutoDuty to the copy, called **XivMcp_Farm**, for the run;
+4. switches back to the profile you had before and removes the copy, also when the job is paused or cancelled.
+
+The copy only exists in memory; AutoDuty's settings file is not changed. If the game crashes mid-run, a left-over XivMcp_Farm profile is removed before the next run. This may need an update when AutoDuty changes.
