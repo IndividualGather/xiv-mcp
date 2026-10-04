@@ -32,7 +32,7 @@ internal static class VoyageTools
         {
             Name = "get_submersibles",
             Description = "Free company submersibles (and airships) of the logged-in character: name, rank, EXP to next rank, parts and build code " +
-                          "(hull-stern-bow-bridge, e.g. SSUC), surveillance/retrieval/speed/range/favor (base + bonus), current voyage route with " +
+                          "(hull-stern-bow-bridge, e.g. SSUC), part condition in percent, surveillance/retrieval/speed/range/favor (base + bonus), current voyage route with " +
                           "sector names, return time / time remaining / ready state, loot of the last voyage, and unlocked/explored sectors per sea. " +
                           "The game only provides this data inside the FC workshop; the plugin snapshots it each time you are there, so the result " +
                           "may be from an earlier visit — the 'cache' block gives its age, a stale flag and how to refresh it " +
@@ -110,6 +110,9 @@ internal static class VoyageTools
             ["parts"] = parts.ToDictionary(p => p.Slot, p => (object?)(p.Part is { } part
                 ? new { partId = part.Row.RowId, itemId = part.ItemId, name = part.Name, partRank = part.Row.Rank }
                 : new { partId = (uint)p.RawId, itemId = (uint?)null, name = (string?)null, partRank = (byte?)null })),
+            ["condition"] = v.Condition.Length == 4
+                ? new { hull = v.Condition[0], stern = v.Condition[1], bow = v.Condition[2], bridge = v.Condition[3] }
+                : null,
             ["stats"] = Stats(v),
             ["voyage"] = Voyage(v, now, route.Count == 0 ? null : new
             {

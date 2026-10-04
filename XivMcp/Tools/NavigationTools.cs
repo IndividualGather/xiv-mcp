@@ -27,7 +27,7 @@ internal static partial class NavigationTools
     private static string phase = "idle";
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
-    private static readonly string[] Destinations = ["summoning_bell", "company_chest", "workshop", "inn", "home", "fc_house", "apartment", "object", "npc"];
+    private static readonly string[] Destinations = ["summoning_bell", "company_chest", "workshop", "inn", "home", "fc_house", "apartment", "object", "npc", "fishing_spot"];
 
     public static IEnumerable<McpTool> Create(Configuration config)
     {
@@ -39,14 +39,14 @@ internal static partial class NavigationTools
                           "aetheryte to teleport to, or asks them to enter the inn room or house. Tell the player when that happens. Destinations: " +
                           "summoning_bell (nearby one, otherwise the preferred bell location from /xivmcp, falling back to the inn), company_chest (FC " +
                           "house), workshop (FC workshop, walks to the voyage control panel), inn, home, fc_house, apartment, object (by name in the " +
-                          "current zone), or npc (an NPC anywhere in the world by name, from the game data: travels to its zone and walks up to it). Waits until arrived (or the timeout) and returns the steps taken; then use interact_with_object. " +
+                          "current zone), npc (an NPC anywhere in the world by name, from the game data: travels to its zone and walks up to it), or fishing_spot (a fishing spot by name or id, as find_fish names it: travels there and walks to the water until Cast can be used, as a Fisher). Waits until arrived (or the timeout) and returns the steps taken; then use interact_with_object. " +
                           "stop_navigation aborts. Teleports cost gil as usual. Requires 'Game & navigation' in /xivmcp.",
             InputSchema = $$"""
                 {
                   "type": "object",
                   "properties": {
                     "destination": { "type": "string", "enum": [{{string.Join(", ", Destinations.Select(d => $"\"{d}\""))}}] },
-                    "name": { "type": "string", "description": "For destination=object: the object's name (e.g. \"Material Supplier\"). For destination=npc: the NPC's name (e.g. \"Masked Rose\")." },
+                    "name": { "type": "string", "description": "For destination=object: the object's name (e.g. \"Material Supplier\"). For destination=npc: the NPC's name (e.g. \"Masked Rose\"). For destination=fishing_spot: the spot's name or id." },
                     "timeout_seconds": { "type": "integer", "description": "Give up after this long (default 600, max 1800). The player may need a while when they walk or teleport themselves." }
                   },
                   "required": ["destination"]
@@ -60,7 +60,7 @@ internal static partial class NavigationTools
                 var destination = args.String("destination")?.ToLowerInvariant() ?? throw new ToolException("'destination' is required.");
                 if (!Destinations.Contains(destination)) throw new ToolException($"Unknown destination '{destination}'.");
                 var name = args.String("name");
-                if (destination is "object" or "npc" && name is null) throw new ToolException($"destination={destination} needs 'name'.");
+                if (destination is "object" or "npc" or "fishing_spot" && name is null) throw new ToolException($"destination={destination} needs 'name'.");
 
                 if (!await Gate.WaitAsync(0, ct).ConfigureAwait(false)) throw new ToolException("A navigation is already running; use stop_navigation first.");
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -135,6 +135,16 @@ internal static partial class NavigationTools
     {
         switch (destination)
         {
+            case "fishing_spot":
+            {
+                if (config.AllowOnlineData && FishingSources.Cached is null)
+                    try { await FishingSources.Get(ct).ConfigureAwait(false); } catch (ToolException) { /* the sheet's position is used */ }
+                var spotId = await Task.Run(() => FishingTools.ResolveSpotName(name!), ct).ConfigureAwait(false);
+                var place = await Game.Run(() => FindFishingSpot(spotId)).ConfigureAwait(false)
+                            ?? throw new ToolException($"Fishing spot '{name}' has no place in the game data.");
+                return await GoToFishingSpot(place, steps, ct).ConfigureAwait(false);
+            }
+
             case "npc":
             {
                 var territory = await Game.Run(() => (uint)Svc.ClientState.TerritoryType).ConfigureAwait(false);
@@ -332,5 +342,5 @@ internal static partial class NavigationTools
     });
 
     private static readonly Lazy<HashSet<uint>> CompanyChestIds = SameNameAs(2000470);
-    private static readonly Lazy<HashSet<uint>> VoyagePanelIds = SameNameAs(2011587);
+    internal static readonly Lazy<HashSet<uint>> VoyagePanelIds = SameNameAs(2011587);
 }

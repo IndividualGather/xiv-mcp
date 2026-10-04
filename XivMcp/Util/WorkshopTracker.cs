@@ -64,8 +64,10 @@ internal sealed class WorkshopTracker : IDisposable, ICache
         var ws = hm->WorkshopTerritory;
 
         var subs = new List<VesselSnapshot>();
+        var index = -1;
         foreach (ref var s in ws->Submersible.Data)
         {
+            index++;
             if (s.RankId == 0 || string.IsNullOrEmpty(s.NameString)) continue;
             var loot = new List<LootSnapshot>();
             foreach (ref var g in s.GatheredData)
@@ -93,6 +95,8 @@ internal sealed class WorkshopTracker : IDisposable, ICache
                 ReturnTime = s.ReturnTime,
                 Points = s.CurrentExplorationPoints.ToArray().Where(p => p != 0).ToArray(),
                 Loot = loot,
+                Index = index,
+                Condition = PartConditions(index),
             });
         }
 
@@ -154,6 +158,23 @@ internal sealed class WorkshopTracker : IDisposable, ICache
         Updated?.Invoke(this);
     }
 
+    /// <summary>
+    /// The condition of a submersible's four parts, in percent. The parts sit in the workshop's placed-items container, five slots per
+    /// submersible (hull, stern, bow, bridge, and one more).
+    /// </summary>
+    internal static unsafe int[] PartConditions(int index)
+    {
+        var container = InventoryManager.Instance()->GetInventoryContainer(InventoryType.HousingInteriorPlacedItems2);
+        if (container == null || !container->IsLoaded) return [];
+        var conditions = new int[4];
+        for (var i = 0; i < 4; i++)
+        {
+            var slot = container->GetInventorySlot(index * 5 + i);
+            conditions[i] = slot == null || slot->ItemId == 0 ? 0 : XivMcp.Voyages.VesselRepair.Percent(slot->Condition);
+        }
+        return conditions;
+    }
+
     // ICache
     private long version;
     public string Id => "submersibles";
@@ -204,6 +225,12 @@ public sealed record WorkshopSnapshot
 
 public sealed record VesselSnapshot
 {
+    /// <summary>The vessel's place in the workshop's list (and in the voyage panel's vessel list).</summary>
+    public int Index { get; init; }
+
+    /// <summary>Condition of hull, stern, bow and bridge in percent.</summary>
+    public int[] Condition { get; init; } = [];
+
     public string Name { get; init; } = "";
     public byte Rank { get; init; }
     public uint Exp { get; init; }

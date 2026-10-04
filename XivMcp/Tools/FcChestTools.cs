@@ -76,7 +76,8 @@ internal static class FcChestTools
         yield return new McpTool
         {
             Name = "fc_chest_transfer",
-            Description = "Deposits to or withdraws from the free company chest through FCCH (must be installed). FCCH opens the chest itself when " +
+            Description = "Bulk deposits to or withdrawals from the free company chest through FCCH (must be installed). Single items, crystals and " +
+                          "gil need no plugin: use move_items and move_gil with the chest open. FCCH opens the chest itself when " +
                           "you are standing at it. action: deposit | withdraw | withdraw_missing (withdraw up to the given amounts) | stop. " +
                           "Give 'items' as {\"itemId\": quantity}, or a preset: all, duplicates (deposit only), custom (your FCCH list), workshop " +
                           "(withdraw workshop materials), or 'gil' with an amount like 15k, 5m, 50% or all. Waits until FCCH is done. " +

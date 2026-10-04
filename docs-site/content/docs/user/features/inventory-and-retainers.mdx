@@ -9,12 +9,13 @@ Reading your retainers and chests follows the *Reading* setting of **Items & ret
 | Tool | What it does |
 |---|---|
 | `sort_inventory` | Runs the game's own `/itemsort` with your conditions, for bags, armoury, saddlebag or a retainer |
-| `move_items` | Moves items like a manual drag between bags, armoury, saddlebag, retainers and the FC chest |
+| `move_items` | Moves items like a manual drag between bags, armoury, saddlebag, retainers and the FC chest, whole stacks or part of one, and crystals between your crystals, a retainer's and the FC chest's |
+| `move_gil` | Moves gil between you and a retainer, or the FC chest |
 | `get_retainers` / `get_retainer_inventories` | Your retainers (job, level, gil, venture), and every retainer's items, listings, gear and crystals from the cache |
 | `open_retainer` / `close_retainer` | Opens a retainer's inventory (or just its menu) at the bell, or closes it |
 | `refresh_retainer_inventories` | Opens every retainer (or every one not seen recently) once, to refresh the cache |
 | `transfer_retainer_items` | Moves whole stacks from retainer to retainer, from a retainer to your bags or from your bags to a retainer |
-| `get_fc_chest` / `fc_chest_transfer` | What the FC chest holds; deposits or withdraws through **FCCH**, if installed |
+| `get_fc_chest` / `fc_chest_transfer` | What the FC chest holds; bulk deposits and withdrawals through **FCCH**, if installed |
 | `find_ventures` | Which venture brings an item, which retainer can take it, and every retainer's current venture |
 | `assign_venture` | Sends a retainer (or a free one that can take it) on a venture. If all are busy, it suggests which to recall: quick ventures first, then the long ones. |
 | `recall_venture` | Recalls a retainer from a running venture, **only after you approve it in the game** |
@@ -25,6 +26,39 @@ Reading your retainers and chests follows the *Reading* setting of **Items & ret
 - Every move waits until the game and the server have confirmed the previous one, then pauses. The pause is random, 500 to 800 ms by default, and you can change it in `/xivmcp` → **Modules** → **Items & retainers**.
 - Nothing happens in combat, while crafting or gathering, in trades, cutscenes or zone changes.
 - Equipped gear, currency, crystals and key items cannot be moved.
+
+## Submersibles
+
+At the voyage control panel in your FC workshop, your assistant can repair and send out your submersibles, through the panel's own menus.
+
+| Tool | What it does |
+|---|---|
+| `repair_submersible` | Repairs a submersible's worn parts with Magitek Repair Materials (all parts below 100% by default, or below a percentage you give) |
+| `deploy_submersible` | Sends a submersible on a voyage: its last route, or the points you name (up to five, on one sea). Without a name, every submersible that is back goes out on its last route. |
+
+Things to ask:
+
+> "Send all my submarines out again."
+
+> "Repair Shark Bait, then send it to the Ivory Shoals, Deep-sea Site 1 and Deep-sea Site 2."
+
+- **Getting there:** `navigate_to` with destination `workshop` takes you to the panel.
+- **Loot:** a submersible that is back is finalized first, which collects its loot.
+- **Repairs before deploying:** parts below 20% are repaired first (you can change this, or turn it off).
+- **Fuel:** each voyage uses Ceruleum Tanks from your bags. If you have too few, nothing is sent.
+- **Routes:** points are given by name, map letter or id; they must be unlocked and within the submersible's rank.
+
+`get_submersibles` shows each part's condition, the routes and when each submersible returns.
+
+## Crystals, gil and the FC chest
+
+None of this needs another plugin:
+
+- **Crystals** move as whole stacks between your crystals and a retainer's or the FC chest's, each into the slot of its kind.
+- **Part of a stack:** give `move_items` a `quantity`. The stack is split first, so the bag it comes from needs a free slot.
+- **Gil:** `move_gil` deposits or withdraws with the game's own Gil Transfer window: an amount like `15k`, `1.5m`, `50%` or `all`. For a retainer, you need to be at a summoning bell; for the FC chest, with the chest open. Your rank decides whether you may take gil out of the FC chest.
+
+With **FCCH** installed, XIV MCP waits until FCCH has finished with the chest before it moves anything there; FCCH may start on its own when the chest opens. `fc_chest_transfer` uses FCCH for bulk moves, such as depositing all duplicates.
 
 ## Slots and the order you see
 

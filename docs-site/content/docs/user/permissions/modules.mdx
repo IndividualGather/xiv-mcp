@@ -44,11 +44,12 @@ Every tool belongs to one **module**, and every module has two settings: **Readi
 |---|---|---|---|
 | **Game data** | Allow | — | Character, jobs, gear, inventory, currencies, quests and unlocks, party and surroundings, collections, game data, caches, the self-test |
 | **Game & navigation** | Allow | Deny | Game windows and menus, NPCs and objects, walking and travel, world visits, logging into other characters, gear sets, leaving duties, placing waymarks, map flags and routes |
-| **Items & retainers** | Allow | Deny | Sorting and moving items, retainers and their inventories, ventures (recalling one always asks in the game), collectable turn-ins, the FC chest |
+| **Items & retainers** | Allow | Deny | Sorting and moving items, crystals and gil, retainers and their inventories, ventures (recalling one always asks in the game), collectable turn-ins, the FC chest |
 | **Market & purchases** | Allow | Deny | Buying from vendors (anything not paid in gil also asks in the game), selling and repricing, sale histories, spending approvals |
 | **UI editing** | Allow | Deny | Macros and the waymark preset slots |
-| **Online lookups** | Deny | — | Item sources (FFXIV Teamcraft, ffxiv.consolegameswiki.com) and market prices (universalis.app) |
+| **Online lookups** | Deny | — | Item sources (FFXIV Teamcraft, ffxiv.consolegameswiki.com), market prices (universalis.app) and fishing data (the FFX\|V Fish Tracker and FFXIV Teamcraft) |
 | **Plugin management** | Deny | Deny | Turning plugins on and off, reloading them, reading and changing their settings (which may contain passwords or keys) |
+| **Trading** | Allow | Deny | Trading items and gil with other players. Every trade asks you in the game, with what both sides hold, and cannot be allowed permanently. |
 | **Background jobs** | Allow | Allow | Starting and controlling jobs. Every step is still checked against its own module. |
 | **Screen** | Ask | — | Screenshots of the game or of XIV MCP's window. They can show chat, tells and other players' names, so each one asks you first. |
 
@@ -93,6 +94,7 @@ Tools whose whole purpose is driving one other plugin have their own module, lis
 |---|---|---|
 | **AutoDuty** | Allow | Deny |
 | **Gold Saucer** (Saucy, or TriadBuddy for reading) | Allow | Deny |
+| **AutoHook** | — | Deny |
 | **Artisan** | Allow | Deny |
 | **GatherBuddy Reborn** | Allow | Deny |
 | **Item Vendor Location** | Allow | — |
@@ -108,8 +110,7 @@ The search field at the top of the **Modules** tab filters as you type. It match
 
 Below the integrations, dimmed cards show what is planned next. They have nothing to set yet:
 
-- **AutoHook:** automated fishing.
-- **Fishing:** where and when fish bite, weather, baits and where to get them, counting macros for bite timing, suggested abilities, ocean fishing.
+- **Ocean fishing:** the route, the spectral currents and the fish worth going for at each stop.
 - **Quests:** through Questionable.
 
 ## Recent activity

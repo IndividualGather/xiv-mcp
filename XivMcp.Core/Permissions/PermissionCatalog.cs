@@ -34,12 +34,13 @@ public static class PermissionCatalog
         new("game_data", "Game data", "Your character, inventory, quests, collections, surroundings and game data.",
             A, D, HasWrite: false),
         new("game_navigation", "Game & navigation", "Windows, NPCs, walking and travel, logins, gearsets and leaving duties.", A, D),
-        new("items_retainers", "Items & retainers", "Moving items, retainers, ventures, collectables and the FC chest.", A, D),
+        new("items_retainers", "Items & retainers", "Moving items and gil, retainers, ventures, submersibles, collectables and the FC chest.", A, D),
         new("market", "Market & purchases", "Buying from vendors and selling on the market board.", A, D),
         new("ui_editing", "UI editing", "Macros and waymark presets.", A, D),
-        new("online", "Online lookups", "Item sources and market prices from the web.", D, D, HasWrite: false),
+        new("online", "Online lookups", "Item sources, market prices and fishing data from the web.", D, D, HasWrite: false),
         new("plugin_management", "Plugin management", "Other plugins and their settings, which may contain secrets.", D, D),
         new("jobs", "Background jobs", "Background jobs; each step is checked against its own group.", A, A),
+        new("trading", "Trading", "Trading items and gil with other players. Every trade asks you in game, with what both sides hold.", A, D),
         new("screen", "Screen", "Screenshots of your game, which can show chat, names and anything else on screen.", K, D, HasWrite: false),
         .. IntegrationCatalog.All.Select(i => new PermissionGroup(IntegrationGroupId(i.PluginId), i.DisplayName, i.Summary, A, D,
             // Tools that declare nothing beyond reading only read; the others change something.
@@ -58,7 +59,7 @@ public static class PermissionCatalog
             "list_unlock_categories", "check_unlocks", "get_active_quests", "check_quests", "get_party", "get_targets", "get_nearby_objects",
             "get_fates", "get_aetherytes", "get_companions", "get_submersibles", "list_game_sheets", "search_game_data", "get_game_data_row",
             "inspect_window", "get_collections", "get_armoire", "get_glamour_dresser", "get_job_actions", "get_hotbars", "list_gearsets",
-            "get_cache_status", "wait_for_cache_refresh", "run_self_test", "plan_craft", "list_plugins", "get_position",
+            "get_cache_status", "wait_for_cache_refresh", "run_self_test", "plan_craft", "list_plugins", "get_position", "get_weather_forecast",
         ],
         ["game_navigation"] =
         [
@@ -71,7 +72,7 @@ public static class PermissionCatalog
         [
             "get_retainers", "get_retainer_inventories", "get_fc_chest", "find_ventures",
             "sort_inventory", "move_items", "open_retainer", "close_retainer", "transfer_retainer_items", "refresh_retainer_inventories",
-            "assign_venture", "recall_venture", "turn_in_collectables", "dye_item",
+            "assign_venture", "recall_venture", "turn_in_collectables", "move_gil", "repair_submersible", "deploy_submersible", "dye_item",
         ],
         ["market"] =
         [
@@ -79,9 +80,10 @@ public static class PermissionCatalog
             "buy_item", "request_spending_approval", "revoke_approval", "sell_item", "reprice_listings", "get_sale_history",
         ],
         ["ui_editing"] = ["get_macros", "list_waymark_presets", "get_waymark_preset", "set_macro", "clear_macro", "set_waymark_preset"],
-        ["online"] = ["get_item_sources", "get_market_prices"],
+        ["online"] = ["get_item_sources", "get_market_prices", "find_fish"],
         ["plugin_management"] = ["list_plugin_config_files", "get_plugin_config", "set_plugin_enabled", "reload_plugin", "set_plugin_config"],
         ["screen"] = ["take_screenshot"],
+        ["trading"] = ["get_trade", "trade_with_player", "cancel_trade"],
         ["jobs"] = ["list_jobs", "get_job", "start_job", "update_job", "pause_job", "resume_job", "cancel_job", "wait", "wait_until_arrived"],
     });
 

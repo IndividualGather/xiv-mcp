@@ -115,9 +115,7 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
 
     private static readonly Feature[] Upcoming =
     [
-        new("autohook", "AutoHook", "Automated fishing with AutoHook: your assistant sets up hooksets, baits and presets for the fish you are after.", FontAwesomeIcon.Fish),
-        new("fishing", "Fishing", "Fishing advice: where and when a fish bites, the weather it needs, baits and where to get them, counting macros for " +
-            "bite timing and suggested abilities. Ocean fishing too.", FontAwesomeIcon.Water),
+        new("ocean-fishing", "Ocean fishing", "Ocean fishing voyages: the route, the spectral currents and the fish worth going for at each stop.", FontAwesomeIcon.Water),
         new("quests", "Quests", "Quest help and automation with Questionable.", FontAwesomeIcon.Scroll),
     ];
 

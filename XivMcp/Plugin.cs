@@ -99,9 +99,13 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(WaymarkTools.Create(Config))
             .Concat(CollectionTools.Create(glamour))
             .Concat(FcChestTools.Create(Config))
+            .Concat(GilTools.Create(Config, compat))
+            .Concat(SubmarineTools.Create(Config))
+            .Concat(TradeTools.Create())
             .Concat(NavigationTools.Create(Config))
             .Concat(CraftGatherTools.Create(Config))
             .Concat(ItemSourceTools.Create(Config))
+            .Concat(FishingTools.Create(Config))
             .Concat(ShopTools.Create(Config, compat))
             .Concat(ShopTools.ApprovalTools(Config))
             .Concat(VentureTools.Create(Config, retainers, compat))
@@ -120,6 +124,7 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(MapTools.Create(() => jobs!, () => Server?.LastClient))
             .Concat(DyeTools.Create())
             .Concat(SaucyTools.Create(() => jobs!, () => Server?.LastClient))
+            .Concat(AutoHookTools.Create(Config, () => jobs!, () => Server?.LastClient))
             .Concat(XivMcpWindowTools.Create(() => configWindow, () => overlayWindow, () => jobs, pluginInterface.IsDev))
             .ToList();
         // Tools that drive one other plugin belong to that plugin's integration (same provider + capability contract as third-party tools).

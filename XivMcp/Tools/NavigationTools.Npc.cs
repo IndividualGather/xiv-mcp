@@ -52,28 +52,7 @@ internal static partial class NavigationTools
         // Already close enough to see it?
         if (await WalkTo(spot.Name, o => o.BaseId == spot.NpcId, steps, ct).ConfigureAwait(false) is { } near) return near;
 
-        var plan = await Game.Run(() => PlanTeleport(spot)).ConfigureAwait(false);
-        if (plan is not null && !LifestreamLoaded)
-            await GuideTeleport(plan.Value.AetheryteId, plan.Value.Shard, spot.Territory, steps, ct).ConfigureAwait(false);
-        else if (plan is not null)
-        {
-            phase = $"travelling to {plan.Value.Label}";
-            var ok = await Game.Run(() =>
-            {
-                try
-                {
-                    // "/li <aethernet shard>" teleports to that city's aetheryte, walks to it and takes the aethernet.
-                    if (plan.Value.Shard) { Svc.PluginInterface.GetIpcSubscriber<string, object>("Lifestream.ExecuteCommand").InvokeAction(plan.Value.Label); return true; }
-                    return Svc.PluginInterface.GetIpcSubscriber<uint, byte, bool>("Lifestream.Teleport").InvokeFunc(plan.Value.AetheryteId, 0);
-                }
-                catch (Exception ex) { Svc.Log.Warning($"[MCP] Lifestream travel failed: {ex.Message}"); return false; }
-            }).ConfigureAwait(false);
-            if (!ok) throw new ToolException($"Lifestream could not travel to {plan.Value.Label} (is the aetheryte attuned?).");
-            steps.Add($"Lifestream: {(plan.Value.Shard ? "aethernet" : "teleport")} to {plan.Value.Label}.");
-            await WaitUntilSettled(ct).ConfigureAwait(false);
-            if (await Game.Run(() => Svc.ClientState.TerritoryType).ConfigureAwait(false) != spot.Territory)
-                throw new ToolException($"Ended up in {await Game.Run(() => TerritoryName(Svc.ClientState.TerritoryType)).ConfigureAwait(false)} instead of {TerritoryName(spot.Territory)}.");
-        }
+        await TravelNear(spot, steps, ct).ConfigureAwait(false);
 
         if (await WalkTo(spot.Name, o => o.BaseId == spot.NpcId, steps, ct).ConfigureAwait(false) is { } arrived) return arrived;
 
@@ -102,6 +81,36 @@ internal static partial class NavigationTools
         await Game.Run(() => { StopMoving(); return true; }).ConfigureAwait(false);
         return await WalkTo(spot.Name, o => o.BaseId == spot.NpcId, steps, ct).ConfigureAwait(false)
                ?? throw new ToolException($"Arrived where {spot.Name} should be, but the NPC isn't there (it may only appear during a quest or event).");
+    }
+
+    /// <summary>
+    /// Gets into the zone of <paramref name="spot"/>, near it: with Lifestream by teleport or aethernet, otherwise by asking the player
+    /// to teleport and waiting. Does nothing when walking from where the player is would be as quick.
+    /// </summary>
+    internal static async Task TravelNear(NpcSpot spot, List<string> steps, CancellationToken ct)
+    {
+        var plan = await Game.Run(() => PlanTeleport(spot)).ConfigureAwait(false);
+        if (plan is not null && !LifestreamLoaded)
+            await GuideTeleport(plan.Value.AetheryteId, plan.Value.Shard, spot.Territory, steps, ct).ConfigureAwait(false);
+        else if (plan is not null)
+        {
+            phase = $"travelling to {plan.Value.Label}";
+            var ok = await Game.Run(() =>
+            {
+                try
+                {
+                    // "/li <aethernet shard>" teleports to that city's aetheryte, walks to it and takes the aethernet.
+                    if (plan.Value.Shard) { Svc.PluginInterface.GetIpcSubscriber<string, object>("Lifestream.ExecuteCommand").InvokeAction(plan.Value.Label); return true; }
+                    return Svc.PluginInterface.GetIpcSubscriber<uint, byte, bool>("Lifestream.Teleport").InvokeFunc(plan.Value.AetheryteId, 0);
+                }
+                catch (Exception ex) { Svc.Log.Warning($"[MCP] Lifestream travel failed: {ex.Message}"); return false; }
+            }).ConfigureAwait(false);
+            if (!ok) throw new ToolException($"Lifestream could not travel to {plan.Value.Label} (is the aetheryte attuned?).");
+            steps.Add($"Lifestream: {(plan.Value.Shard ? "aethernet" : "teleport")} to {plan.Value.Label}.");
+            await WaitUntilSettled(ct).ConfigureAwait(false);
+            if (await Game.Run(() => Svc.ClientState.TerritoryType).ConfigureAwait(false) != spot.Territory)
+                throw new ToolException($"Ended up in {await Game.Run(() => TerritoryName(Svc.ClientState.TerritoryType)).ConfigureAwait(false)} instead of {TerritoryName(spot.Territory)}.");
+        }
     }
 
     private static async Task WaitForMesh(CancellationToken ct)

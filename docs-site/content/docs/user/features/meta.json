@@ -6,9 +6,11 @@
     "navigation",
     "maps-and-routes",
     "inventory-and-retainers",
+    "trading",
     "market",
     "crafting-and-gathering",
     "dungeons",
+    "fishing",
     "gold-saucer",
     "plugin-management"
   ]

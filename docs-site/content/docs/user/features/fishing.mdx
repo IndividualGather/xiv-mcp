@@ -1,0 +1,118 @@
+---
+title: Fishing
+description: Where, when and how a fish bites, the weather forecast, and catching it with AutoHook.
+icon: Fish
+---
+
+Your assistant can tell you everything about catching a fish: where it bites, with which bait, at what time and in which weather, how long after casting it bites, and which abilities help. With **AutoHook** installed, it can also catch the fish for you.
+
+## Finding a fish
+
+| Tool | What it does |
+|---|---|
+| `find_fish` | Where a fish bites, the bait and any fish to mooch with on the way, the tug and hookset of each cast, how many seconds after casting it bites, the time and weather it needs, its next windows, and advice on catching it |
+| `get_weather_forecast` | The weather of a zone for the next hours, and when a weather comes next |
+
+`find_fish` looks the fish up online, so it needs **Online lookups** to be allowed (it is denied by default). The forecast is worked out from the game's own data, like the game does, and needs nothing online.
+
+Things to ask:
+
+> "How do I catch the Ealad Skaan, and when is its next window?"
+
+> "What is the weather in the Sea of Clouds for the next two hours?"
+
+> "Which bait do I need for Titanic Sawfish, and where do I buy it?"
+
+### What the answer tells you
+
+- **Where:** the fishing spot, its zone and map coordinates, and the other spots where it bites.
+- **Bait:** how much of each bait you carry, and whether a vendor sells it for gil.
+- **The casts:** the bait to cast with, and for fish you mooch, each fish to catch and mooch with on the way. For every cast, the tug it bites with (light `!`, medium `!!` or heavy `!!!`) and the hookset to use under Patience.
+- **Bite times:** how many seconds after casting it usually bites, from the bite times players report to FFXIV Teamcraft.
+- **When:** the Eorzean time and the weather it needs, including the weather right before, and its next windows in your local time.
+- **What it needs:** a folklore tome you must have read, Fisher's Intuition (which fish to catch first, and how long it lasts), a lure, Snagging, or Collect for a collectable.
+- **What else bites there** with the same bait, and when.
+- **Advice:** the steps in order, the abilities that help (Patience II, Chum, Identical Cast, Surface Slap, Fish Eyes), and a counting macro when timing tells your fish apart from others with the same tug.
+
+The counting macro casts and then counts the seconds in chat, so you can see when a bite comes:
+
+```text
+/ac Cast <wait.1>
+/echo 1 s <wait.2>
+/echo 3 s <wait.2>
+/echo 5 s <wait.2>
+```
+
+Bait is bought with `buy_item`, like anything else from a vendor. See [Market and purchases](/docs/user/features/market).
+
+## Catching it with AutoHook
+
+These tools work through **AutoHook**, so they are only offered while AutoHook is loaded. They have their own module, **AutoHook**, under **Integrations maintained by XIV MCP**: everything is denied until you allow it. They use the same data as `find_fish`, so they need **Online lookups** too.
+
+| Tool | What it does |
+|---|---|
+| `set_autohook_preset` | Sets up AutoHook for the fish: the bait, mooching on the way, hooking only the right tug with the right hookset, and letting other bites go |
+| `fish_until` | Fishes until you have caught the fish, waiting for its time and weather first |
+| `catch_fish` | Catches a fish for you from start to finish, as a background job |
+| `stop_fishing` | Switches AutoHook off and reels the line in |
+
+Things to ask:
+
+> "Catch the Ealad Skaan for me."
+
+> "Catch five Shark Tuna, I am already at the spot."
+
+### The fishing job
+
+`catch_fish` starts a [background job](/docs/user/features/jobs) with these steps:
+
+<Steps>
+<Step>
+
+**Look the fish up** with `find_fish`: the spot, the bait, the casts and the windows.
+
+</Step>
+<Step>
+
+**Switch to Fisher**, if you are on another job.
+
+</Step>
+<Step>
+
+**Buy the bait**, if your bags have none (99 by default, from a gil vendor).
+
+</Step>
+<Step>
+
+**Travel to the fishing spot**: teleport, then walk to the water until you can cast. With Lifestream and vnavmesh this happens on its own; without them, XIV MCP names the aetheryte and puts the flag on your map, and waits for you.
+
+</Step>
+<Step>
+
+**Fish:** wait for the fish's window if it is not open, give AutoHook the preset, switch AutoHook on and cast. AutoHook hooks, mooches and casts again; XIV MCP counts what you caught.
+
+</Step>
+</Steps>
+
+The job stops when you have caught enough, when the window closes, at its timeout, or when you pause or cancel it. Then AutoHook is switched off, the line is reeled in, and the preset is removed again. Each step follows its own setting: **Online lookups**, **Game & navigation**, **Market & purchases** and **AutoHook**.
+
+### The AutoHook preset
+
+XIV MCP gives AutoHook a temporary preset of its own, named "XIV MCP: " and the fish, and leaves your presets alone:
+
+- **Bait:** switches to the right bait.
+- **Mooching:** mooches each fish on the way.
+- **Bites:** hooks only the tug of the fish each cast is for, with its hookset, and lets other bites go.
+- **Timeout:** reels in when the fish has not bitten by the end of its usual bite time.
+- **Lures:** casts the lure the fish needs.
+- **Fisher's Intuition:** when the fish only bites under Fisher's Intuition, and the fish that give it bite on the same bait, AutoHook catches those first, and only hooks your fish while Fisher's Intuition lasts. When they need another bait, you catch them yourself first; `catch_fish` warns you about this before it starts.
+- **Abilities:** Patience II for big fish, Collect for collectables, Snagging when the fish needs it, and Identical Cast for the fish for Fisher's Intuition.
+
+<Callout type="warn">AutoHook reacts to bites and casts again on its own. Stay near the game while it fishes.</Callout>
+
+## Where the data comes from
+
+- **[FFX\|V Fish Tracker](https://ff14fish.carbuncleplushy.com/)** by Carbuncle Plushy: the time windows, the weather, the best way to catch each fish, Fisher's Intuition and folklore, for the fish worth tracking.
+- **[FFXIV Teamcraft](https://ffxivteamcraft.com/)**: the spots and baits of every fish, and the bite times players report.
+
+The data is downloaded once a day and kept in `pluginConfigs/XivMcp/fishing/`. Fish that the tracker does not list usually bite at any time; their time and weather are then not given.

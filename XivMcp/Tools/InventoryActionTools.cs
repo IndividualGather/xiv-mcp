@@ -147,7 +147,10 @@ internal static class InventoryActionTools
                           "Each move is sent separately, the plugin waits until the server confirmed it, then pauses before the next one (by default a random 500-800 ms, configurable in /xivmcp). " +
                           "Give the source either as from_container+from_slot or as item_id (first matching stack, optionally limited to from_container); " +
                           "omit to_slot to use the first empty slot of to_container. Container names come from get_inventory (Inventory1-4, ArmoryHead, ..., " +
-                          "SaddleBag1/2, PremiumSaddleBag1/2, RetainerPage1-7, FreeCompanyPage1-5). Saddlebag/retainer/company chest windows must be open. " +
+                          "SaddleBag1/2, PremiumSaddleBag1/2, RetainerPage1-7, FreeCompanyPage1-5, and for crystals Crystals, RetainerCrystals and " +
+                          "FreeCompanyCrystals). Saddlebag/retainer/company chest windows must be open. 'quantity' moves part of a stack: it is split off " +
+                          "first (needs an empty slot in the source container). Crystals move between crystal containers only, as whole stacks, into the " +
+                          "slot of their kind. " +
                           "Armory containers only accept matching gear. " +
                           "Stops at the first failed move unless continue_on_error=true. Requires 'Items & retainers' in /xivmcp.",
             InputSchema = """
@@ -163,6 +166,7 @@ internal static class InventoryActionTools
                           "from_container": { "type": "string" },
                           "from_slot": { "type": "integer", "description": "0-based slot index." },
                           "item_id": { "type": "integer", "description": "Alternative to from_slot: move the first stack of this item." },
+                          "quantity": { "type": "integer", "minimum": 1, "description": "Move only this many of the stack (default: the whole stack). Not for crystals." },
                           "hq": { "type": "boolean", "description": "With item_id: only HQ (true) or only NQ (false) stacks." },
                           "to_container": { "type": "string" },
                           "to_slot": { "type": "integer", "description": "0-based target slot; omit for the first empty slot." }
@@ -223,7 +227,7 @@ internal static class InventoryActionTools
         };
     }
 
-    internal sealed record MoveRequest(int Index, GameInventoryType? From, int? FromSlot, uint? ItemId, bool? Hq, GameInventoryType To, int? ToSlot)
+    internal sealed record MoveRequest(int Index, GameInventoryType? From, int? FromSlot, uint? ItemId, bool? Hq, GameInventoryType To, int? ToSlot, int? Quantity = null)
     {
         public static MoveRequest Parse(JsonObject? m, int index)
         {
@@ -237,7 +241,8 @@ internal static class InventoryActionTools
                 throw new ToolException($"Move #{index}: give from_container + from_slot, or item_id.");
             var hq = m.ContainsKey("hq") ? a.Bool("hq", false) : (bool?)null;
             var toSlot = m.ContainsKey("to_slot") ? a.Int("to_slot", -1) : (int?)null;
-            return new MoveRequest(index, from, fromSlot, itemId, hq, to, toSlot);
+            var quantity = m.ContainsKey("quantity") ? a.Int("quantity", 1, 1, 999_999) : (int?)null;
+            return new MoveRequest(index, from, fromSlot, itemId, hq, to, toSlot, quantity);
         }
     }
 
@@ -272,6 +277,18 @@ internal static class InventoryActionTools
     {
         if (!await WaitForNoPendingOperation(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
             return MoveResult.Fail(req.Index, "The game is still processing an earlier inventory operation; try again in a moment.");
+        if (TouchesChest(req))
+        {
+            try { await PluginCompat.WaitForFcch(TimeSpan.FromMinutes(2), ct).ConfigureAwait(false); }
+            catch (ToolException ex) { return MoveResult.Fail(req.Index, ex.Message); }
+        }
+
+        // Part of a stack: split it off first, then move the new stack.
+        if (req.Quantity is not null)
+        {
+            try { req = await SplitOff(req, ct).ConfigureAwait(false); }
+            catch (ToolException ex) { return MoveResult.Fail(req.Index, ex.Message); }
+        }
 
         // Resolve and validate against the current state, then issue the move — all in one framework tick.
         (GameInventoryType From, int FromSlot, GameInventoryType To, int ToSlot, uint ItemId, int Quantity, uint DstItemId, int DstQuantity, string? Name)? plan;
@@ -289,7 +306,10 @@ internal static class InventoryActionTools
                 if (src.IsEmpty) throw new ToolException($"{from}[{fromSlot}] is empty.");
 
                 var dstItems = Svc.Inventory.GetInventoryItems(to);
-                var toSlot = req.ToSlot ?? FirstEmptySlot(dstItems) ?? throw new ToolException($"{to} has no empty slot.");
+                if (IsCrystalContainer(from) != IsCrystalContainer(to))
+                    throw new ToolException("Crystals only move between crystal containers (Crystals, RetainerCrystals, FreeCompanyCrystals).");
+                // Crystal containers have one slot per kind of crystal: the stack goes to the same slot on the other side.
+                var toSlot = IsCrystalContainer(to) ? fromSlot : req.ToSlot ?? FirstEmptySlot(dstItems) ?? throw new ToolException($"{to} has no empty slot.");
                 if (toSlot < 0 || toSlot >= dstItems.Length) throw new ToolException($"{to} has slots 0-{dstItems.Length - 1}.");
                 if (from == to && fromSlot == toSlot) throw new ToolException("Source and target are the same slot.");
                 var dst = dstItems[toSlot];
@@ -381,8 +401,64 @@ internal static class InventoryActionTools
         var n = t.ToString();
         return n.StartsWith("Inventory", StringComparison.Ordinal) || n.StartsWith("Armory", StringComparison.Ordinal) ||
                n.StartsWith("SaddleBag", StringComparison.Ordinal) || n.StartsWith("PremiumSaddleBag", StringComparison.Ordinal) ||
-               n.StartsWith("RetainerPage", StringComparison.Ordinal) || n.StartsWith("FreeCompanyPage", StringComparison.Ordinal);
+               n.StartsWith("RetainerPage", StringComparison.Ordinal) || n.StartsWith("FreeCompanyPage", StringComparison.Ordinal) ||
+               IsCrystalContainer(t);
     });
+
+    private static bool TouchesChest(MoveRequest req) =>
+        req.To.ToString().StartsWith("FreeCompany", StringComparison.Ordinal) || req.From?.ToString().StartsWith("FreeCompany", StringComparison.Ordinal) == true;
+
+    internal static bool IsCrystalContainer(GameInventoryType t) =>
+        t is GameInventoryType.Crystals or GameInventoryType.RetainerCrystals or GameInventoryType.FreeCompanyCrystals;
+
+    /// <summary>
+    /// Splits <see cref="MoveRequest.Quantity"/> off the source stack (the game puts it into an empty slot of the same container) and
+    /// returns the request for moving the new stack. The whole stack, or more, needs no split.
+    /// </summary>
+    private static async Task<MoveRequest> SplitOff(MoveRequest req, CancellationToken ct)
+    {
+        var plan = await Game.RunLoggedIn(() =>
+        {
+            EnsureNotBusy();
+            var (from, fromSlot) = ResolveSource(req);
+            EnsureContainerUsable(from);
+            var src = Slot(from, fromSlot);
+            if (src.IsEmpty) throw new ToolException($"{from}[{fromSlot}] is empty.");
+            if (req.Quantity >= src.Quantity) return ((GameInventoryType, int, int[], uint)?)null;
+            if (IsCrystalContainer(from)) throw new ToolException("Crystals can only be moved as whole stacks.");
+            var items = Svc.Inventory.GetInventoryItems(from);
+            var emptySlots = new List<int>();
+            for (var i = 0; i < items.Length; i++)
+                if (items[i].IsEmpty) emptySlots.Add(i);
+            var empty = emptySlots.ToArray();
+            if (empty.Length == 0) throw new ToolException($"Splitting needs an empty slot in {from}.");
+            unsafe
+            {
+                var rc = InventoryManager.Instance()->SplitItem((InventoryType)from, (ushort)fromSlot, req.Quantity!.Value);
+                if (rc != 0) Svc.Log.Debug($"SplitItem returned {rc}");
+            }
+            return (from, fromSlot, empty, src.ItemId);
+        }).ConfigureAwait(false);
+        if (plan is not { } p) return req with { Quantity = null };
+
+        var deadline = DateTime.UtcNow.AddSeconds(4);
+        while (DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(100, ct).ConfigureAwait(false);
+            var slot = await Svc.Framework.RunOnFrameworkThread<int>(() =>
+            {
+                if (HasPendingOperation()) return -1;
+                foreach (var i in p.Item3)
+                {
+                    var item = Slot(p.Item1, i);
+                    if (!item.IsEmpty && item.ItemId == p.Item4 && item.Quantity == req.Quantity) return i;
+                }
+                return -1;
+            }).ConfigureAwait(false);
+            if (slot >= 0) return req with { From = p.Item1, FromSlot = slot, ItemId = null, Hq = null, Quantity = null };
+        }
+        throw new ToolException("The game did not confirm splitting the stack within 4 seconds.");
+    }
 
     private static bool IsContainerUsable(GameInventoryType t)
     {
@@ -395,7 +471,7 @@ internal static class InventoryActionTools
         var n = t.ToString();
         if (n.Contains("SaddleBag", StringComparison.Ordinal)) EnsureWindowOpen(SaddlebagAddons, "saddlebag");
         else if (n.StartsWith("Retainer", StringComparison.Ordinal)) EnsureRetainerOpen();
-        else if (n.StartsWith("FreeCompanyPage", StringComparison.Ordinal)) EnsureWindowOpen(["FreeCompanyChest"], "company chest");
+        else if (n.StartsWith("FreeCompany", StringComparison.Ordinal)) EnsureWindowOpen(["FreeCompanyChest"], "company chest");
     }
 
     private static void EnsureWindowOpen(string[] addons, string what)

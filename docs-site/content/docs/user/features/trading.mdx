@@ -1,0 +1,58 @@
+---
+title: Trading
+description: Trading items and gil with another player, always with your approval of what both sides hold.
+icon: ArrowLeftRight
+---
+
+Your assistant can trade items and gil with a player standing next to you. These tools are in the **Trading** module: looking at the trade window is allowed by default, trading is denied until you allow it.
+
+| Tool | What it does |
+|---|---|
+| `trade_with_player` | Trades with a player nearby: sends the request, puts in what you give, waits for their side, asks you, and completes the trade |
+| `get_trade` | The open trade window: who you trade with, what each side offers, and who has pressed Trade |
+| `cancel_trade` | Cancels the open trade or trade request |
+
+Things to ask:
+
+> "Give Rhea Moon 20 Grade 8 Tinctures."
+
+> "Trade Rhea Moon 5 Hi-Potions for 2,000 gil."
+
+## How a trade goes
+
+<Steps>
+<Step>
+
+**The request.** XIV MCP walks up to the player (with vnavmesh), or asks you to, and sends a trade request. They accept it in their game.
+
+</Step>
+<Step>
+
+**Your side.** It puts the items and gil you give into the trade window, from your bags.
+
+</Step>
+<Step>
+
+**Their side.** It waits until the other player has put in their side and pressed **Trade**, so their offer is final.
+
+</Step>
+<Step>
+
+**Your approval.** The approval window shows exactly what you give and what you receive. If your assistant said what you expect in return and the other side holds less, the trade stops before it asks you.
+
+</Step>
+<Step>
+
+**The trade.** XIV MCP presses **Trade** and answers the game's "Complete trade?". Right before that, it checks the window once more: if anything changed, the trade is cancelled.
+
+</Step>
+</Steps>
+
+## Safe by design
+
+- **Every trade asks you.** The approval cannot be given for the session or allowed permanently, even when the module is set to *Allow*.
+- **What you approve is what happens.** You approve what the window holds, not what was planned, and it is checked again right before the trade completes.
+- **Only trades you asked for.** XIV MCP never accepts trades that other players start.
+- **Limits of the game:** at most 5 stacks and 1,000,000 gil per side. Items that cannot be traded are refused before anything starts.
+
+<Callout type="warn">Trades cannot be undone. Check the approval window carefully, especially the names and amounts.</Callout>

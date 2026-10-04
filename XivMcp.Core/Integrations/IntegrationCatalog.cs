@@ -98,6 +98,19 @@ public static class IntegrationCatalog
                 ["play_jumbo_cactpot"] = Travel,
             },
         },
+        new("AutoHook", "AutoHook", "Fishing with AutoHook: presets built for the fish you are after, fishing until it is caught, and a job that does it all.", new Dictionary<string, string[]>
+        {
+            ["set_autohook_preset"] = [EditSettings],
+            ["fish_until"] = [GameUi, EditSettings],
+            ["catch_fish"] = [MoveCharacter, GameUi, SpendGil, EditSettings],
+            ["stop_fishing"] = [GameUi],
+        })
+        {
+            Helpers = new Dictionary<string, ToolRequirement[]>
+            {
+                ["catch_fish"] = Travel,
+            },
+        },
     ];
 
     /// <summary>Whether a tool of an integration is offered: its plugin, or one of the plugins that also make it available, is loaded.</summary>

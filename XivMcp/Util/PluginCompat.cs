@@ -53,6 +53,25 @@ internal sealed class PluginCompat : IDisposable
             throw new ToolException("FCCH is currently moving items (free company chest). Wait until it is done, or stop it, then retry.");
     }
 
+    /// <summary>
+    /// Waits until FCCH has finished with the company chest. FCCH may start working on its own as soon as the chest opens (its
+    /// automatic deposits), so this first gives it a moment to start, then waits while it is busy (at most <paramref name="timeout"/>).
+    /// Returns at once without FCCH.
+    /// </summary>
+    public static async System.Threading.Tasks.Task WaitForFcch(System.TimeSpan timeout, System.Threading.CancellationToken ct)
+    {
+        if (!await Game.Run(() => FcchLoaded).ConfigureAwait(false)) return;
+        var deadline = System.DateTime.UtcNow + timeout;
+        var quietSince = System.DateTime.UtcNow;
+        while (System.DateTime.UtcNow - quietSince < System.TimeSpan.FromSeconds(2))
+        {
+            if (await Game.Run(() => FcchBusy).ConfigureAwait(false)) quietSince = System.DateTime.UtcNow;
+            if (System.DateTime.UtcNow > deadline)
+                throw new ToolException("FCCH is still moving items in the company chest. Wait until it is done, or stop it, then retry.");
+            await System.Threading.Tasks.Task.Delay(250, ct).ConfigureAwait(false);
+        }
+    }
+
     /// <summary>Call before XIV MCP touches the summoning bell or retainer windows. Throws if AutoRetainer is working.</summary>
     public void AcquireBell()
     {

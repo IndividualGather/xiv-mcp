@@ -120,6 +120,17 @@ public static class ToolSummaries
         // Online lookups
         ["get_item_sources"] = "Finds online where an item comes from: crafting, vendors, drops or gathering.",
         ["get_market_prices"] = "Checks current market board prices online.",
+        ["repair_submersible"] = "Repairs a submersible's parts with Magitek Repair Materials.",
+        ["deploy_submersible"] = "Sends submersibles on a voyage, on their last route or a new one. Uses Ceruleum Tanks.",
+        ["move_gil"] = "Moves gil between you and a retainer or the free company chest.",
+        ["get_trade"] = "Looks at the trade window: who you trade with and what each side offers.",
+        ["trade_with_player"] = "Trades items and gil with a player next to you. Every trade asks you first.",
+        ["cancel_trade"] = "Cancels the open trade. Nothing changes hands.",
+        ["find_fish"] = "Finds online where, when and with which bait a fish bites, and how to catch it.",
+        ["set_autohook_preset"] = "Sets up automatic hooking for the fish you are after.",
+        ["fish_until"] = "Fishes until you have caught a fish, waiting for its time and weather.",
+        ["catch_fish"] = "Catches a fish for you: travels there, buys bait, waits for its window and fishes.",
+        ["stop_fishing"] = "Stops fishing and reels in your line.",
 
         // Plugin management
         ["list_plugin_config_files"] = "Lists the settings files of another plugin.",
@@ -139,6 +150,7 @@ public static class ToolSummaries
         ["wait"] = "Waits a while, as a step of a background job.",
         ["wait_until_arrived"] = "Waits until you reach a spot on the map, as a step of a background job.",
         ["get_position"] = "Looks at where you are: zone, area, map coordinates and the flag on your map.",
+        ["get_weather_forecast"] = "Checks the weather forecast of a zone and when a weather comes next.",
         ["set_map_flag"] = "Places the flag on your map at a spot in any zone, and can open the map.",
         ["clear_map_flag"] = "Removes the flag from your map.",
         ["start_route"] = "Plans a route as a background job: flags each stop on your map once you reach the one before.",
