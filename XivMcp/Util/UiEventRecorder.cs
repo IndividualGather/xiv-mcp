@@ -66,8 +66,8 @@ internal static unsafe class UiEventRecorder
     {
         lock (Sync)
         {
-            if (filter is not null && !filter.Contains(addon)) return;
-            if (Entries.Count < 500) Entries.Add(new Entry(Math.Round((DateTime.UtcNow - started).TotalSeconds, 2), addon, kind, detail));
+            if (filter is not null ? !filter.Contains(addon) : addon.StartsWith('_')) return; // HUD windows only when named
+            if (Entries.Count < 3000) Entries.Add(new Entry(Math.Round((DateTime.UtcNow - started).TotalSeconds, 2), addon, kind, detail));
         }
     }
 
@@ -87,6 +87,10 @@ internal static unsafe class UiEventRecorder
     private static void OnReceiveEvent(AddonEvent type, AddonArgs args)
     {
         if (args is not AddonReceiveEventArgs e) return;
+        // Animation, timers, hovering and focus fire constantly and say nothing about what the player did.
+        var t = e.AtkEventType.ToString();
+        if (t.StartsWith("Timeline") || t.StartsWith("Timer") || t.StartsWith("MouseOver") || t.StartsWith("MouseOut") || t.StartsWith("MouseMove")
+            || t.StartsWith("MouseWheel") || t.StartsWith("Focus")) return;
         Add(args.AddonName, "event", $"type {e.AtkEventType}, param {e.EventParam}");
     }
 
