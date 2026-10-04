@@ -8,14 +8,17 @@
     "install",
     "connect",
     "costs",
+    "privacy",
+    "troubleshooting",
     "---Permissions---",
     "...permissions",
     "---What it can do---",
     "...features",
+    "overlay",
     "tools",
     "---Reference---",
-    "caches",
+    "plugins",
     "compatibility",
-    "troubleshooting"
+    "caches"
   ]
 }

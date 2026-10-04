@@ -36,7 +36,7 @@ A long-running tool is one tool. A [job](/docs/developer/plugin-api/jobs) is a w
 />
 
 - **As a job step,** the usual way, the tool can run for hours. The assistant (or your plugin, with `StartJob`) puts it into a job, and the job waits until it is done before starting the next step.
-- **Called directly,** it works too, but only within the AI app's own [time limit](/docs/developer/plugin-api/jobs-or-steps#how-long-one-call-may-take) for a request, often a minute, which XIV MCP does not control. XIV MCP sends nothing while it waits, and when the app gives up, the call is cancelled.
+- **Called directly,** it works too, but only within the AI app's own [time limit](/docs/developer/plugin-api/time-limits) for a request, often a minute, which XIV MCP does not control. XIV MCP sends nothing while it waits, and when the app gives up, the call is cancelled.
 - **Cancelling comes from the job.** Pausing or cancelling the job fires `call.Cancellation`, and so does an app that aborts a direct call.
 - **Progress goes to the job log,** shown in `/xivmcp` → **Jobs** and in `get_job`.
 - **Failing makes the job wait.** The step becomes *pending* until the assistant retries, skips or changes it.
@@ -46,6 +46,8 @@ So write a long-running tool as if it were a job step: safe to stop at any momen
 When the assistant should drive a task itself and when it should hand it to a job, with what each costs, is on [Step by step or as a job](/docs/developer/plugin-api/jobs-or-steps). How players see jobs is described in [Background jobs](/docs/user/features/jobs).
 
 ## Example
+
+`Framework` is Dalamud's `IFramework` service. `StartFarming`, `BagsFull`, `Kills` and `StopFarmingSafely` stand for your plugin's own code.
 
 ```csharp
 mcp.AddLongRunningTool(
@@ -95,9 +97,9 @@ mcp.AddLongRunningTool(
 ## Rules
 
 - **Threads:** the handler starts on the framework thread and continues on the thread pool after its first `await`. Use `Framework.RunOnFrameworkThread` for game access after that.
-- **Cancel safely:** when `call.Cancellation` fires, finish the fight or close the window, then return or throw. XIV MCP waits up to two minutes for you.
-- **Progress:** `call.Progress("Room 2 of 5")` adds a line to the job log. Report milestones, not every frame.
+- **Cancel safely:** when `call.Cancellation` fires, finish the fight or close the window, then return or throw. XIV MCP waits up to two minutes for you, then moves on without your result.
+- **Progress:** `call.Progress("Room 2 of 5")` adds a line to the job log. It can be called from any thread, is cut at 300 characters, and is dropped when the tool was called directly rather than as a job step. Report milestones, not every frame.
 - **Ending a cancelled call:** let the `OperationCanceledException` from `Task.Delay(…, call.Cancellation)` propagate, or throw it yourself. The client reports "Cancelled."
 - **Pause and resume:** when a paused [job](/docs/developer/plugin-api/jobs) resumes, it runs the step again from the start, with the same arguments. Make tools safe to run again: prefer targets ("until 20 ore") over counts ("20 more").
 - **Failing** (throwing) makes the job step *pending*: the job waits for the assistant to retry or change it. Say what is left: "Bags full after 120 kills; 3 Iron Ore still missing."
-- **One acting step at a time:** while your tool runs as a job step, other tools that change something are refused, so nothing collides with it. Tools that only read keep working.
+- **One acting step at a time:** while your tool runs as a job step, other calls that are not read-only are refused, so nothing collides with it. Read-only tools and XIV MCP's waiting steps (`wait`, `wait_until_arrived`) are not blocked, and do not block others; they still follow the player's settings.

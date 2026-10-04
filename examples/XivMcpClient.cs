@@ -9,7 +9,8 @@
 //     ...
 //     mcp.Dispose();   // in your plugin's Dispose
 //
-// The full guide is docs/plugin-api.md in the XIV MCP repository. MIT licensed like XIV MCP.
+// The full guide: https://individualgather.github.io/xiv-mcp/docs/developer/plugin-api (also docs/plugin-api.md in the
+// XIV MCP repository). MIT licensed like XIV MCP.
 
 using System;
 using System.Collections.Concurrent;

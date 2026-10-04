@@ -1,6 +1,6 @@
 ---
 title: Caches
-description: What XIV MCP remembers between visits, how fresh it is, and how apps are told about changes.
+description: What XIV MCP remembers between visits, how fresh it is, and which files it keeps.
 icon: Database
 ---
 
@@ -29,18 +29,15 @@ Every cached result carries a `cache` block, so your assistant knows how old the
 
 `get_cache_status` lists every cache. `wait_for_cache_refresh` waits up to 10 minutes for you to refresh one, for example by visiting a bell. `refresh_retainer_inventories` opens every retainer once at a bell next to you.
 
-## Watching for changes
-
-Each cache is also an MCP **resource** (`xiv://cache/<id>`) that apps can subscribe to (`resources/subscribe`). Apps that open the event stream (`GET /mcp` with their `Mcp-Session-Id`) receive `notifications/resources/updated` when a cache changes.
-
 ## Other files
 
 XIV MCP keeps a few more files in the same folder:
 
 | File | What it holds |
 |---|---|
-| `characters.json` | The characters XIV MCP has seen, with worlds and service accounts |
+| `characters.json` | The characters XIV MCP has seen, with their worlds and the service account each is on (an account can hold several service accounts, each with its own characters) |
 | `sales.json` | Sale notices the game showed |
 | `audit.jsonl` | The third-party audit log |
-| Item sources | What it learned from FFXIV Teamcraft's data |
+| `teamcraft/` | Item sources downloaded from FFXIV Teamcraft's data, when *Online lookups* is allowed |
+| `approvals.json` | Your standing spending approvals |
 | `backups/` | Backups of plugin settings XIV MCP changed |

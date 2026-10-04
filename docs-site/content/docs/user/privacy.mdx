@@ -1,0 +1,40 @@
+---
+title: Privacy
+description: What your assistant sees, what goes online, and what stays on your PC.
+icon: Lock
+---
+
+XIV MCP itself sends nothing anywhere: it has no account, no telemetry and no server of its own. Data leaves your PC in two ways, and you control both.
+
+## What your AI app sees
+
+Every tool result goes to your AI app, and from there to its AI model, together with your messages. Unless you use a model on your own PC (see [LM Studio](/docs/user/connect/lm-studio)), the model runs in the cloud of the company behind the app, under that company's privacy terms.
+
+What is in those results depends on what you allow:
+
+| Module | What your assistant can see |
+|---|---|
+| **Game data** | Your character's name, world, jobs, gear, inventory, currencies, quests and collections, and the names of players in your party and around you |
+| **Items & retainers** | Your retainers, their inventories and ventures, the FC chest |
+| **Market & purchases** | Your listings and sale history |
+| **Game & navigation** | Your other characters, their worlds and service accounts, and game windows and menus on screen |
+| **Plugin management** | Other plugins' settings, which can contain passwords or keys. Denied by default. |
+| **Screen** | Screenshots, which can show chat, tells and other players' names. Every screenshot asks you first. |
+
+To keep something from your assistant, set its module's *Reading* to *Deny*, or switch the module off. See [Modules and permissions](/docs/user/permissions/modules).
+
+## What goes online
+
+Only the **Online lookups** module contacts websites, and it is denied by default:
+
+| Website | What it is asked |
+|---|---|
+| **universalis.app** | Market prices for the items and the world or data center your assistant asks about |
+| **FFXIV Teamcraft** (raw.githubusercontent.com) | Item source data, downloaded once and kept in `pluginConfigs/XivMcp/teamcraft/` |
+| **ffxiv.consolegameswiki.com** | An item's wiki page, when your assistant asks for it |
+
+None of these requests contain your character's name or your access token.
+
+## What stays on your PC
+
+The [caches](/docs/user/caches), the audit log, your settings and the access token are kept in Dalamud's `pluginConfigs` folder (`XivMcp.json` and the `XivMcp` folder next to it) and are never sent anywhere by XIV MCP. When you report a bug, leave out your access token, and check logs and screenshots for names before you post them.

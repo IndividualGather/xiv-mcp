@@ -39,12 +39,23 @@ Type `/xivmcp` to open its window, and [connect your AI app](/docs/user/connect)
 
 ## As a dev plugin
 
-Until then, you build XIV MCP yourself and load it from your PC. You need the [.NET 10 SDK](https://dotnet.microsoft.com/download) and XIVLauncher with Dalamud installed. The steps to build it are in [Building XIV MCP](/docs/developer/contributing/building).
+Until then, you build XIV MCP yourself and load it from your PC. You need the [.NET 10 SDK](https://dotnet.microsoft.com/download), [Git](https://git-scm.com/downloads), and XIVLauncher with Dalamud installed. Start the game once with Dalamud before you build, because the build uses Dalamud's files.
 
 <Steps>
 <Step>
 
-In the game, open `/xlsettings` → **Experimental** → **Dev Plugin Locations**, add the full path to `XivMcp/bin/Debug/XivMcp.dll`, and save.
+Open PowerShell in the folder you want XIV MCP in, and build it:
+
+```powershell
+git clone https://github.com/IndividualGather/xiv-mcp.git
+cd xiv-mcp
+dotnet build XivMcp.slnx
+```
+
+</Step>
+<Step>
+
+In the game, open `/xlsettings` → **Experimental** → **Dev Plugin Locations**. Add the path to the built plugin, including the drive, such as `C:\Users\you\xiv-mcp\XivMcp\bin\Debug\XivMcp.dll`, and save.
 
 </Step>
 <Step>
@@ -69,6 +80,7 @@ Everything about XIV MCP is in one window, with these tabs:
 | **Modules** | What XIV MCP's own tools may do. See [Modules and permissions](/docs/user/permissions/modules). |
 | **Third-party plugins** | Tools other plugins offer. See [Third-party plugins](/docs/user/permissions/third-party). |
 | **Jobs** | Background jobs and spending approvals. See [Background jobs](/docs/user/features/jobs). |
+| **Overlay** | The small window that shows what is running right now. See [Overlay and screenshots](/docs/user/overlay). |
 | **Info** | Recent activity, compatibility with your plugins, the full tools list and the caches. |
 
 `/xivmcp selftest` runs a quick check of everything and prints the results in chat. See [Troubleshooting](/docs/user/troubleshooting).

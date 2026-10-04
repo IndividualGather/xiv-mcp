@@ -32,7 +32,7 @@ Everything is in `XivMcpClient.cs`, in the namespace `XivMcp.Client`.
 | `JsonObject GetJob(string id){:csharp}` | One job, by id. |
 | `JsonArray ListJobs(){:csharp}` | The jobs your plugin started. |
 | `void PauseJob(string id){:csharp}`, `ResumeJob`, `CancelJob` | Job control. |
-| `bool IsAvailable{:csharp}` | XIV MCP is loaded and speaks this API version. |
+| `bool IsAvailable{:csharp}` | XIV MCP is loaded and speaks this API version or a newer one. |
 | `event Action<string>? RegistrationFailed{:csharp}` | XIV MCP's message when a definition is rejected. Log it. |
 | `void Dispose(){:csharp}` | Unregisters everything; call it in your plugin's `Dispose`. |
 
@@ -53,8 +53,8 @@ public sealed record McpToolDefinition(string Name, string Description)
 | `Name` | 3–64 characters `a-z0-9_`, starting with a letter. Prefix it with your plugin's name: `myplugin_…`. |
 | `Description` | What the assistant reads to decide when to call it. |
 | `InputSchema` | JSON schema of the arguments (`"type": "object"`), or null for none. See [Arguments](/docs/developer/plugin-api/tools#arguments). |
-| `ReadOnly` | True if it changes nothing. It runs during jobs and needs no capabilities. |
-| `Destructive` | True if the changes are hard to undo. |
+| `ReadOnly` | True if it changes nothing. It needs no capabilities, and may not declare acting ones. While a job step acts, only read-only tools run; others are refused. |
+| `Destructive` | True if the changes are hard to undo. Cannot be combined with `ReadOnly`. |
 | `Capabilities` | `McpCapabilities` ids. Required unless `ReadOnly`. |
 
 ## `McpCall`
@@ -65,9 +65,14 @@ What a long-running tool's handler gets.
 |---|---|
 | `JsonObject Args{:csharp}` | The arguments of this call. |
 | `CancellationToken Cancellation{:csharp}` | Fires when the job is paused or cancelled, or the app gives up. |
-| `void Progress(string text){:csharp}` | Adds a line to the job log. |
+| `void Progress(string text){:csharp}` | Adds a line to the job log. Any thread; cut at 300 characters; ignored outside jobs. |
 | `Task<bool> RequestApprovalAsync(string capability, string summary){:csharp}` | Asks the player now; `true` if approved. |
 | `string Id{:csharp}`, `string Tool{:csharp}` | The call's id and tool name. |
+
+## Results and errors
+
+- **Results** are serialized with `System.Text.Json`'s web defaults: property names in camelCase, so `new { KillCount = 3 }` arrives as `{"killCount": 3}`.
+- **`StartJob`, `GetJob`, `ListJobs`, the job controls and `CheckPermission`** throw `McpToolException` with XIV MCP's message when it refuses, for example for an unknown tool in a job step. While XIV MCP is not loaded, they throw Dalamud's `IpcNotReadyError`, so check `IsAvailable` first. `GetStatus` returns `Unavailable` instead. `UsesTools` and the `Add…` methods wait for XIV MCP to load, and report refusals through `RegistrationFailed` instead of throwing. Only an `InputSchema` that is not valid JSON throws.
 
 ## `McpStatus`
 
@@ -113,7 +118,19 @@ public sealed record McpDependencyStatus(
 }
 ```
 
-`State` is `ok`, `needs_plugin` (an integration tool's plugin is missing), `plugin_missing`, `plugin_not_loaded`, `plugin_outdated`, `tool_missing` or `not_enabled`. `Message` says what is wrong, in words the player understands.
+| `State` | Means |
+|---|---|
+| `ok` | The tool can be used. |
+| `needs_plugin` | An integration tool needs its plugin, which is not installed or not enabled in Dalamud. Core tools never get this: they work without plugins. |
+| `plugin_missing` | Another plugin's tool, and that plugin is not installed. |
+| `plugin_not_loaded` | Installed, but disabled in Dalamud. |
+| `plugin_outdated` | Installed, but older than your `minVersion`. |
+| `tool_missing` | The plugin is loaded but has not registered the tool. |
+| `not_enabled` | The tool is there, but the player has not enabled its plugin in XIV MCP. |
+
+Every state except `ok` keeps the job step from running. `Message` says what is wrong, in words the player understands.
+
+`ok` does not mean the player allows the tool. XIV MCP's own tools still follow the player's module settings, so a step can wait for approval or be refused. The modules and their defaults are listed in [Modules and permissions](/docs/user/permissions/modules#the-modules-and-their-defaults), and each tool's module in the [tools reference](/docs/user/tools).
 
 ## Other types
 

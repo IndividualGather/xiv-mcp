@@ -22,12 +22,12 @@ Pick a model with tool support and a large context window, for example:
 | Model | Good for |
 |---|---|
 | **GPT-OSS 20B** | Built for tool use. Runs on a graphics card with 16 GB of memory. |
-| **Qwen3.6 35B A3B** | Fast for its size, but needs more memory. |
+| **Qwen3.6 35B A3B** | Fast for its size and good with tools, but needs more than 16 GB. |
 
 <Callout type="warn" title="Your hardware does the work">
-  Running a model takes a lot of graphics and system memory. While you play, the model shares the graphics card with the game, so expect a lower frame rate. Bionic's cloud models are paid by use.
+  Running a model takes a lot of graphics and system memory: at least the download size LM Studio shows for the model, plus room for the chat. While you play, the model shares the graphics card with the game, so expect a lower frame rate. Bionic can also use cloud models; those are not free, but paid by use.
 </Callout>
 
 ## Removing it
 
-**Remove from LM Studio** in the **Connect** tab deletes the entry from Bionic's server list (or from the older app's `mcp.json`), with a backup.
+See [Removing XIV MCP from an app](/docs/user/connect/removing#lm-studio).

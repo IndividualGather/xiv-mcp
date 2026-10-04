@@ -48,6 +48,7 @@ Every tool of XIV MCP belongs to one **group**, and every group has two settings
 | **Online lookups** | Deny | — | Item sources (FFXIV Teamcraft, ffxiv.consolegameswiki.com) and market prices (universalis.app) |
 | **Plugin management** | Deny | Deny | Enabling, disabling and reloading plugins, reading and changing their settings (which may contain secrets) |
 | **Background jobs** | Allow | Allow | Starting and controlling jobs; every step is still checked against its own group |
+| **Screen** | Ask | — | Screenshots of the game, of the XIV MCP window or of the overlay (`take_screenshot`), which can show chat, tells and other players' names |
 
 The table shows the defaults. Settings from before this version carry over: a switch that was on allows its group's changes.
 
@@ -134,6 +135,7 @@ Other plugins can offer their own tools to your assistant. Those tools run that 
 | `navigate_to` | Walks and travels to a summoning bell, company chest, workshop, inn, house, apartment or a named object: by itself with vnavmesh (walking) and Lifestream (travel), otherwise by showing you the way and waiting (see below) |
 | `get_navigation_status` / `stop_navigation` | What is installed and moving, and an immediate stop |
 | `get_automation_status` | What XIV MCP detected about AutoRetainer, YesAlready and TextAdvance, and what it is pausing |
+| `show_xivmcp_window` | Opens `/xivmcp` on a tab (a job, a third-party plugin's card, the modules, the overlay settings, …) so the player can see something there; changes nothing in it |
 
 Windows that act instead of opening something (Log Out, Exit Game, Return, Ready Check, Countdown, Stance) can't be triggered through `open_window`.
 
@@ -248,6 +250,14 @@ Farming a drop or currency: one `run_duty` step with `"until": [{ "item": "Allag
 A scrip farming round as one job: `prepare_craft_plan` with `"quantity": "fill"` for a collectable → `gather_until` / `transfer_retainer_items` for the materials → `run_crafting_list` → `turn_in_collectables` (stops before the scrip cap) → `buy_item` with a standing `approval` → `sell_item`.
 
 MCP's own task mechanism (the Tasks extension) isn't used because no common client supports it yet. Jobs work with every client through ordinary tools.
+
+### Screenshots and the overlay *(Screen)*
+
+| Tool | What it does |
+|---|---|
+| `take_screenshot` | A screenshot of the whole game window (with plugin windows), only the XIV MCP window, or only the overlay, scaled to `max_width`. Asks the player by default. |
+
+The **activity overlay** is a small window that shows the tool calls and background jobs running right now, and closes a few seconds after. `/xivmcp` → **Overlay** sets its layout (*Full* or *Minimal*), size, background, what it shows, and whether it can be moved, clicked through or used to pause and cancel jobs; **Show preview** places it.
 
 ### Plugin management *(Plugin management; `list_plugins` is Game data)*
 

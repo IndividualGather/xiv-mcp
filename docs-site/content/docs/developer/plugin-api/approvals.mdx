@@ -6,6 +6,8 @@ icon: Hand
 
 When the real cost is only known during the call, ask then, with the numbers:
 
+`Framework` is Dalamud's `IFramework` service, and `PlanPurchase` your own code.
+
 ```csharp
 var basket = await Framework.RunOnFrameworkThread(PlanPurchase);
 var question = $"Buy {basket.Summary} for {basket.Gil:N0} gil";
@@ -16,13 +18,13 @@ if (!await call.RequestApprovalAsync(McpCapabilities.SpendGil, question))
 
 ## How it answers
 
-- **`true` right away** if the player allows the capability, or set this tool to *Allow* on its own.
+- **`true` right away** if the player allows the capability, or set this one tool to *Allow*.
 - **`false` right away** if the capability is denied.
 - **Otherwise** it shows an approval window and waits: two minutes, then `false`.
 
 ## Rules
 
-- **For a capability set to *Ask*, the player is asked twice:** before the call, and again here, unless they chose *Approve for this session* or *Always allow* the first time. So only ask here when your question adds something, like the price.
+- **For a capability set to *Ask*, the player is asked twice:** once before the call, and once more here. They are not asked the second time if they chose *Approve for this session* or *Always allow* the first time. So only ask here when your question adds something, like the price.
 - **A "no" is final for this call.** Throw, and say what was not done. If the assistant calls again, the player is asked again, and can set the capability to *Deny* to stop that.
 - **Only declared capabilities.** Asking for a capability the tool did not declare returns `false` and is flagged.
 - **Only in long-running tools.** Quick tools run on the framework thread and must not wait.

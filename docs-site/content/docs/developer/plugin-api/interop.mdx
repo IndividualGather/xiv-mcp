@@ -76,7 +76,7 @@ mcp.UsesTools(
 | `repo` | The `https://` URL of the `repo.json` it is installed from, or `"official"` for Dalamud's main repository | For another plugin's tool |
 | `minVersion` | The oldest version that has the tool as you use it, such as `"1.2.0"` | For another plugin's tool |
 
-- **Built-in tools take no plugin fields.** XIV MCP knows which plugins its tools need or can use, and keeps that list up to date: see [Tools that need plugins](/docs/developer/plugin-api/tool-requirements). Naming a plugin for a built-in tool is refused.
+- **Built-in tools take no plugin fields.** XIV MCP knows which plugins its tools need or can use, and keeps that list up to date: see [Plugins XIV MCP uses](/docs/user/plugins). Naming a plugin for a built-in tool is refused.
 - **A name XIV MCP does not know is treated as another plugin's tool,** so a typo in a built-in name asks for the plugin fields. The error message says so.
 - **Calling `UsesTools` again replaces the list.** The client declares it again whenever XIV MCP loads, like your tools.
 - **Declaring is not consent.** It does not ask the player for anything, and does not allow anything. It only shows them what your jobs need.
@@ -105,11 +105,12 @@ The tab label and the card summary count the tools that cannot run. XIV MCP neve
 `GetStatus()` returns the same states, so your own UI can explain them too:
 
 ```csharp
+// Log is your plugin's IPluginLog.
 foreach (var d in mcp.GetStatus().Dependencies.Where(d => !d.Ok))
     Log.Warning($"Our jobs need {d.Tool}: {d.Message}");
 ```
 
-`State` is one of `ok`, `needs_plugin`, `plugin_missing`, `plugin_not_loaded`, `plugin_outdated`, `tool_missing` or `not_enabled`.
+What each state means is in the [client reference](/docs/developer/plugin-api/reference#mcpdependencystatus).
 
 ## Good practice
 

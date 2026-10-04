@@ -6,7 +6,7 @@ icon: LifeBuoy
 
 - **Self-test:** `/xivmcp selftest` (or the `run_self_test` tool) checks that your plugin provides its Invoke gate, and calls one of your read-only tools if your plugin is enabled.
 - **Logs:** `/xllog` shows each registration under `[XivMcp]`.
-- **What the assistant sees:** the address and token are in `/xivmcp` → **Connect**.
+- **What the assistant sees:** ask the server yourself. The address (port 37521 unless the player changed it) and the token are in `/xivmcp` → **Connect**. The server answers `tools/list` without an `initialize` first.
 
 ```bash
 curl -s http://localhost:37521/mcp \

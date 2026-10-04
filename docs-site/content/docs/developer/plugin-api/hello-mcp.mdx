@@ -1,6 +1,6 @@
 ---
-title: Example plugin
-description: Hello MCP, a small complete Dalamud plugin that uses the client.
+title: Hello MCP
+description: The example plugin, a small and complete Dalamud plugin that uses the client.
 icon: Lightbulb
 ---
 
@@ -26,7 +26,7 @@ icon: Lightbulb
 |---|---|---|---|
 | `hellomcp_greet` | quick, read-only | (reading) | Reading game state on the framework thread, an `enum` argument, structured results, `McpToolException` |
 | `hellomcp_print` | quick, acting | `game_ui` | A tool that changes something (prints to the local chat log): not read-only, declares what it does, validates arguments first |
-| `hellomcp_countdown` | long-running | `game_ui` | Replying "pending", `call.Progress(…)`, stopping on `call.Cancellation`, going back to the framework thread |
+| `hellomcp_countdown` | long-running | `game_ui` | Answering later instead of at once (the client tells XIV MCP the result is still to come), `call.Progress(…)`, stopping on `call.Cancellation`, going back to the framework thread |
 | `hellomcp_pretend_purchase` | long-running | `spend_gil` | `mcp.CheckPermission(…)` and `call.RequestApprovalAsync(…)`: asking the player at the risky moment with the real numbers. Nothing is bought. |
 
 It also declares the tools its jobs use besides its own, `get_game_status` and `navigate_to`, with `mcp.UsesTools(...)`. They show on its card under **Tools its jobs use**. See [Using other tools in your jobs](/docs/developer/plugin-api/interop).
@@ -34,7 +34,7 @@ It also declares the tools its jobs use besides its own, `get_game_status` and `
 | Command | What it does |
 |---|---|
 | `/hellomcp job` | Starts a job: the countdown, then a chat message that uses the countdown's result (`{{count.seconds}}`), then XIV MCP's own `get_game_status`. |
-| `/hellomcp bell` | Starts a job that walks to a summoning bell with XIV MCP's `navigate_to`, then prints the result (`{{walk.arrived}}`). |
+| `/hellomcp bell` | Starts a job that takes you to a summoning bell with XIV MCP's `navigate_to`, then prints the result (`{{walk.arrived}}`: `false` if you did not get there in time). |
 | `/hellomcp jobs` | Lists the jobs the plugin started. |
 | `/hellomcp status` | Shows what the plugin sees (`mcp.GetStatus()`), including tools its jobs use that cannot run. |
 
@@ -52,7 +52,7 @@ dotnet build examples/HelloMcp/HelloMcp.csproj -c Debug
 </Step>
 <Step>
 
-**Load it as a dev plugin.** In the game, open `/xlsettings` → **Experimental** → **Dev Plugin Locations**, add the full path to `examples/HelloMcp/bin/Debug/HelloMcp.dll` and save. Then enable *Hello MCP* in the plugin installer under **Dev Tools**.
+**Load it as a dev plugin.** In the game, open `/xlsettings` → **Experimental** → **Dev Plugin Locations**, add the path to `examples/HelloMcp/bin/Debug/HelloMcp.dll`, including the drive, and save. Then enable *Hello MCP* in the plugin installer under **Dev Tools**.
 
 </Step>
 <Step>
@@ -68,7 +68,7 @@ dotnet build examples/HelloMcp/HelloMcp.csproj -c Debug
 - Ask it to "print hello in chat with Hello MCP". The approval window asks first. Choose *Approve for this session* and ask again; it does not ask a second time.
 - Ask it to "pretend to buy a Hi-Potion with Hello MCP". The call itself is approved first, then the tool asks again with the price.
 - Type `/hellomcp job` and watch the job in `/xivmcp` → **Jobs**. Pause it while the countdown runs to see cancellation, then resume it.
-- Type `/hellomcp bell`. With vnavmesh and Lifestream it walks you to a bell; without them, XIV MCP flags a bell on your map or asks you to go to an inn room, and waits. Turn vnavmesh off in the plugin installer, and Hello MCP's card shows a hint for `navigate_to`, with a button to enable it again.
+- Type `/hellomcp bell`. With vnavmesh and Lifestream it walks you to a bell. Without them, XIV MCP flags a bell on your map, or, with no bell nearby, asks you to go to the place set as **Summoning bell location** (without Lifestream, an inn room), and waits. Turn vnavmesh off in the plugin installer, and Hello MCP's card shows a hint for `navigate_to`, with a button to enable it again.
 - Check the activity list under *Hello MCP*: every call, decision and approval is recorded.
 
 </Step>
@@ -77,5 +77,4 @@ dotnet build examples/HelloMcp/HelloMcp.csproj -c Debug
 ## Tips for your own plugin
 
 - **Start from the client, not the raw IPC gates.** It handles the Ready and Disposing messages, registers again after XIV MCP reloads, and turns exceptions into errors the assistant can read.
-- **Register everything at startup.** A tool or capability added later pauses your plugin until the player consents again.
 - **Show your status.** `mcp.GetStatus()` tells you whether the player has decided, kept you disabled, needs to consent again, or suspended you. Say so in your UI.

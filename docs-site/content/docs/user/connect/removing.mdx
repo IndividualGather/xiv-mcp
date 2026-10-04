@@ -3,18 +3,31 @@ title: Removing XIV MCP from an app
 description: Take XIV MCP out of an app again, or cut off every app at once.
 ---
 
-Each app XIV MCP is set up in gets a **Remove XIV MCP from …** section in `/xivmcp` → **Connect**:
+Most apps are removed with a **Remove from …** button on their panel in `/xivmcp` → **Connect**. Claude Desktop and VS Code manage XIV MCP themselves, so you remove it there.
 
-| App | How |
-|---|---|
-| **ChatGPT** (Codex) | **Remove from ChatGPT** deletes the entry from `~/.codex/config.toml`, with a backup. Restart ChatGPT. |
-| **Claude Code** | **Remove from Claude Code** runs `claude mcp remove` for the user-wide entry and for every project that has its own. |
-| **Claude Desktop** | **Settings** → **Extensions** → **Final Fantasy XIV (XIV MCP)** → **Uninstall**, or switch it off there. |
-| **VS Code** | Extensions view → **MCP Servers – Installed** → right-click `ffxiv` → **Uninstall**. |
-| **Cursor** | Delete the `ffxiv` entry from `~/.cursor/mcp.json`. |
-| **GitHub Copilot** | **Remove from GitHub Copilot** deletes the entry from `~/.copilot/mcp-config.json`, with a backup. |
-| **Grok Build** | **Remove from Grok Build** deletes the entry from `~/.grok/config.toml`, with a backup. |
-| **LM Studio** | **Remove from LM Studio** deletes the entry from Bionic's server list (or the older app's `mcp.json`), with a backup. |
+### ChatGPT
+
+**Remove from ChatGPT** deletes the entry from `~/.codex/config.toml`, with a backup. Restart ChatGPT afterwards.
+
+### Claude Desktop
+
+In Claude Desktop, open **Settings** → **Extensions** → **Final Fantasy XIV (XIV MCP)** and click **Uninstall**, or switch it off there.
+
+### LM Studio
+
+**Remove from LM Studio** deletes the entry from Bionic's server list (or from the older app's `mcp.json`), with a backup.
+
+### Claude Code
+
+**Remove from Claude Code** runs `claude mcp remove` for the user-wide entry and for every project that has its own.
+
+### VS Code
+
+In VS Code, open the Extensions view, find **MCP Servers – Installed**, right-click `ffxiv` and choose **Uninstall**.
+
+### Apps you set up by hand
+
+Delete the `ffxiv` entry from the app's MCP settings, for example from `~/.cursor/mcp.json` for Cursor.
 
 ## Every app at once
 

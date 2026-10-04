@@ -45,14 +45,16 @@ Moving works without any other plugin. When a part of the way is something XIV M
   W -- no --> WP["XIV MCP flags the spot<br/>on your map, and waits"]`}
 />
 
+The walking plugin is **vnavmesh**, the travel plugin **Lifestream**. Where to get them is on [Plugins XIV MCP uses](/docs/user/plugins#where-to-get-them).
+
 | Part of the way | With a plugin | Without one |
 |---|---|---|
-| Walking in the zone | Walks you there | Puts the flag on your map and asks you to walk to it |
-| Teleporting to another zone | Teleports you | Names the aetheryte (and the aethernet shard), opens the map at it, and asks you to teleport |
-| Inn room, house, apartment, workshop | Takes you inside | Asks you to go in |
-| Another world | Travels there | Asks you to use World Visit or Data Center Travel |
+| Walking in the zone (vnavmesh) | Walks you there | Puts the flag on your map and asks you to walk to it |
+| Teleporting to another zone (Lifestream) | Teleports you | Names the aetheryte (and the aethernet shard), opens the map at it, and asks you to teleport |
+| Inn room, house, apartment, workshop (Lifestream) | Takes you inside | Asks you to go in |
+| Another world (Lifestream) | Travels there | Asks you to use World Visit or Data Center Travel |
 
-The same applies to tools that take you somewhere on the way, such as `buy_item` and `turn_in_collectables`. The wait ends when you arrive, when you stop it with `stop_navigation`, or after the timeout (10 minutes by default). Which plugins can do which part is listed on [Tools that need plugins](/docs/developer/plugin-api/tool-requirements).
+The same applies to tools that take you somewhere on the way, such as `buy_item` and `turn_in_collectables`. The wait ends when you arrive, when you stop it with `stop_navigation`, or after the timeout (10 minutes by default). If you do not arrive in time, your assistant is told you did not get there, and why. Which plugins can do which part is listed on [Plugins XIV MCP uses](/docs/user/plugins).
 
 ## Characters, worlds and jobs
 
@@ -65,4 +67,4 @@ The same applies to tools that take you somewhere on the way, such as `buy_item`
 | `switch_gearset` | Changes job by equipping a gear set, by number, name or job (the set with the highest item level of that job) |
 | `leave_duty` | Leaves the current duty like the Duty Finder's Leave entry, once the current fight is over |
 
-Logging in is built in. XIV MCP goes through the game's own lobby (title screen, data center, service account, character list) and confirms only when the game's prompt names the right character. It remembers each character's service account. Accounts are told apart by what XIV MCP observes, so it never tries to reach a character of another account.
+Logging in is built in. XIV MCP goes through the game's own lobby (title screen, data center, service account, character list) and confirms only when the game's prompt names the right character. It remembers each character's service account (one Square Enix account can hold several service accounts, each a separate licence with its own characters). Accounts are told apart by what XIV MCP observes, so it never tries to reach a character of another account.

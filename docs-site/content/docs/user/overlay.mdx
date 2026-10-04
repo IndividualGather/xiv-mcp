@@ -1,0 +1,30 @@
+---
+title: Overlay and screenshots
+description: See what your assistant is doing right now, and let it look at your screen or open XIV MCP's window for you.
+icon: MonitorPlay
+---
+
+## The activity overlay
+
+While your assistant calls a tool or a background job runs, a small window on your screen shows it. It appears only while something runs, and closes a few seconds after. Its settings are in `/xivmcp` → **Overlay**.
+
+- **Show preview** shows the overlay with sample content, so you can drag it where you want it. **Reset position** moves it back to the left of the screen.
+- **Layout:** *Full* shows a card per job with its progress bar, current step and progress, and each tool call with what it does. *Minimal* shows one line per job or call.
+- **Size** and **Background** change the size of the text and how opaque the background is.
+- **Lock position** keeps it from being dragged. **Click-through** lets clicks pass through it to the game; it can then not be moved, and its buttons do not work.
+- **Pause and cancel buttons** let you pause, resume or cancel a job on the overlay itself. Cancel asks for a second click.
+- **Content:** show tool calls, background jobs, or both. Calls appear only once they have run a moment (400 ms by default), so quick reads do not make the overlay flicker. Finished items stay for a few seconds, and at most four are shown; the rest are counted.
+
+The switch at the top turns the overlay off entirely.
+
+## Screenshots
+
+`take_screenshot` lets your assistant see what you see: the whole game window with your plugin windows, only the XIV MCP window, or only the overlay. It belongs to the **Screen** module, which is set to *Ask*, so every screenshot waits for your approval.
+
+<Callout type="warn" title="Screenshots show everything on screen">
+  Chat, tells, your character's name and other players' names can be in a screenshot, and the screenshot goes to your AI app and its model like any other tool result. Close what you do not want to share before you approve, or set **Screen** to *Deny*.
+</Callout>
+
+## Showing XIV MCP's window
+
+`show_xivmcp_window` opens `/xivmcp` on a tab, so your assistant can show you something there: a background job, a third-party plugin's permissions, the modules or the overlay settings. It only opens the window; nothing in it is changed. It belongs to **Game & navigation** changes.

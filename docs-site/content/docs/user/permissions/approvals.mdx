@@ -35,11 +35,13 @@ They open an approval window in the game, and nothing happens until you answer.
 
 - **Who asks:** your assistant, or a named plugin.
 - **What:** the tool, what it wants to do and its arguments. The window is highlighted by risk.
-- **Your answer:** approve once, approve for this session, always allow (which sets the setting to *Allow*), or decline.
+- **Your answer:** approve once, approve for this session (that tool is approved until the game or XIV MCP restarts), always allow (which sets the setting to *Allow*), or decline. For a third-party action that cannot be undone, the window asks every time and only offers *once*.
 - **No answer** within two minutes counts as declined.
 - **You notice it** even in another window: the game's taskbar button flashes while an approval waits.
 
 A plugin can also ask in the middle of a call, with the real numbers, such as "Buy 3 Hi-Potions for 1,200 gil".
+
+One `buy_item` call asks once, for the whole quantity, even when it buys in several batches of 99. Buying the same item again in a new call asks again.
 
 ## Standing approvals
 

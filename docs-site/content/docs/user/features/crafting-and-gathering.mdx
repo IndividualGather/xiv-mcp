@@ -11,7 +11,7 @@ Planning works on its own. Crafting and gathering go through **Artisan** and **G
 | `plan_craft` | Plans a project: recipe tree, crafting order, stock from bags and retainers, where to get missing materials, bag space and batches, and the stats Artisan will craft with | Game data |
 | `get_crafting_lists` / `set_crafting_list` / `delete_crafting_list` | Artisan's lists and state; creates, edits or deletes lists | Artisan |
 | `craft_item` / `crafting_control` | Crafts an item a number of times; starts, pauses, resumes or stops a list | Artisan |
-| `prepare_craft_plan` | Creates the Artisan list in the right order and works out the **Raphael** solution for each recipe ahead of time, with the exact stats Artisan will use | Artisan |
+| `prepare_craft_plan` | Creates the Artisan list in the right order and works out each recipe's steps ahead of time with **Raphael** (the crafting solver built into Artisan), with the exact stats Artisan will use | Artisan |
 | `run_crafting_list` | Runs an Artisan list to the end and reports what was crafted | Artisan |
 | `get_gather_lists` / `set_gather_list` / `delete_gather_list` / `set_auto_gather` | GatherBuddy Reborn's auto-gather lists, and auto-gather on or off | GatherBuddy Reborn |
 | `gather_until` | Gathers until your bags hold the target quantities. Your other lists are paused and restored afterwards. | GatherBuddy Reborn |

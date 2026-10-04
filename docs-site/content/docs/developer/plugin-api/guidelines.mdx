@@ -23,17 +23,18 @@ The player sees an abbreviated version in `/xivmcp`, with the full text as a too
 ## Behaviour
 
 - **Quick tools must be quick.** They run on the framework thread. Anything that waits belongs in `AddLongRunningTool`.
-- **Make cancellation safe.** Finish the fight or close the window first, then stop. XIV MCP waits up to two minutes for that.
+- **Make cancellation safe.** Finish the fight or close the window first, then stop. See [Long-running tools](/docs/developer/plugin-api/long-running#rules).
 - **Fail with a next step:** "Not at a summoning bell; use navigate_to with destination summoning_bell first."
 - **Read-only means it changes nothing.** It cannot declare acting capabilities.
 - **Keep critical actions rare and explicit.** `discard_items` is asked every time and cannot be allowed permanently.
 
 ## Limits
 
-- **One acting step at a time:** while a job step runs, calls that are not read-only are refused. Read-only tools are not blocked by it, but still follow the player's settings.
+- **One acting step at a time:** while a job step that changes something runs, other calls that are not read-only are refused, so nothing collides with it. Read-only tools and XIV MCP's waiting steps (`wait`, `wait_until_arrived`) are not blocked, and do not block others; they still follow the player's settings.
 - **Size:** results are JSON strings; keep them to a few kilobytes.
 - **Identity:** IPC does not identify the caller, so your owner name is taken as given. Do not register under another plugin's name.
 - **Observation, not a sandbox:** XIV MCP notices changes to gil, currencies, item counts, zone, world, sent chat and logins. Other effects, such as a market listing, still need declaring.
+- **Register everything at startup.** A tool or capability added later pauses your plugin until the player consents again. Removing tools never asks.
 - **Versioning:** `ApiVersion` only goes up for breaking changes.
 
 <Callout type="warn" title="Terms of service">

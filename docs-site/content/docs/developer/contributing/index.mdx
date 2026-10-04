@@ -61,6 +61,30 @@ A new tool of XIV MCP's own touches these places:
 
 The tests check that every tool has a summary written in the player style, and that every tool in the catalog maps to an existing module.
 
+A shortened version of `get_position` from `XivMcp/Tools/MapTools.cs`. `Game.Run` reads the game on the framework thread, and a `ToolException` reaches the assistant as its message:
+
+```csharp
+yield return new McpTool
+{
+    Name = "get_position",
+    Description = "Where the player is: the zone's territory id " +
+                  "and the world position.",
+    Handler = (_, _) => Game.RunLoggedIn<object?>(() =>
+    {
+        var me = Svc.Objects.LocalPlayer
+                 ?? throw new ToolException(
+                     "The character is not in the world right now.");
+        return new
+        {
+            territory = Svc.ClientState.TerritoryType,
+            position = me.Position,
+        };
+    }),
+};
+```
+
+Tools that change something set `ReadOnly = false`. Tools that wait are `async` and pass `ct` on, so stopping a job or the app giving up stops them too.
+
 ## Writing for players
 
 Text the player reads, in the plugin and on this site, follows a few rules:

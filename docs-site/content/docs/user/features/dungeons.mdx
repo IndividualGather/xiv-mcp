@@ -4,11 +4,17 @@ description: Run and loop duties with AutoDuty until you have the drop or the cu
 icon: Swords
 ---
 
-The dungeon tools work through **AutoDuty**, so they are only offered while AutoDuty is loaded. They have their own module, **AutoDuty**, under **Integrations maintained by XIV MCP**.
+The dungeon tools work through **AutoDuty**, so they are only offered while AutoDuty is loaded. Where to get it is on [Plugins XIV MCP uses](/docs/user/plugins#where-to-get-them).
+
+To let your assistant farm a dungeon:
+
+1. Install AutoDuty and check that it can run the duty on its own.
+2. In `/xivmcp` → **Modules**, under **Integrations maintained by XIV MCP**, set **AutoDuty** changes to *Allow* (or *Ask*).
+3. Ask for it as a job, for example "Run the latest dungeon with NPC allies as a job until I have 500 more Poetics". *Background jobs* is allowed by default.
 
 | Tool | What it does |
 |---|---|
-| `list_duties` | Duties AutoDuty has a path for, with level and item level, and the modes it can run them in (Support, Trust, Squadron, Regular and more) |
+| `list_duties` | Duties AutoDuty has a path for, with level and item level, and the modes it can run them in: with NPC allies (*Duty Support*, *Trust*, *Squadron*), with a party (*Regular*) and more |
 | `run_duty` | Runs a duty `loops` times, or `until` your inventory holds the items or currency you want |
 | `get_duty_status` / `stop_duty` | What AutoDuty is doing (stage, duty, loop); stops it after the current fight |
 | `leave_duty` | Leaves the current duty like the Duty Finder's Leave entry. If AutoDuty is running, it is stopped first, after the current fight. Works without AutoDuty too (module **Game & navigation**). |

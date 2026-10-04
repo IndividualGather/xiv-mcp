@@ -74,6 +74,12 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnRestock(string command, string arguments)
     {
+        if (!mcp.IsAvailable)
+        {
+            Chat.PrintError("XIV MCP is not loaded.", "Restock Helper");
+            return;
+        }
+
         // 3. Check first, so the player learns what is missing here
         //    instead of from a refused job.
         var missing = mcp.GetStatus().Dependencies

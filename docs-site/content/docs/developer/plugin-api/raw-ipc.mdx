@@ -29,8 +29,9 @@ For plugins that do not use `XivMcpClient.cs`.
 | `FailCall` | `Func<string callId, string message, string>{:csharp}` | Fails a pending call |
 | `ReportProgress` | `Func<string callId, string text, string>{:csharp}` | Adds a job log line |
 | `StartJob` | `Func<string owner, string jobJson, string>{:csharp}` | Job `{"name","steps":[{"id","tool","args","note"}]}`; returns `{"job":{…}}` |
-| `GetJob` / `ListJobs` | `Func<string id \| owner, string>` | `{"job"}` / `{"jobs"}` |
-| `PauseJob` / `ResumeJob` / `CancelJob` | `Func<string id, string>` | Job control |
+| `GetJob` | `Func<string id, string>{:csharp}` | `{"job"}` |
+| `ListJobs` | `Func<string owner, string>{:csharp}` | `{"jobs"}`: the jobs your plugin started |
+| `PauseJob` / `ResumeJob` / `CancelJob` | `Func<string id, string>{:csharp}` | Job control |
 | `Ready` / `Disposing` | messages | Register on `Ready`; stop running calls on `Disposing` |
 
 `state` is one of `undecided`, `kept_disabled`, `enabled`, `awaiting_consent` or `suspended`.
@@ -91,7 +92,7 @@ Each entry of `dependencies` in the reply and in `GetStatus`:
 }
 ```
 
-`state` is one of `ok`, `needs_plugin`, `plugin_missing`, `plugin_not_loaded`, `plugin_outdated`, `tool_missing` or `not_enabled`. `install` lists the plugins to install, enable or update. `needed: true` is a plugin an integration tool cannot run without (`state` is then `needs_plugin`); `needed: false` is one an XIV MCP core tool can use, with `without` saying what XIV MCP does instead.
+`state` is one of the [dependency states](/docs/developer/plugin-api/reference#mcpdependencystatus). `install` lists the plugins to install, enable or update. `needed: true` is a plugin an integration tool cannot run without (`state` is then `needs_plugin`); `needed: false` is one an XIV MCP core tool can use, with `without` saying what XIV MCP does instead.
 
 ## Gates your plugin provides
 
@@ -123,7 +124,7 @@ Each entry of `dependencies` in the reply and in `GetStatus`:
       X-->>Y: pending, then approved or denied
     end
   end
-  opt the job is paused or cancelled
+  opt the job is paused or cancelled, or the app gives up
     X->>Y: Cancel("c1")
     Note over Y: stop safely
   end
@@ -136,4 +137,4 @@ Each entry of `dependencies` in the reply and in `GetStatus`:
 
 `CompleteCall` takes the result itself, not wrapped in `{"result": …}`. The approval request is `{"capability": "spend_gil", "summary": "Repair for 3,200 gil"}`.
 
-XIV MCP has no time limit of its own on pending calls. Approval windows decline after two minutes, and after a `Cancel` XIV MCP waits up to two minutes for your `CompleteCall` or `FailCall`.
+XIV MCP sets no time limit of its own on pending calls. When an AI app calls your tool directly, the app's own [time limit](/docs/developer/plugin-api/time-limits) applies, often a minute; when it gives up, you get `Cancel`. Approval windows decline after two minutes, and after a `Cancel` XIV MCP waits up to two minutes for your `CompleteCall` or `FailCall`.

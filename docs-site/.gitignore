@@ -26,4 +26,4 @@ yarn-error.log*
 next-env.d.ts
 # generated on every build by scripts/generate-tools.mjs
 /content/docs/user/tools.mdx
-/content/docs/developer/plugin-api/tool-requirements.mdx
+/content/docs/user/plugins.mdx

@@ -26,10 +26,15 @@ Steps can call XIV MCP's tools and other plugins' tools too. Declare the ones yo
 
 ## XIV MCP's own tools
 
-They are listed with their purpose in the [tools reference](/docs/user/tools), and with their arguments in `tools/list`. The ones that need other plugins are on [Tools that need plugins](/docs/developer/plugin-api/tool-requirements). For example, `new McpJobStep("sell_item", new { retainer = "{{pick.retainer}}", item = "Iron Ore" })` passes your result into one of them.
+They are listed with their purpose in the [tools reference](/docs/user/tools), and with their arguments in `tools/list`. The ones that need other plugins are on [Plugins XIV MCP uses](/docs/user/plugins). For example, `new McpJobStep("sell_item", new { retainer = "{{pick.retainer}}", item = "Iron Ore" })` passes your result into one of them.
 
 ## Permissions and control
 
 - **Every step is checked** against the player's settings, so a step set to *Ask* waits for the player.
 - **Control:** `GetJob(id)`, `ListJobs()`, `PauseJob`, `ResumeJob` and `CancelJob`.
 - Your jobs show in `/xivmcp` → **Jobs** with your plugin's name.
+- **Nobody watches your jobs.** When a step fails, the job waits as *pending*. Check `GetJob(id)`, and cancel it or tell the player, who can retry or skip the step in `/xivmcp` → **Jobs** (or ask their assistant to). The client cannot retry or skip a step itself.
+
+## Why not MCP tasks?
+
+MCP has its own mechanism for long work, the Tasks extension, but no common AI app supports it yet. Jobs work with every app, through ordinary tools.

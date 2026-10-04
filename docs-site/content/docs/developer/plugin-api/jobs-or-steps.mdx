@@ -28,7 +28,7 @@ The assistant calls a tool, reads the result, and picks the next call.
 
 - It adapts to every result: full bags, a missing NPC, a price that moved.
 - It is expensive. Each call is a model request, and waiting means asking again and again.
-- Each call has to finish within the AI app's [time limit](#how-long-one-call-may-take), often a minute, and the chat has to stay open.
+- Each call has to finish within the AI app's [time limit](/docs/developer/plugin-api/time-limits), often a minute, and the chat has to stay open.
 
 ## As a job
 
@@ -70,27 +70,10 @@ The assistant sends the whole list once. XIV MCP runs the steps, passes results 
 | **Who runs the steps** | The assistant | XIV MCP |
 | **Model requests** | One per call and per check | One to start, plus any checks |
 | **Surprises** | Handled after every step | The step fails, the job waits |
-| **Long steps** | Within the app's time limit | Hours |
+| **Long steps** | Within the app's [time limit](/docs/developer/plugin-api/time-limits) | Hours |
 | **The chat** | Must stay open | Can be closed |
 
 Both follow the same permission settings.
-
-## How long one call may take
-
-AI apps stop waiting for a tool call after a while and cancel it. XIV MCP answers a call only when it is done, so this limit applies to the whole call. Job steps are not affected: they run inside XIV MCP, without a request held open.
-
-| App | Limit for one call | Can you change it? |
-|---|---|---|
-| **ChatGPT** (Codex) | 60 seconds | Yes: `tool_timeout_sec` in XIV MCP's entry in `~/.codex/config.toml` |
-| **Claude Code** | 60 seconds | Yes: a `timeout` in milliseconds in XIV MCP's server entry, or the `MCP_TOOL_TIMEOUT` environment variable |
-| **Claude Desktop** | About 60 seconds | No. Users report that the limit is fixed and timeout settings are ignored. |
-
-```toml title="~/.codex/config.toml"
-[mcp_servers.ffxiv]
-tool_timeout_sec = 600   # ten minutes
-```
-
-The values are from the apps' documentation and user reports as of October 2026, and may change. Claude Code waits at least 60 seconds for the first byte of an answer, and longer only when a longer timeout is set. A minute is plenty for reading the game and for most single actions. Anything that may take longer, such as a dungeon run, gathering or a whole crafting list, belongs in a job.
 
 ## Which one to use
 
@@ -110,5 +93,5 @@ They mix well: look around step by step, hand the long stretch to a job, then de
 
 - Make long-running tools safe to stop and to run again, and return results the next step can use. See [Long-running tools](/docs/developer/plugin-api/long-running).
 - Fail with what is left ("3 Iron Ore still missing"), so whoever fixes the pending step knows what to do.
-- Jobs your plugin starts have no assistant watching. Check `GetJob(id)` and handle a *pending* job yourself, or tell the player.
+- Jobs your plugin starts have no assistant watching. Check `GetJob(id)`, and cancel a *pending* job or tell the player. See [Starting jobs](/docs/developer/plugin-api/jobs#permissions-and-control).
 - Offer quick, read-only status tools, so checks are cheap when the assistant drives.

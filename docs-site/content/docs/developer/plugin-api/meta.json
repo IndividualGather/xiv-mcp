@@ -2,22 +2,23 @@
   "title": "Plugin API",
   "pages": [
     "index",
+    "hello-mcp",
     "tools",
-    "long-running",
+    "capabilities",
     "approvals",
+    "long-running",
     "status",
+    "player-controls",
     "jobs",
     "jobs-or-steps",
     "interop",
     "interop-example",
-    "capabilities",
-    "player-controls",
     "guidelines",
-    "hello-mcp",
     "---Reference---",
     "reference",
-    "tool-requirements",
     "raw-ipc",
+    "time-limits",
+    "[Blocks][Plugins XIV MCP uses](/docs/user/plugins)",
     "troubleshooting"
   ]
 }

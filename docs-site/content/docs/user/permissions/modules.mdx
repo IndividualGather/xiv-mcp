@@ -20,7 +20,7 @@ This page is about the first kind.
 Every tool belongs to one **module**, and every module has two settings: **Reading** (tools that only look) and **Changes** (tools that act in the game or edit something). Each setting is one of:
 
 - **Allow** runs the tool.
-- **Ask** shows the approval window first. You can approve once, approve for this session, always allow (which sets just that tool to *Allow*), or decline. See [Approvals in the game](/docs/user/permissions/approvals).
+- **Ask** shows the approval window first. You can approve once, approve for this session (until the game or XIV MCP restarts), always allow (which sets just that tool to *Allow*), or decline. See [Approvals in the game](/docs/user/permissions/approvals).
 - **Deny** refuses the tool before it runs, and tells your assistant which setting to change.
 
 ### How a call is decided
@@ -50,6 +50,7 @@ Every tool belongs to one **module**, and every module has two settings: **Readi
 | **Online lookups** | Deny | — | Item sources (FFXIV Teamcraft, ffxiv.consolegameswiki.com) and market prices (universalis.app) |
 | **Plugin management** | Deny | Deny | Turning plugins on and off, reloading them, reading and changing their settings (which may contain passwords or keys) |
 | **Background jobs** | Allow | Allow | Starting and controlling jobs. Every step is still checked against its own module. |
+| **Screen** | Ask | — | Screenshots of the game or of XIV MCP's window. They can show chat, tells and other players' names, so each one asks you first. |
 
 These are only the defaults. Reading is a setting like any other: set it to *Ask* to approve every look at your game, or to *Deny* to refuse it. Switch a module off to remove its tools entirely.
 
@@ -70,9 +71,9 @@ The card's summary says how many tools are set on their own. Hover a module's na
 
 Some modules have extra options while their changes are not denied:
 
-- **Game & navigation:** **Summoning bell location**, where `navigate_to` goes for a bell when none is nearby.
+- **Game & navigation:** **Summoning bell location**, where `navigate_to` goes for a bell when none is nearby: *Inn room*, *Free company house*, *Private house* or *Apartment*, or, with Lifestream, *Lifestream's preferred property* (the default). Without Lifestream, the default means the inn. If the place has no bell, it goes to the inn instead.
 - **Items & retainers:** **Pause between moves**, a random pause between item moves (500 to 800 ms by default).
-- **Market & purchases:** **Ask for gil purchases above**, a gil limit above which gil purchases also ask (0: never).
+- **Market & purchases:** **Ask for gil purchases above**: a gil purchase that costs more than this in total also asks you first. At 0 (the default), gil purchases never ask.
 
 ## Turning a module off
 

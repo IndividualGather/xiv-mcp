@@ -1,6 +1,7 @@
 {
   "title": "What it can do",
   "pages": [
+    "jobs",
     "character",
     "navigation",
     "maps-and-routes",
@@ -8,7 +9,6 @@
     "market",
     "crafting-and-gathering",
     "dungeons",
-    "jobs",
     "plugin-management"
   ]
 }

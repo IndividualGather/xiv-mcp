@@ -6,6 +6,8 @@ icon: Rocket
 
 This guide covers **API version 2** of the XIV MCP plugin API. If you only want to use XIV MCP, see the [user docs](/docs/user).
 
+You need a Dalamud plugin for API 15 (the Dalamud SDK on .NET 10), and XIV MCP loaded in the game to try your tools. The examples use C# 12 features such as collection expressions (`[a, b]`), which the .NET 10 SDK has by default.
+
 <Steps>
 <Step>
 
@@ -19,11 +21,20 @@ Copy [`examples/XivMcpClient.cs`](https://github.com/IndividualGather/xiv-mcp/bl
 ### Create the client and add a tool
 
 ```csharp title="Plugin.cs"
+using Dalamud.IoC;
+using Dalamud.Plugin;
+using Dalamud.Plugin.Services;
 using XivMcp.Client;
 
 public sealed class Plugin : IDalamudPlugin
 {
+    [PluginService]
+    internal static IPluginLog Log { get; private set; } = null!;
+
     private readonly XivMcpClient mcp;
+
+    // Your plugin's own state: the name of whom it follows.
+    private string? following;
 
     public Plugin(IDalamudPluginInterface pluginInterface)
     {
@@ -38,7 +49,7 @@ public sealed class Plugin : IDalamudPlugin
             {
                 ReadOnly = true,
             },
-            args => new { following = FollowTarget?.Name });
+            args => new { following });
     }
 
     public void Dispose() => mcp.Dispose();
@@ -50,7 +61,9 @@ public sealed class Plugin : IDalamudPlugin
 
 ### Load your plugin and enable it
 
-The player gets a notification that your plugin wants to register. They click **Enable**, or open `/xivmcp` → **Third-party plugins**.
+Build your plugin and load it as a dev plugin: `/xlsettings` → **Experimental** → **Dev Plugin Locations**, add the path to your built DLL, save, then enable it in `/xlplugins` → **Dev Tools** → **Installed Dev Plugins**.
+
+XIV MCP shows a notification that your plugin wants to register. Click **Enable** there, or in `/xivmcp` → **Third-party plugins**.
 
 </Step>
 <Step>
@@ -63,6 +76,8 @@ Ask it "whom is My Plugin following?". It calls `myplugin_status` and answers fr
 </Steps>
 
 [Hello MCP](/docs/developer/plugin-api/hello-mcp) is a complete example plugin with a tool of each kind and a job.
+
+Quick tools like this one run on the **framework thread**, the game's main thread, where Dalamud lets you read game memory. They must answer right away; anything that waits is a [long-running tool](/docs/developer/plugin-api/long-running).
 
 ## What to read next
 

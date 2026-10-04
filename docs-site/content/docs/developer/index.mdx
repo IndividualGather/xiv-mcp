@@ -17,6 +17,7 @@ Your Dalamud plugin can offer tools to AI assistants through XIV MCP. You do not
 
 ```csharp
 // XivMcpClient.cs comes from examples/, copied into your plugin.
+// FollowTarget and StartFollowing are your plugin's own code.
 mcp = new XivMcpClient(pluginInterface);
 
 mcp.AddTool(
@@ -36,13 +37,4 @@ mcp.AddTool(
 
 The player decides what your tools may do. They enable your plugin, and choose *Allow*, *Ask* or *Deny* for every [capability](/docs/developer/plugin-api/capabilities) you declare. XIV MCP checks what each call changed, and suspends plugins whose calls have effects they did not declare.
 
-## Six things to get right
-
-1. **Prefix tool names** with your plugin's name, and start them with a verb: `myplugin_follow`, `myplugin_stop`.
-2. **Write descriptions for the assistant:** what the tool does, when to use it, what it needs, and what comes before or after.
-3. **Declare every capability**, including indirect ones (a teleport spends gil). Undeclared side effects suspend your plugin.
-4. **Ask at the risky moment, with real numbers:** `call.RequestApprovalAsync(McpCapabilities.SpendGil, "Buy 3 Hi-Potions for 1,200 gil")`.
-5. **Keep quick tools quick.** They run on the framework thread. Anything that waits is a long-running tool.
-6. **Cancel safely:** finish the fight, close the window, then stop.
-
-The details are in [Guidelines](/docs/developer/plugin-api/guidelines).
+Start with the [Quick start](/docs/developer/plugin-api), and read the [Guidelines](/docs/developer/plugin-api/guidelines) before you publish.
