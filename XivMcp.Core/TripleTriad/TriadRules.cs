@@ -34,6 +34,24 @@ public static class JumboTickets
 
     public static bool IsValid(string number) => number.Length == 4 && number.All(char.IsAsciiDigit);
 
+    /// <summary>The price of the week's 1st, 2nd and 3rd ticket in MGP.</summary>
+    public static readonly int[] Prices = [100, 150, 200];
+
+    /// <summary>
+    /// How many tickets an amount of MGP bought. Every run of consecutive prices has its own sum (100, 250, 450 from the first ticket;
+    /// 150, 350 from the second; 200 for the third), so the count is clear even when some were bought earlier in the week. 0 if no run matches.
+    /// </summary>
+    public static int CountFromSpent(long spent)
+    {
+        for (var first = 0; first < Prices.Length; first++)
+        {
+            long sum = 0;
+            for (var n = 1; first + n <= Prices.Length; n++)
+                if ((sum += Prices[first + n - 1]) == spent) return n;
+        }
+        return 0;
+    }
+
     public static IReadOnlyList<string> Parse(IEnumerable<string> numbers)
     {
         var list = numbers.Select(n => n.Trim()).ToList();

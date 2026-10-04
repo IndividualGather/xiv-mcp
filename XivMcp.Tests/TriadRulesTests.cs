@@ -47,6 +47,20 @@ public class JumboTicketTests
         Assert.Equal(valid, JumboTickets.IsValid(number));
     }
 
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(100, 1)]   // the first ticket of the week
+    [InlineData(250, 2)]
+    [InlineData(450, 3)]
+    [InlineData(150, 1)]   // one was bought before
+    [InlineData(350, 2)]
+    [InlineData(200, 1)]   // two were bought before
+    [InlineData(120, 0)]   // not a ticket price
+    public void Tickets_are_counted_from_the_mgp_spent(int spent, int tickets)
+    {
+        Assert.Equal(tickets, JumboTickets.CountFromSpent(spent));
+    }
+
     [Fact]
     public void At_most_three_numbers_are_taken()
     {

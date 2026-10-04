@@ -422,7 +422,7 @@ internal static class SaucyTools
             Name = "play_jumbo_cactpot",
             Description = "The weekly Jumbo Cactpot at the Gold Saucer, done by Saucy: XIV MCP goes to the Jumbo Cactpot Cashier and talks to them; " +
                           "Saucy collects last week's prizes, walks to the Jumbo Cactpot Broker (with vnavmesh) and buys this week's tickets " +
-                          "(up to 3, 100 MGP each) with the 'numbers' (four digits each) or random ones. Without vnavmesh Saucy stops after the " +
+                          "(up to 3 a week: 100, 150 and 200 MGP) with the 'numbers' (four digits each) or random ones. Without vnavmesh Saucy stops after the " +
                           "cashier; then talk to the broker yourself.",
             InputSchema = """
                 {
@@ -452,28 +452,37 @@ internal static class SaucyTools
                 // (dialogue, prize list, number pad, the walk) has been going for a while.
                 await Game.Run(() => Interact(JumboCactpotCashier)).ConfigureAwait(false);
                 steps.Add("Talking to the Jumbo Cactpot Cashier; Saucy takes over.");
-                var tickets = 0;
+                var padSeen = 0;
+                long? mgpAtPad = null; // MGP when the number pad first opened: after the prizes, before the tickets
                 var padOpen = false;
                 var quietSince = DateTime.UtcNow;
                 var deadline = DateTime.UtcNow.AddMinutes(5);
                 while (DateTime.UtcNow < deadline)
                 {
                     ct.ThrowIfCancellationRequested();
-                    var (pad, busy) = await Game.Run(() =>
+                    var (pad, busy, mgp) = await Game.Run(() =>
                     {
                         var input = RetainerUi.Ready("LotteryWeeklyInput");
-                        return (input, input || !NoDialogue() || RetainerUi.Ready("LotteryWeeklyRewardList") || SaucyBridge.JumboWalking);
+                        return (input, input || !NoDialogue() || RetainerUi.Ready("LotteryWeeklyRewardList") || SaucyBridge.JumboWalking, Mgp());
                     }).ConfigureAwait(false);
-                    if (pad && !padOpen) Progress("play_jumbo_cactpot", $"Ticket {++tickets}");
+                    if (pad && !padOpen)
+                    {
+                        mgpAtPad ??= mgp;
+                        Progress("play_jumbo_cactpot", $"Ticket {++padSeen}");
+                    }
                     padOpen = pad;
                     if (busy) quietSince = DateTime.UtcNow;
                     else if (DateTime.UtcNow - quietSince > TimeSpan.FromSeconds(8)) break;
                     await Task.Delay(300, ct).ConfigureAwait(false);
                 }
-                var mgpChange = await Game.Run(Mgp).ConfigureAwait(false) - mgpBefore;
+                var mgpEnd = await Game.Run(Mgp).ConfigureAwait(false);
+                // Ticket prices rise during the week (100, 150, 200), so the MGP spent tells how many were bought.
+                var spent = mgpAtPad is { } atPad ? atPad - mgpEnd : 0;
+                var tickets = JumboTickets.CountFromSpent(spent);
+                var prizes = (mgpAtPad ?? mgpEnd) - mgpBefore;
                 return new
                 {
-                    tickets, mgpChange, numbers = numbers.Count > 0 ? numbers : null,
+                    tickets, mgpSpent = spent, prizesMgp = prizes > 0 ? prizes : 0, numbers = numbers.Count > 0 ? numbers : null,
                     note = tickets == 0
                         ? "No ticket was bought: this week's tickets may be used up, or Saucy did not get to the broker (it walks there with vnavmesh). " +
                           "Prizes, if any, were collected at the cashier."
