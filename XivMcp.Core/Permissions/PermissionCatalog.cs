@@ -65,7 +65,7 @@ public static class PermissionCatalog
             "list_windows", "get_menu", "get_automation_status", "get_navigation_status", "list_characters",
             "open_window", "close_window", "interact_with_object", "select_menu_option", "load_game_data", "navigate_to", "stop_navigation",
             "switch_character", "refresh_character_list", "switch_gearset", "leave_duty", "place_waymark_preset",
-            "set_map_flag", "clear_map_flag", "start_route", "visit_world", "show_xivmcp_window", "press_xivmcp_control",
+            "set_map_flag", "clear_map_flag", "start_route", "visit_world", "show_xivmcp_window", "press_xivmcp_control", "capture_ui_events",
         ],
         ["items_retainers"] =
         [
@@ -91,7 +91,7 @@ public static class PermissionCatalog
     private static readonly Dictionary<string, PermissionGroup> ById = Groups.ToDictionary(g => g.Id);
 
     /// <summary>Tools only offered while XIV MCP runs as a dev plugin (for testing its own window); left out of the player docs.</summary>
-    public static IReadOnlySet<string> DevTools { get; } = new HashSet<string> { "press_xivmcp_control" };
+    public static IReadOnlySet<string> DevTools { get; } = new HashSet<string> { "press_xivmcp_control", "capture_ui_events" };
 
     public static PermissionGroup? Find(string id) => ById.GetValueOrDefault(id);
 

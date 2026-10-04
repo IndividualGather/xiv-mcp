@@ -29,4 +29,6 @@ internal sealed class Svc
     [PluginService] public static INotificationManager Notifications { get; private set; } = null!;
     [PluginService] public static IMarketBoard MarketBoard { get; private set; } = null!;
     [PluginService] public static ITextureProvider Textures { get; private set; } = null!;
+    [PluginService] public static IGameInteropProvider GameInterop { get; private set; } = null!;
+    [PluginService] public static IAddonLifecycle AddonLifecycle { get; private set; } = null!;
 }

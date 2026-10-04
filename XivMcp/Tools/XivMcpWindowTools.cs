@@ -126,6 +126,34 @@ internal static class XivMcpWindowTools
 
         yield return new McpTool
         {
+            Name = "capture_ui_events",
+            Description = "Development builds only: records, for seconds, what game windows send while the player clicks: callbacks with their " +
+                          "values and component events, optionally only for some windows (addon names, e.g. [\"ColorantColoring\", \"ContextMenu\", " +
+                          "\"SelectYesno\"]). Ask the player to do the action by hand while it records; the result shows how to reproduce it in a tool.",
+            InputSchema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "addons": { "type": "array", "items": { "type": "string" }, "description": "Window (addon) names to record; all when left out." },
+                    "seconds": { "type": "integer", "minimum": 5, "maximum": 180, "description": "How long to record (default 60)." }
+                  }
+                }
+                """,
+            ReadOnly = false,
+            Handler = async (args, ct) =>
+            {
+                var addons = args.Node("addons")?.AsArray().Select(n => n?.ToString() ?? "").Where(s => s.Length > 0).ToList() ?? [];
+                var seconds = args.Int("seconds", 60, 5, 180);
+                await Svc.Framework.RunOnFrameworkThread(() => UiEventRecorder.Start(addons)).ConfigureAwait(false);
+                try { await Task.Delay(TimeSpan.FromSeconds(seconds), ct).ConfigureAwait(false); }
+                finally { }
+                var entries = await Svc.Framework.RunOnFrameworkThread(UiEventRecorder.Stop).ConfigureAwait(false);
+                return new { seconds, count = entries.Count, events = entries };
+            },
+        };
+
+        yield return new McpTool
+        {
             Name = "press_xivmcp_control",
             Description = "Development builds only: presses a control in XIV MCP's own window as if it were clicked, running the same code " +
                           "as a click, to test the window. Without 'control', lists the controls that can be pressed right now. Ids: " +

@@ -181,6 +181,7 @@ public sealed class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
+        UiEventRecorder.Dispose();
         Svc.Commands.RemoveHandler(Command);
         Svc.PluginInterface.UiBuilder.Draw -= windows.Draw;
         Svc.PluginInterface.UiBuilder.OpenConfigUi -= configWindow.Toggle;
