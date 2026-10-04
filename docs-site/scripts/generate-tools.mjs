@@ -78,8 +78,19 @@ for (const m of integrationSource.matchAll(/new\("(\w+)", "([^"]+)", "([^"]+)", 
     name: t[1],
     capabilities: t[2].split(',').map((c) => c.trim()).filter(Boolean).map(snake),
   }));
-  integrations.push({ id: m[1], title: m[2], description: m[3], tools });
+  // After the tool list: { AlsoWith = { ["tool"] = ["Other"] }, Helpers = { ["tool"] = Travel } } up to the next integration.
+  const rest = integrationSource.slice(m.index + m[0].length);
+  const extras = rest.slice(0, rest.search(/\n\s*new\("|\n\s*\];/));
+  const block = (name) => extras.match(new RegExp(`${name} = new Dictionary<[^>]+>\\s*\\{([\\s\\S]*?)\\n\\s*\\},`))?.[1] ?? '';
+  const alsoWith = Object.fromEntries([...block('AlsoWith').matchAll(/\["(\w+)"\] = \[([^\]]*)\]/g)].map((a) => [a[1], [...a[2].matchAll(/"(\w+)"/g)].map((x) => x[1])]));
+  const helpers = Object.fromEntries([...block('Helpers').matchAll(/\["(\w+)"\] = (\w+)/g)].map((h) => [h[1], h[2]]));
+  integrations.push({ id: m[1], title: m[2], description: m[3], tools, alsoWith, helpers });
 }
+// Helper lists named in Helpers: private static ToolRequirement[] Travel => [ new("vnavmesh", Need.Improves, "purpose", "without"), ... ];
+const helperLists = Object.fromEntries([...integrationSource.matchAll(/ToolRequirement\[\] (\w+) =>\s*\[([\s\S]*?)\];/g)].map((h) => [
+  h[1],
+  [...h[2].matchAll(/new\("(\w+)", Need\.\w+, "((?:[^"\\]|\\.)*)", "((?:[^"\\]|\\.)*)"\)/g)].map((x) => ({ plugin: x[1], purpose: x[2], without: x[3] })),
+]));
 
 function snake(pascal) {
   return pascal.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
@@ -245,8 +256,19 @@ req.push(
   '',
 );
 for (const i of integrations) {
-  req.push(`### ${i.title}`, '', `${text(i.description)} Needs **${plugin(i.id).name}**.`, '', '| Tool | What it does |', '|---|---|');
-  for (const t of i.tools) req.push(`| \`${t.name}\` | ${summary(t.name)} |`);
+  const extra = i.tools.some((t) => i.alsoWith[t.name] || i.helpers[t.name]);
+  req.push(`### ${i.title}`, '', `${text(i.description)} Needs **${plugin(i.id).name}**${extra ? ', except where the table says otherwise' : ''}.`, '');
+  if (!extra) {
+    req.push('| Tool | What it does |', '|---|---|');
+    for (const t of i.tools) req.push(`| \`${t.name}\` | ${summary(t.name)} |`);
+  } else {
+    req.push('| Tool | What it does | Plugins |', '|---|---|---|');
+    for (const t of i.tools) {
+      const needs = [i.id, ...(i.alsoWith[t.name] ?? [])].map((p) => `**${plugin(p).name}**`).join(' or ');
+      const helps = (helperLists[i.helpers[t.name]] ?? []).map((h) => `${plugin(h.plugin).name}: ${text(h.purpose)} Without it: ${text(h.without)}`);
+      req.push(`| \`${t.name}\` | ${summary(t.name)} | Needs ${needs}.${helps.length ? '<br />' + helps.join('<br />') : ''} |`);
+    }
+  }
   req.push('');
 }
 req.push(

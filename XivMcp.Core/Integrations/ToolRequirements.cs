@@ -11,9 +11,16 @@ public enum Need { Needed, Improves }
 
 /// <summary>
 /// A plugin one of XIV MCP's tools uses: what it does for the tool, and (for core tools) what happens without it. One sentence each,
-/// for the player and the plugin developer.
+/// for the player and the plugin developer. <paramref name="Or"/> lists plugins that do the job as well: any one of them is enough.
 /// </summary>
-public sealed record ToolRequirement(string PluginId, Need Need, string Purpose, string? Without = null);
+public sealed record ToolRequirement(string PluginId, Need Need, string Purpose, string? Without = null, IReadOnlyList<string>? Or = null)
+{
+    /// <summary>Plugins that can stand in for <see cref="PluginId"/> (e.g. TriadBuddy for Saucy's Triple Triad reading).</summary>
+    public IReadOnlyList<string> Alternatives => Or ?? [];
+
+    /// <summary>The plugin and its alternatives, as the player reads them: "Saucy or TriadBuddy".</summary>
+    public string Names(System.Func<string, string> name) => string.Join(" or ", new[] { PluginId }.Concat(Alternatives).Select(name));
+}
 
 /// <summary>
 /// Which of XIV MCP's tools use other plugins. Integration tools (<see cref="IntegrationCatalog"/>) need their plugin. Core tools work
@@ -69,7 +76,12 @@ public static class ToolRequirements
     public static IReadOnlyList<ToolRequirement> For(string tool)
     {
         if (IntegrationCatalog.For(tool) is { } integration)
-            return [new ToolRequirement(integration.PluginId, Need.Needed, $"Does the work: {integration.Summary}")];
+            return
+            [
+                new ToolRequirement(integration.PluginId, Need.Needed, $"Does the work: {integration.Summary}",
+                    Or: integration.AlsoWith.TryGetValue(tool, out var others) ? others : null),
+                .. integration.Helpers.TryGetValue(tool, out var helpers) ? helpers : [],
+            ];
         return Core.TryGetValue(tool, out var needs) ? needs : [];
     }
 

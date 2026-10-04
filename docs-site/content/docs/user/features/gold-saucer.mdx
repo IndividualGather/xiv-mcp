@@ -1,0 +1,80 @@
+---
+title: Gold Saucer
+description: Triple Triad cards, opponents and decks, playing and farming cards with Saucy, and the Cactpot lotteries.
+icon: Dices
+---
+
+These tools work through **Saucy**, so they are only offered while Saucy is loaded. Reading your cards, the Triple Triad opponents and your decks, and saving a deck, also work with **TriadBuddy** instead. They have their own module, **Gold Saucer**, under **Integrations maintained by XIV MCP**: reading is allowed by default, everything that plays or changes something is denied until you allow it.
+
+## Triple Triad
+
+| Tool | What it does |
+|---|---|
+| `list_triad_npcs` | Opponents: where they stand, their rules, the match fee, the cards they give (which you have, which wait in your bags) and whether you have beaten them |
+| `list_triad_cards` | Cards with stars, type and the numbers on each side, whether you have them, and who gives them |
+| `get_triad_decks` | Your five decks |
+| `set_triad_deck` | Saves five of your cards as one of your decks |
+| `build_triad_deck` | Builds the best deck against an opponent and saves it as deck 5 |
+| `play_triple_triad` | Goes to an opponent and plays a number of matches, or until a card drops |
+| `farm_triad_cards` | Collects missing cards: from one opponent, or from opponent to opponent |
+| `get_saucy_stats` | How many matches were played, won and lost with Saucy, and the MGP and cards won |
+| `stop_saucy` | Stops Saucy's Triple Triad automation |
+
+Things to ask:
+
+> "Collect all the Triple Triad cards I can still win from NPCs."
+
+> "Which Triple Triad cards am I missing that Gold Saucer NPCs give?"
+
+> "Get me the Lightning card from Triple Triad Trader."
+
+> "Build the best deck against Joellaut and play five matches with it."
+
+### How playing works
+
+1. XIV MCP goes to the opponent: it teleports and walks with Lifestream and vnavmesh, or shows you the way and waits.
+2. It talks to them to start the match.
+3. Saucy picks the deck, plays and rematches until it has played enough matches, or until a card drops.
+4. For a card or all cards, XIV MCP checks after each drop whether you have what you wanted, and starts another round if not.
+
+A card that drops arrives in your bags as an item. It counts as had for "until you have the card", but only joins your collection once you use (register) it.
+
+`farm_triad_cards` runs as a [background job](/docs/user/features/jobs), so it can keep going for hours. Follow it in `/xivmcp` → **Jobs** or on the [overlay](/docs/user/overlay), and cancel it there.
+
+### Collecting every card you can win
+
+`list_triad_cards` with `source: "npc"` lists only the cards opponents give, with a summary: how many you are missing, from how many opponents, and in which zones.
+
+`farm_triad_cards` without an opponent starts one job for all of them:
+
+- **The route** starts in your current zone, then goes zone by zone, always to the nearest opponent next. `zone` limits it to one area, `max_npcs` (20 by default) keeps the job to a manageable size.
+- **Each step** plays one opponent until you have all of their missing cards. A card that several opponents give is only farmed once, and an opponent left with nothing missing is skipped.
+- **Unavailable opponents** are left out and listed: those that need an unlock quest first, and (with `skip_unavailable`, on by default) those that only play at certain Eorzea hours and are outside them right now.
+- **During the job** you can skip an opponent (`update_job` with skip) or cancel it. If an opponent turns you away, the step fails and the job waits for you or your assistant to skip it.
+
+`list_triad_npcs` shows for each opponent whether they can be challenged: `unlocked`, the `unlockQuests` still needed, their `hours`, and `availableNow`.
+
+### Decks
+
+- `deck` on `play_triple_triad` and `farm_triad_cards` picks deck 1-5, `optimized` (Saucy builds the best deck into deck 5 first), or `recommended` (the game's own pick). Without it, Saucy's own setting is used.
+- `set_triad_deck` checks the game's rules first: 5 different cards you have, at most one 5-star card and at most two cards of 4 stars or more.
+- `build_triad_deck` uses Saucy's deck optimizer. It simulates matches with your cards against the opponent's rules for a few minutes and keeps the best deck.
+
+## Cactpot
+
+| Tool | What it does |
+|---|---|
+| `play_mini_cactpot` | Goes to the Mini Cactpot Broker and plays today's tickets, up to 3 (10 MGP each). Saucy picks the spots. |
+| `play_jumbo_cactpot` | Goes to the Jumbo Cactpot Cashier. Saucy collects last week's prizes, walks to the broker and buys this week's tickets with your 4-digit numbers, or random ones (100 MGP each, 3 a week). |
+
+Saucy walks from the cashier to the broker with vnavmesh. Without it, Saucy stops after the cashier, and you talk to the broker yourself.
+
+## What it changes in Saucy
+
+Saucy has no interface for other plugins. XIV MCP sends it `/saucy` commands, and changes its settings in memory for as long as a tool runs (which deck, the deck optimizer, the Cactpot modules and ticket numbers). Afterwards it puts them back. Saucy's settings file is not touched.
+
+GATEs, Cuff-a-Cur and Out on a Limb are not covered: Saucy cannot be told to start them from outside.
+
+<Callout type="warn" title="Terms of service">
+  Automating game actions is against the FFXIV terms of service. Use XIV MCP at your own risk.
+</Callout>

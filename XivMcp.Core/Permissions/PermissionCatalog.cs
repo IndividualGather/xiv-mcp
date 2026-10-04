@@ -14,8 +14,11 @@ public enum Access { Read, Write }
 /// integration (<see cref="PluginId"/> set). Each has a read and a write setting, Allow / Ask / Deny.
 /// </summary>
 public sealed record PermissionGroup(string Id, string Title, string Description, PolicyMode DefaultRead, PolicyMode DefaultWrite,
-                                     bool HasRead = true, bool HasWrite = true, string? PluginId = null)
+                                     bool HasRead = true, bool HasWrite = true, string? PluginId = null, IReadOnlyList<string>? AlsoWith = null)
 {
+    /// <summary>The plugins that make the group's tools available: its own, then those that offer some of its tools as well (TriadBuddy for the Gold Saucer).</summary>
+    public IReadOnlyList<string> Plugins => PluginId is null ? [] : [PluginId, .. AlsoWith ?? []];
+
     public PolicyMode Default(Access access) => access == Access.Read ? DefaultRead : DefaultWrite;
     public bool Has(Access access) => access == Access.Read ? HasRead : HasWrite;
 }
@@ -40,7 +43,8 @@ public static class PermissionCatalog
         new("screen", "Screen", "Screenshots of your game, which can show chat, names and anything else on screen.", K, D, HasWrite: false),
         .. IntegrationCatalog.All.Select(i => new PermissionGroup(IntegrationGroupId(i.PluginId), i.DisplayName, i.Summary, A, D,
             // Tools that declare nothing beyond reading only read; the others change something.
-            HasRead: i.Tools.Values.Any(c => c.Length == 0), HasWrite: i.Tools.Values.Any(c => c.Length > 0), PluginId: i.PluginId)),
+            HasRead: i.Tools.Values.Any(c => c.Length == 0), HasWrite: i.Tools.Values.Any(c => c.Length > 0), PluginId: i.PluginId,
+            AlsoWith: i.AlsoWith.Values.SelectMany(p => p).Distinct().ToList())),
     ];
 
     /// <summary>The group id of an integration: its plugin's internal name, lower-cased (e.g. "autoduty").</summary>

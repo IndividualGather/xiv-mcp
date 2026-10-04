@@ -120,20 +120,22 @@ public static class DependencyCheck
     private static DependencyStatus CheckBuiltIn(ToolDependency d, Func<string, PluginPresence?> installed)
     {
         var install = new List<PluginToInstall>();
+        var missingNames = new List<string>();
         foreach (var r in ToolRequirements.For(d.Tool))
         {
+            // Any one of a plugin and its alternatives will do (Saucy or TriadBuddy).
+            if (new[] { r.PluginId }.Concat(r.Alternatives).Any(id => installed(id) is { Loaded: true })) continue;
             var p = installed(r.PluginId);
-            if (p is { Loaded: true }) continue;
             var known = PluginCatalog.Find(r.PluginId);
             install.Add(new PluginToInstall(r.PluginId, known?.Name ?? r.PluginId, known?.Repo ?? PluginCatalog.Official, null, r.Purpose,
                 r.Need == Need.Needed, p is not null, false, r.Without));
+            if (r.Need == Need.Needed) missingNames.Add(r.Names(id => PluginCatalog.Find(id)?.Name ?? id));
         }
-        var missing = install.Where(p => p.Needed).ToList();
-        if (missing.Count == 0)
+        if (missingNames.Count == 0)
             return new DependencyStatus(d, DependencyState.Ok,
                 install.Count == 0 ? "Ready." : "Ready. " + string.Join(" ", install.Select(p => $"Without {p.Name}: {p.Without ?? "it works, just not as well."}")), install);
         return new DependencyStatus(d, DependencyState.NeedsPlugin,
-            $"Needs {Names(missing)}, which {(missing.Count == 1 ? "is" : "are")} not installed or not enabled.", install);
+            $"Needs {string.Join(" and ", missingNames)}, which {(missingNames.Count == 1 ? "is" : "are")} not installed or not enabled.", install);
     }
 
     private static DependencyStatus CheckOther(ToolDependency d, Func<string, PluginPresence?> installed, Func<string, string?> toolOwner,

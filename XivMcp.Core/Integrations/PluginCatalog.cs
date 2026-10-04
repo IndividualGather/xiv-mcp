@@ -27,6 +27,12 @@ public static class PluginCatalog
         new("FCCH", "FCCH", "https://puni.sh/api/repository/nexai"),
         new("PennyPincher", "Penny Pincher", Official),
         new("WaymarkPresetPlugin", "Waymark Preset Plugin", Official),
+        new("Saucy", "Saucy", "https://love.puni.sh/ment.json"),
+        new("TriadBuddy", "TriadBuddy", Official),
+        // Saucy uses these for features XIV MCP does not drive (GATE movement, Triple Triad unlock quests, pausing for retainers).
+        new("BossMod", "Boss Mod", "https://puni.sh/api/repository/veyn"),
+        new("Questionable", "Questionable", "https://love.puni.sh/ment.json"),
+        new("AutoRetainer", "AutoRetainer", "https://love.puni.sh/ment.json"),
     ];
 
     public static KnownPlugin? Find(string internalName) =>

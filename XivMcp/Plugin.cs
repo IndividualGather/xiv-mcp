@@ -118,6 +118,7 @@ public sealed class Plugin : IDalamudPlugin
             .Append(SelfTest.Tool())
             .Concat(JobTools.Create(() => jobs!, () => Server?.LastClient))
             .Concat(MapTools.Create(() => jobs!, () => Server?.LastClient))
+            .Concat(SaucyTools.Create(() => jobs!, () => Server?.LastClient))
             .Concat(XivMcpWindowTools.Create(() => configWindow, () => overlayWindow, () => jobs, pluginInterface.IsDev))
             .ToList();
         // Tools that drive one other plugin belong to that plugin's integration (same provider + capability contract as third-party tools).
