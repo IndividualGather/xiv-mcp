@@ -170,43 +170,40 @@ internal static class ClientInstaller
     /// <summary>LM Studio or its successor Bionic: a registered link scheme, or its data folder.</summary>
     public static bool LmStudioInstalled => IsRegistered("lmstudio") || IsBionic || Directory.Exists(Path.GetDirectoryName(LmStudioConfigPath));
 
-    /// <summary>
-    /// The current LM Studio desktop app, Bionic. It adds MCP servers in its own settings (Integrations → MCP) and doesn't read the old
-    /// app's mcp.json.
-    /// </summary>
+    /// <summary>The current LM Studio desktop app, Bionic. It keeps its MCP servers in <see cref="BionicConfigPath"/>, not in mcp.json.</summary>
     public static bool IsBionic => IsRegistered("bionic") || File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Bionic", "Bionic.exe"));
 
-    /// <summary>
-    /// Where Bionic may keep the servers added in its settings. Not documented: these are the places its own code names (ng-mcp.json);
-    /// a file there that mentions XIV MCP's address counts as set up.
-    /// </summary>
-    private static System.Collections.Generic.IEnumerable<string> BionicConfigCandidates()
-    {
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        yield return Path.Combine(home, ".lmstudio", "ng-mcp.json");
-        yield return Path.Combine(home, ".lmstudio", ".internal", "ng-mcp.json");
-        yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bionic", "ng-mcp.json");
-    }
+    /// <summary>Bionic's MCP servers (the ones added under Settings → Integrations → MCP). Bionic picks up changes while it runs.</summary>
+    public static string BionicConfigPath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".lmstudio", "apps", "bionic", ".internal", "ng-mcp.json");
 
-    private static bool BionicHasServer(string endpoint) =>
-        BionicConfigCandidates().Select(Read).Any(text => text is not null && text.Contains(endpoint.Replace("http://", ""), StringComparison.OrdinalIgnoreCase));
+    /// <summary>The file the LM Studio panel writes: Bionic's own, or the old app's mcp.json.</summary>
+    public static string LmStudioTargetPath => IsBionic ? BionicConfigPath : LmStudioConfigPath;
 
-    /// <summary>Adds (or updates) XIV MCP in LM Studio's mcp.json, keeping a backup of the previous file.</summary>
-    public static Result AddToLmStudio(string endpoint, string? token) => EditJsonConfig(LmStudioConfigPath, "mcpServers",
-        existing => ClientSetup.MergeJsonServer(existing, "mcpServers", endpoint, token),
-        "Added to LM Studio. If it doesn't show up under Integrations → MCP, restart LM Studio.", "Already set up with this address and token.");
+    /// <summary>Adds (or updates) XIV MCP in LM Studio: Bionic's server list, or the old app's mcp.json. Keeps a backup of the previous file.</summary>
+    public static Result AddToLmStudio(string endpoint, string? token) => IsBionic
+        ? EditConfig(BionicConfigPath, existing => ClientSetup.MergeBionicConfig(existing, endpoint, token, Guid.NewGuid().ToString()), SetupStatus.BionicHasServer,
+            "Added to LM Studio. It connects within a few seconds; ffxiv is listed under Settings → Integrations → MCP.", "Already set up with this address and token.")
+        : EditJsonConfig(LmStudioConfigPath, "mcpServers", existing => ClientSetup.MergeJsonServer(existing, "mcpServers", endpoint, token),
+            "Added to LM Studio. If it doesn't show up under Integrations → MCP, restart LM Studio.", "Already set up with this address and token.");
 
-    public static Result RemoveFromLmStudio() => EditJsonConfig(LmStudioConfigPath, "mcpServers",
-        existing => ClientSetup.RemoveJsonServer(existing, "mcpServers"), "Removed from LM Studio.", "Not set up: XIV MCP isn't in LM Studio's mcp.json.");
+    public static Result RemoveFromLmStudio() => IsBionic
+        ? EditConfig(BionicConfigPath, ClientSetup.RemoveBionicServer, SetupStatus.BionicHasServer, "Removed from LM Studio.", "Not set up: XIV MCP isn't in LM Studio's servers.")
+        : EditJsonConfig(LmStudioConfigPath, "mcpServers", existing => ClientSetup.RemoveJsonServer(existing, "mcpServers"),
+            "Removed from LM Studio.", "Not set up: XIV MCP isn't in LM Studio's mcp.json.");
 
-    private static Result EditJsonConfig(string path, string key, Func<string, string> edit, string done, string unchanged)
+    private static Result EditJsonConfig(string path, string key, Func<string, string> edit, string done, string unchanged) =>
+        EditConfig(path, edit, json => SetupStatus.HasServer(json, key), done, unchanged);
+
+    /// <summary>Edits a JSON config file in place (backup first). <paramref name="has"/> says whether XIV MCP is in it, to tell "nothing to do" from a real change.</summary>
+    private static Result EditConfig(string path, Func<string, string> edit, Func<string, bool> has, string done, string unchanged)
     {
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var existing = File.Exists(path) ? File.ReadAllText(path) : "";
             var edited = edit(existing);
-            if (SetupStatus.HasServer(existing, key) == SetupStatus.HasServer(edited, key) && Normalize(existing) == Normalize(edited)) return new Result(true, unchanged);
+            if (has(existing) == has(edited) && Normalize(existing) == Normalize(edited)) return new Result(true, unchanged);
             if (existing.Length > 0) File.Copy(path, path + ".xivmcp-backup", overwrite: true);
             File.WriteAllText(path, edited);
             return new Result(true, existing.Length > 0 ? $"{done} (Previous file saved as {Path.GetFileName(path)}.xivmcp-backup.)" : done);
@@ -316,7 +313,7 @@ internal static class ClientInstaller
                 "vscode" => Read(Path.Combine(appData, "Code", "User", "mcp.json")) is { } v && SetupStatus.HasServer(v, "servers"),
                 "cursor" => Read(Path.Combine(home, ".cursor", "mcp.json")) is { } c && SetupStatus.HasServer(c, "mcpServers"),
                 // Bionic keeps its servers in its own settings; only the old LM Studio app reads mcp.json.
-                "lmstudio" => IsBionic ? BionicHasServer(endpoint) : Read(LmStudioConfigPath) is { } l && SetupStatus.HasServer(l, "mcpServers"),
+                "lmstudio" => IsBionic ? Read(BionicConfigPath) is { } b && SetupStatus.BionicHasServer(b) : Read(LmStudioConfigPath) is { } l && SetupStatus.HasServer(l, "mcpServers"),
                 _ => false,
             };
         }

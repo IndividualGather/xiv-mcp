@@ -61,8 +61,7 @@ internal sealed partial class ConfigWindow : Window
         Tab(FontAwesomeIcon.UserShield, ThirdPartyTabLabel(), DrawThirdParty);
         var activeJobs = plugin.Jobs?.All().Count(j => !j.Finished) ?? 0;
         Tab(FontAwesomeIcon.Tasks, activeJobs > 0 ? $"Jobs ({activeJobs})" : "Jobs", DrawJobs);
-        Tab(FontAwesomeIcon.Database, "Caches", DrawCaches);
-        Tab(FontAwesomeIcon.Wrench, $"Tools ({plugin.Server.Tools.Count})", DrawTools);
+        Tab(FontAwesomeIcon.InfoCircle, "Info", DrawInfo);
     }
 
     /// <summary>A tab to bring to the front on the next frame (its first label word, e.g. "Third-party").</summary>
@@ -186,22 +185,52 @@ internal sealed partial class ConfigWindow : Window
 
     // ---------------------------------------------------------------- permissions
 
-    private void DrawPermissions()
-    {
-        Permissions.Draw();
+    private void DrawPermissions() => Permissions.Draw();
 
-        // What XIV MCP's own tools changed recently, and every call that was asked or blocked.
-        var activity = plugin.Gate.Audit.Recent(max: 500).Where(e => e.BuiltIn).Take(20).ToList();
+    // ---------------------------------------------------------------- info
+
+    /// <summary>The Info tab: recent activity, compatibility with other plugins, the tool list and the caches, each as a sub-tab.</summary>
+    private void DrawInfo()
+    {
+        using var tabs = ImRaii.TabBar("##info-tabs");
+        if (!tabs) return;
+        SubTab(FontAwesomeIcon.History, "Recent activity", DrawActivity);
+        SubTab(FontAwesomeIcon.Robot, "Compatibility", DrawCompatibility);
+        SubTab(FontAwesomeIcon.Wrench, $"Tools ({plugin.Server.Tools.Count})", DrawTools);
+        SubTab(FontAwesomeIcon.Database, "Caches", DrawCaches);
+    }
+
+    private static void SubTab(FontAwesomeIcon icon, string label, Action draw)
+    {
+        using var tab = ImRaii.TabItem($"{icon.ToIconString()}  {label}###info-{label.Split(' ')[0]}");
+        if (!tab) return;
         ImGui.Spacing();
-        Section(FontAwesomeIcon.History, "Recent activity");
+        using var child = ImRaii.Child($"##info-{label.Split(' ')[0]}", new Vector2(-1, -1), false);
+        draw();
+    }
+
+    /// <summary>What XIV MCP's own tools changed recently, and every call that was asked or blocked.</summary>
+    private void DrawActivity()
+    {
+        var activity = plugin.Gate.Audit.Recent(max: 500).Where(e => e.BuiltIn).Take(50).ToList();
         if (activity.Count == 0) ImGui.TextColored(Muted, "No changes or approvals yet. Reading that's allowed isn't listed.");
         else ThirdPartyPanel.DrawAuditTable(activity, showSource: true);
-        ImGui.TextColored(Muted, "Full log: pluginConfigs/XivMcp/audit.jsonl");
-
-        // Compatibility is only shown for plugins the player already has installed; otherwise the section doesn't exist.
-        if (compat is not { } c || !(c.AutoRetainer || c.YesAlready || c.TextAdvance || c.Fcch || c.WaymarkPresetPlugin || c.Vnavmesh || c.Lifestream || c.Artisan || c.GatherBuddy || c.ItemVendorLocation)) return;
         ImGui.Spacing();
-        Section(FontAwesomeIcon.Robot, "Compatibility");
+        ImGui.TextColored(Muted, "Full log: pluginConfigs/XivMcp/audit.jsonl. Third-party plugins' activity is on their cards in Third-party plugins.");
+    }
+
+    /// <summary>How XIV MCP works with the other plugins installed. Plugins that aren't installed aren't mentioned.</summary>
+    private void DrawCompatibility()
+    {
+        if (compat is not { } c || !(c.AutoRetainer || c.YesAlready || c.TextAdvance || c.Fcch || c.WaymarkPresetPlugin || c.Vnavmesh || c.Lifestream || c.Artisan || c.GatherBuddy || c.ItemVendorLocation))
+        {
+            ImGui.TextColored(Muted, "None of the plugins XIV MCP works with are installed.");
+            return;
+        }
+        ImGui.PushTextWrapPos();
+        ImGui.TextColored(Muted, "How XIV MCP works with the other plugins you have installed.");
+        ImGui.PopTextWrapPos();
+        ImGui.Spacing();
         if (c.AutoRetainer)
             CompatRow("AutoRetainer",
                 c.SuppressedByUs ? "paused while XIV MCP uses the summoning bell"

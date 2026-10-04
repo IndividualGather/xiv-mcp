@@ -25,6 +25,11 @@ public static class SetupStatus
     public static bool HasServer(string json, string key) =>
         Parse(json)?[key] is JsonObject servers && servers.ContainsKey(ClientSetup.ServerName);
 
+    /// <summary>LM Studio's Bionic app (ng-mcp.json): a server named like XIV MCP's that is switched on.</summary>
+    public static bool BionicHasServer(string json) =>
+        Parse(json)?["servers"] is JsonArray servers &&
+        servers.OfType<JsonObject>().Any(s => s["name"]?.GetValue<string>() == ClientSetup.ServerName && s["enabled"]?.GetValue<bool>() != false);
+
     /// <summary>Claude Code's ~/.claude.json: XIV MCP for all projects (top-level mcpServers) or for any one project.</summary>
     public static bool ClaudeCodeHasServer(string json)
     {

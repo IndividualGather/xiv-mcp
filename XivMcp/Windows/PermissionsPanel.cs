@@ -78,7 +78,8 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
 
         var core = PermissionCatalog.Groups.Where(g => g.PluginId is null && found[g.Id].Visible).ToList();
         var installed = PermissionCatalog.Groups.Where(g => g.PluginId is { } id && host.IsInstalled(id) && found[g.Id].Visible).ToList();
-        if (core.Count + installed.Count == 0)
+        var soon = Upcoming.Where(u => ModuleSearch.Match(search, u.Title, u.Description, []).Visible).ToList();
+        if (core.Count + installed.Count + soon.Count == 0)
         {
             ImGui.TextColored(Muted, $"Nothing matches \"{search.Trim()}\".");
             return;
@@ -88,14 +89,87 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
             Section(FontAwesomeIcon.ShieldAlt, "XIV MCP");
             CardGrid("core", core, Card);
         }
-        if (installed.Count == 0) return;
+        if (installed.Count > 0)
+        {
+            ImGui.Spacing();
+            Section(FontAwesomeIcon.Link, "Integrations maintained by XIV MCP");
+            ImGui.PushTextWrapPos();
+            ImGui.TextColored(Muted, "XIV MCP's own tools for these plugins, only while the plugin is loaded. Independent of the groups above.");
+            ImGui.PopTextWrapPos();
+            ImGui.Spacing();
+            CardGrid("integrations", installed, Card);
+        }
+
+        if (soon.Count == 0) return;
         ImGui.Spacing();
-        Section(FontAwesomeIcon.Link, "Integrations maintained by XIV MCP");
-        ImGui.PushTextWrapPos();
-        ImGui.TextColored(Muted, "XIV MCP's own tools for these plugins, only while the plugin is loaded. Independent of the groups above.");
-        ImGui.PopTextWrapPos();
-        ImGui.Spacing();
-        CardGrid("integrations", installed, Card);
+        Section(FontAwesomeIcon.Hourglass, "Coming soon");
+        CardGrid("soon", soon, DrawUpcoming);
+    }
+
+    /// <summary>A feature that is planned but not built yet: shown as a card so players see what's next. Nothing to set.</summary>
+    private sealed record Feature(string Id, string Title, string Description, FontAwesomeIcon Icon);
+
+    private static readonly Feature[] Upcoming =
+    [
+        new("autohook", "AutoHook", "Automated fishing with AutoHook: your assistant sets up hooksets, baits and presets for the fish you are after.", FontAwesomeIcon.Fish),
+        new("fishing", "Fishing", "Fishing advice: where and when a fish bites, the weather it needs, baits and where to get them, counting macros for " +
+            "bite timing and suggested abilities. Ocean fishing too.", FontAwesomeIcon.Water),
+        new("gold_saucer", "Gold Saucer", "Gold Saucer games with Saucy and others, and Triple Triad card collecting: finds the cards you are missing, " +
+            "seeks out the players who have them and prepares decks against them.", FontAwesomeIcon.Dice),
+        new("quests", "Quests", "Quest help and automation with Questionable.", FontAwesomeIcon.Scroll),
+    ];
+
+    /// <summary>A "Coming soon" card: dimmed, with the feature's icon, title, description and a label instead of a switch.</summary>
+    private static void DrawUpcoming(Feature f)
+    {
+        using var id = ImRaii.PushId($"soon-{f.Id}");
+        var scale = Ui.Scale;
+        var pad = 10 * scale;
+        var bar = 4 * scale;
+        var width = ImGui.GetContentRegionAvail().X - 2 * scale;
+        var inner = width - 2 * pad - bar;
+        var start = ImGui.GetCursorScreenPos();
+        ImGui.Indent(pad + bar);
+        ImGui.Dummy(new Vector2(0, pad - ImGui.GetStyle().ItemSpacing.Y));
+        var left = ImGui.GetCursorPosX();
+        var headerY = ImGui.GetCursorPosY();
+        using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, 0.6f))
+        {
+            using (Ui.IconFont())
+            {
+                ImGui.SetWindowFontScale(1.45f);
+                ImGui.TextColored(NeutralAccent, f.Icon.ToIconString());
+                ImGui.SetWindowFontScale(1f);
+            }
+            ImGui.SameLine(0, 10 * scale);
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextUnformatted(f.Title);
+            ImGui.PushTextWrapPos(left + inner);
+            ImGui.TextColored(Muted, f.Description);
+            ImGui.PopTextWrapPos();
+        }
+        var contentBottom = ImGui.GetItemRectMax().Y;
+
+        // "Coming soon" label where the other cards have their switch.
+        var after = ImGui.GetCursorPos();
+        ImGui.SetWindowFontScale(0.8f);
+        var label = ImGui.CalcTextSize("COMING SOON");
+        ImGui.SetCursorPos(new Vector2(left + inner - label.X - 8 * scale, headerY + 4 * scale));
+        var at = ImGui.GetCursorScreenPos();
+        ImGui.GetWindowDrawList().AddRect(at - new Vector2(5, 2) * scale, at + label + new Vector2(5, 2) * scale, ImGui.GetColorU32(Accent with { W = 0.6f }), 3 * scale);
+        ImGui.TextColored(Accent, "COMING SOON");
+        ImGui.SetWindowFontScale(1f);
+        ImGui.SetCursorPos(after);
+        ImGui.Unindent(pad + bar);
+
+        var end = new Vector2(start.X + width, contentBottom + pad);
+        var dl = ImGui.GetWindowDrawList();
+        var rounding = 6 * scale;
+        dl.AddRectFilled(start, end, ImGui.GetColorU32(new Vector4(1, 1, 1, 0.02f)), rounding);
+        dl.AddRect(start, end, ImGui.GetColorU32(NeutralAccent with { W = 0.35f }), rounding);
+        dl.AddRectFilled(start, new Vector2(start.X + bar, end.Y), ImGui.GetColorU32(NeutralAccent with { W = 0.6f }), rounding, ImDrawFlags.RoundCornersLeft);
+        ImGui.SetCursorScreenPos(new Vector2(start.X, end.Y + 8 * scale));
+        ImGui.Dummy(Vector2.Zero);
     }
 
     private string search = "";

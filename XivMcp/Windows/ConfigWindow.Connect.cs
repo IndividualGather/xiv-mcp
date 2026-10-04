@@ -20,7 +20,8 @@ internal sealed partial class ConfigWindow
     /// An AI app XIV MCP can connect to. <see cref="Detect"/> says whether it seems installed (null: can't tell). <see cref="Main"/> apps
     /// get the large tiles in the first row; <see cref="Paid"/> apps need a paid plan for regular use.
     /// </summary>
-    private sealed record ClientApp(string Id, string Name, FontAwesomeIcon Icon, Func<bool?> Detect, Func<string, bool> Matches, bool Main = false, bool Paid = true);
+    /// <see cref="Untested"/> apps are shown dimmed and can't be picked yet: their setup hasn't been tried with the real app.
+    private sealed record ClientApp(string Id, string Name, FontAwesomeIcon Icon, Func<bool?> Detect, Func<string, bool> Matches, bool Main = false, bool Paid = true, bool Untested = false);
 
     private static bool Has(string name, string part) => name.Contains(part, StringComparison.OrdinalIgnoreCase);
 
@@ -33,10 +34,10 @@ internal sealed partial class ConfigWindow
         new("lmstudio", "LM Studio", FontAwesomeIcon.Microchip, () => ClientInstaller.LmStudioInstalled,
             n => Has(n, "lm studio") || Has(n, "lmstudio") || Has(n, "bionic"), Main: true, Paid: false),
         new("claude", "Claude Code", FontAwesomeIcon.Terminal, () => ClientInstaller.FindClaudeCli() is not null, n => Has(n, "claude-code")),
-        new("copilot", "GitHub Copilot", FontAwesomeIcon.Robot, () => ClientInstaller.CopilotInstalled, n => Has(n, "copilot") && !Has(n, "visual studio code")),
+        new("copilot", "GitHub Copilot", FontAwesomeIcon.Robot, () => ClientInstaller.CopilotInstalled, n => Has(n, "copilot") && !Has(n, "visual studio code"), Untested: true),
         new("vscode", "VS Code", FontAwesomeIcon.FileCode, () => ClientInstaller.IsRegistered("vscode"), n => Has(n, "visual studio code") || Has(n, "vscode")),
-        new("cursor", "Cursor", FontAwesomeIcon.MousePointer, () => ClientInstaller.IsRegistered("cursor"), n => Has(n, "cursor")),
-        new("grok", "Grok", FontAwesomeIcon.Terminal, () => ClientInstaller.GrokInstalled, n => Has(n, "grok")),
+        new("cursor", "Cursor", FontAwesomeIcon.MousePointer, () => ClientInstaller.IsRegistered("cursor"), n => Has(n, "cursor"), Untested: true),
+        new("grok", "Grok", FontAwesomeIcon.Terminal, () => ClientInstaller.GrokInstalled, n => Has(n, "grok"), Untested: true),
         new("other", "Other app", FontAwesomeIcon.EllipsisH, () => null, _ => false, Paid: false),
     ];
 
@@ -65,7 +66,7 @@ internal sealed partial class ConfigWindow
             connected = Clients.Select(c => ClientInstaller.IsConnected(c.Id, endpoint)).ToArray();
             nextDetect = DateTime.UtcNow.AddSeconds(5);
         }
-        var chosen = Array.FindIndex(Clients, c => c.Id == config.ConnectClient);
+        var chosen = Array.FindIndex(Clients, c => c.Id == config.ConnectClient && !c.Untested);
         if (chosen < 0) chosen = Array.FindIndex(Clients, c => c.Id == "claude-desktop");
 
         // Text runs at most this wide (about 80 characters), so lines stay easy to follow on a wide window.
@@ -187,25 +188,29 @@ internal sealed partial class ConfigWindow
         using var id = ImRaii.PushId(app.Id);
         var start = ImGui.GetCursorScreenPos();
         var selected = i == chosen;
-        if (ImGui.InvisibleButton("##tile", size) && !selected)
+        // Untested apps are dimmed and can't be picked.
+        var dim = app.Untested;
+        var alpha = dim ? 0.4f : 1f;
+        if (ImGui.InvisibleButton("##tile", size) && !selected && !dim)
         {
             plugin.Config.ConnectClient = app.Id;
             plugin.Config.Save();
         }
         var hovered = ImGui.IsItemHovered();
+        var hot = hovered && !dim;
         var dl = ImGui.GetWindowDrawList();
-        var accent = selected ? Accent : hovered ? Accent with { W = 0.6f } : new Vector4(1, 1, 1, 0.12f);
-        dl.AddRectFilled(start, start + size, ImGui.GetColorU32(selected ? Accent with { W = 0.10f } : new Vector4(1, 1, 1, hovered ? 0.06f : 0.03f)), 6 * scale);
+        var accent = selected ? Accent : hot ? Accent with { W = 0.6f } : new Vector4(1, 1, 1, dim ? 0.06f : 0.12f);
+        dl.AddRectFilled(start, start + size, ImGui.GetColorU32(selected ? Accent with { W = 0.10f } : new Vector4(1, 1, 1, hot ? 0.06f : dim ? 0.015f : 0.03f)), 6 * scale);
         dl.AddRect(start, start + size, ImGui.GetColorU32(accent), 6 * scale, ImDrawFlags.None, selected ? 2 * scale : 1 * scale);
 
-        var textColor = ImGui.GetColorU32(selected ? Accent : ImGui.GetStyle().Colors[(int)ImGuiCol.Text]);
+        var textColor = ImGui.GetColorU32((selected ? Accent : ImGui.GetStyle().Colors[(int)ImGuiCol.Text]) with { W = alpha });
         var pad = (size.Y - iconSize) / 2;
         var left = Math.Min(pad, 12 * scale);
         // The app's own icon when it's installed; a generic symbol otherwise.
         if (AppIcons.Get(app.Id) is { } logo)
         {
             var at = start + new Vector2(left, pad);
-            dl.AddImage(logo.Handle, at, at + new Vector2(iconSize));
+            dl.AddImage(logo.Handle, at, at + new Vector2(iconSize), Vector2.Zero, Vector2.One, ImGui.GetColorU32(new Vector4(1, 1, 1, alpha)));
         }
         else
             using (Ui.IconFont())
@@ -220,9 +225,9 @@ internal sealed partial class ConfigWindow
         dl.AddText(new Vector2(textX, top), textColor, app.Name);
         // Connected: XIV MCP is set up in the app. Recommended only until any app is connected.
         var recommended = app.Id == "claude-desktop" && !connected.Any(c => c) && detected[i] != false;
-        var (note, noteColor) = connected[i] ? ("Connected", Green) : recommended ? ("Recommended", Accent)
+        var (note, noteColor) = dim ? ("Coming soon", Muted) : connected[i] ? ("Connected", Green) : recommended ? ("Recommended", Accent)
             : detected[i] == false ? ("Not found", Muted) : detected[i] == true ? ("Installed", Muted) : ("", Muted);
-        if (note.Length > 0) dl.AddText(new Vector2(textX, top + line), ImGui.GetColorU32(noteColor), note);
+        if (note.Length > 0) dl.AddText(new Vector2(textX, top + line), ImGui.GetColorU32(noteColor with { W = dim ? 0.8f : 1f }), note);
 
         // "Paid": a small amber label, top right on the large tiles, bottom right on the small ones (clear of long names).
         if (app.Paid)
@@ -230,13 +235,14 @@ internal sealed partial class ConfigWindow
             ImGui.SetWindowFontScale(0.78f);
             var label = ImGui.CalcTextSize("Paid");
             var at = new Vector2(start.X + size.X - label.X - 10 * scale, app.Main ? start.Y + 6 * scale : start.Y + size.Y - label.Y - 7 * scale);
-            dl.AddRect(at - new Vector2(4, 1) * scale, at + label + new Vector2(4, 1) * scale, ImGui.GetColorU32(Amber with { W = 0.6f }), 3 * scale);
-            dl.AddText(ImGui.GetFont(), ImGui.GetFontSize(), at, ImGui.GetColorU32(Amber), "Paid");
+            dl.AddRect(at - new Vector2(4, 1) * scale, at + label + new Vector2(4, 1) * scale, ImGui.GetColorU32(Amber with { W = 0.6f * alpha }), 3 * scale);
+            dl.AddText(ImGui.GetFont(), ImGui.GetFontSize(), at, ImGui.GetColorU32(Amber with { W = alpha }), "Paid");
             ImGui.SetWindowFontScale(1f);
         }
 
         if (hovered)
-            Tooltip((connected[i] ? $"XIV MCP is set up in {app.Name}." : detected[i] == false ? $"{app.Name} doesn't seem to be installed on this PC." : $"Connect {app.Name}") +
+            Tooltip(dim ? $"{app.Name} is coming soon: its setup hasn't been tested with the app yet." :
+                    (connected[i] ? $"XIV MCP is set up in {app.Name}." : detected[i] == false ? $"{app.Name} doesn't seem to be installed on this PC." : $"Connect {app.Name}") +
                     (app.Paid ? "\nNeeds a paid plan for regular use: the free plan's limits run out quickly with game control." : app.Id == "lmstudio" ? "\nFree: runs models on your own PC." : ""));
     }
 
@@ -317,43 +323,16 @@ internal sealed partial class ConfigWindow
     /// </summary>
     private void DrawLmStudio(string endpoint, string? token, bool? installed)
     {
-        if (ClientInstaller.IsBionic)
-        {
-            Paragraph("Adds XIV MCP to LM Studio (Bionic), for models running on your PC. Bionic adds MCP servers in its own settings, so paste these values there:");
-            CopyRow("Name", ClientSetup.ServerName);
-            CopyRow("URL", endpoint);
-            if (token is not null) CopyRow("Header", "Authorization", $"Bearer {token}", $"Bearer {token[..6]}…");
-            Steps(["In Bionic, open Settings → Integrations → MCP and add a custom server.", "Enter the name and URL above" + (token is null ? "." : ", and add the header with its value."),
-                   "Load a model that supports tool use and ask about your character."]);
-            Hint("Local models work fine. Costs, below, suggests two that handle XIV MCP's tools well.");
-            return;
-        }
         Paragraph("Adds XIV MCP to LM Studio, for models running on your PC.");
         if (installed == false) NotInstalled("LM Studio", "https://lmstudio.ai/");
         if (PrimaryButton(FontAwesomeIcon.Plus, connected[Index("lmstudio")] ? "Update in LM Studio" : "Add to LM Studio"))
             results["lmstudio"] = ClientInstaller.AddToLmStudio(endpoint, token);
-        Tooltip($"Writes the entry to {ClientInstaller.LmStudioConfigPath}. Everything else in the file is kept, and the old file is backed up.");
+        Tooltip($"Writes the entry to {ClientInstaller.LmStudioTargetPath}. Everything else in the file is kept, and the old file is backed up.");
         ResultLine("lmstudio");
-        Steps(["In LM Studio, check that ffxiv is listed under Integrations → MCP.", "Load a model that supports tool use and ask about your character."]);
+        Steps(ClientInstaller.IsBionic
+            ? ["Load a model that supports tool use and ask about your character. No restart needed."]
+            : ["In LM Studio, check that ffxiv is listed under Integrations → MCP.", "Load a model that supports tool use and ask about your character."]);
         Hint("Local models work fine. Costs, below, suggests two that handle XIV MCP's tools well.");
-    }
-
-    /// <summary>A label, a value (shown masked if <paramref name="shown"/> is given) and a copy button, for pasting into an app's form.</summary>
-    private void CopyRow(string label, string value, string? secondValue = null, string? shown = null)
-    {
-        using var id = ImRaii.PushId(label);
-        ImGui.AlignTextToFramePadding();
-        ImGui.TextColored(Muted, label);
-        ImGui.SameLine(textLeft + 70 * Ui.Scale);
-        using (Ui.MonoFont()) ImGui.TextColored(Cyan, secondValue is null ? value : $"{value}: {shown ?? secondValue}");
-        ImGui.SameLine();
-        if (ImGui.SmallButton(secondValue is null ? "Copy" : "Copy name")) ImGui.SetClipboardText(value);
-        if (secondValue is not null)
-        {
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Copy value")) ImGui.SetClipboardText(secondValue);
-            Tooltip("The value includes your access token.");
-        }
     }
 
     /// <summary>An app XIV MCP sets up by writing its config file: what it does, the button, then the steps after clicking.</summary>
@@ -432,12 +411,9 @@ internal sealed partial class ConfigWindow
                 Tooltip($"Deletes the XIV MCP entry from {ClientInstaller.GrokConfigPath}. Everything else in the file is kept, and the old file is backed up.");
                 ResultLine("grok-remove");
                 break;
-            case "lmstudio" when ClientInstaller.IsBionic:
-                RemovalSteps(["In Bionic, open Settings → Integrations → MCP.", "Remove ffxiv."]);
-                break;
             case "lmstudio":
                 if (SecondaryButton(FontAwesomeIcon.Trash, "Remove from LM Studio")) results["lmstudio-remove"] = ClientInstaller.RemoveFromLmStudio();
-                Tooltip($"Deletes the XIV MCP entry from {ClientInstaller.LmStudioConfigPath}. Everything else in the file is kept, and the old file is backed up.");
+                Tooltip($"Deletes the XIV MCP entry from {ClientInstaller.LmStudioTargetPath}. Everything else in the file is kept, and the old file is backed up.");
                 ResultLine("lmstudio-remove");
                 break;
             default:

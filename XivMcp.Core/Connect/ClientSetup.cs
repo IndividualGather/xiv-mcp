@@ -132,6 +132,44 @@ public static class ClientSetup
         return root.ToJsonString(Indented);
     }
 
+    /// <summary>
+    /// LM Studio's Bionic app keeps its servers in ~/.lmstudio/apps/bionic/.internal/ng-mcp.json: { "servers": [ { id (uuid), name,
+    /// enabled, connection } ] }. XIV MCP's entry is found by its name and updated in place (keeping its id); a new one gets
+    /// <paramref name="newId"/>. Bionic picks the change up while it runs.
+    /// </summary>
+    public static string MergeBionicConfig(string existing, string endpoint, string? token, string newId)
+    {
+        var root = ParseConfig(existing);
+        if (root["servers"] is not JsonArray servers) root["servers"] = servers = new JsonArray();
+        var mine = servers.OfType<JsonObject>().FirstOrDefault(s => s["name"]?.GetValue<string>() == ServerName);
+        var entry = new JsonObject
+        {
+            ["id"] = mine?["id"]?.GetValue<string>() ?? newId,
+            ["name"] = ServerName,
+            ["description"] = "Final Fantasy XIV, live through XIV MCP",
+            ["enabled"] = true,
+            ["connection"] = new JsonObject
+            {
+                ["type"] = "streamableHttp",
+                ["url"] = endpoint,
+                ["headers"] = new JsonObject(),
+                ["auth"] = token is null ? new JsonObject { ["type"] = "none" } : new JsonObject { ["type"] = "bearerToken", ["token"] = token },
+            },
+        };
+        if (mine is null) servers.Add(entry);
+        else servers[servers.IndexOf(mine)] = entry;
+        return root.ToJsonString(Indented);
+    }
+
+    /// <summary>Bionic's config without XIV MCP's entry; every other server is kept.</summary>
+    public static string RemoveBionicServer(string existing)
+    {
+        var root = ParseConfig(existing);
+        if (root["servers"] is JsonArray servers)
+            foreach (var s in servers.OfType<JsonObject>().Where(s => s["name"]?.GetValue<string>() == ServerName).ToList()) servers.Remove(s);
+        return root.ToJsonString(Indented);
+    }
+
     /// <summary>GitHub Copilot's ~/.copilot/mcp-config.json: an HTTP server with every tool enabled.</summary>
     public static string MergeCopilotConfig(string existing, string endpoint, string? token)
     {

@@ -14,7 +14,7 @@ XIV MCP has two permission screens, because there are two kinds of tools:
 
 | | What | Where | How it's controlled |
 |---|---|---|---|
-| **XIV MCP's own tools** | The core tools, plus the integrations XIV MCP maintains for other plugins (AutoDuty, Artisan, GatherBuddy Reborn, Lifestream, Item Vendor Location, FCCH) | `/xivmcp` → **Modules** | Per group, reading and changes separately: allow, ask or deny, with an activity log |
+| **XIV MCP's own tools** | The core tools, plus the integrations XIV MCP maintains for other plugins (AutoDuty, Artisan, GatherBuddy Reborn, Lifestream, Item Vendor Location, FCCH) | `/xivmcp` → **Modules** | Per group, reading and changes separately: allow, ask or deny. Their activity log is under **Info** |
 | **Third-party tools** | Tools other plugins register through the [plugin API](#for-plugin-developers) | `/xivmcp` → **Third-party plugins** | Per plugin, capability and tool: allow, ask or deny, with consent to registrations, an audit log and automatic suspension |
 
 The two tabs share one card layout, but third-party plugins look different: violet cards with a **THIRD-PARTY** badge and a plug icon. Each card has an on/off switch, one Allow / Ask / Deny section per declared capability with its risk level, plus a Reading section for tools that only read. Expand a section to set its tools on their own, as on the Modules tab. A tool that follows its sections uses the strictest of them. Tools that can destroy items always ask. The checks on what a call actually did (undeclared gil, item, zone or login changes suspend the plugin) apply either way.
@@ -30,6 +30,10 @@ Every tool of XIV MCP belongs to one **group**, and every group has two settings
 - **Deny** refuses it before it runs, and tells your assistant which setting to change.
 
 **Searching.** The search field at the top of the **Modules** tab filters as you type. It matches section names and descriptions, and tool calls by name or by what they do; every word has to match. Sections with matching tool calls open those rows and show only the matching tools.
+
+**Coming soon.** Below the integrations, dimmed cards show what is planned next: AutoHook (automated fishing), Fishing (where and when fish bite, weather, baits and where to get them, counting macros for bite timing, suggested abilities, ocean fishing), Gold Saucer (Saucy and more, with Triple Triad card collecting: finding missing cards, seeking out players who have them and preparing decks) and Quests (Questionable). They have nothing to set yet.
+
+**Info.** The **Info** tab holds what you look at rather than set: **Recent activity** (what XIV MCP's own tools changed, and every call that was asked or blocked), **Compatibility** (how XIV MCP works with the plugins you have installed), the full **Tools** list and the **Caches**.
 
 **Turning a group off.** The switch in each card's top right removes the group's tools from your assistant entirely: they disappear from its tool list (clients are told the list changed), calls and job steps are refused, and the card shows only its description. Unlike *Deny*, which keeps the tools listed so the assistant can tell you they're blocked, this keeps the assistant's tool list short. Turn the group back on to bring the tools back with their settings.
 
@@ -260,7 +264,7 @@ For jobs that buy repeatedly, a **standing approval** asks once: "spend up to N 
 
 ## Caches, freshness and watching
 
-The game only sends some data in certain places. XIV MCP snapshots it there and keeps it per character in `pluginConfigs/XivMcp/`:
+The game only sends some data in certain places. XIV MCP snapshots it there and keeps it per character in `pluginConfigs/XivMcp/` (see `/xivmcp` → **Info** → **Caches**):
 
 | Cache | Refreshed when |
 |---|---|
@@ -340,10 +344,10 @@ Open `/xivmcp` → **Connect** and pick your app. Most have a one-click button; 
 | **Claude Desktop** | Writes a Claude Desktop extension (`xiv-mcp.mcpb`) and hands it to Claude Desktop, which shows its install screen. The Microsoft Store build doesn't open `.mcpb` files by double-click, so XIV MCP passes the file to its `claude-desktop.exe` alias instead. If neither works, Claude Desktop opens next to a folder with the file selected, to drag in. |
 | **ChatGPT** (Codex) | Adds XIV MCP to `~/.codex/config.toml`, which Codex in the ChatGPT desktop app, the Codex CLI and the IDE extension share. The rest of the file is kept, and the old one is saved as `config.toml.xivmcp-backup`. |
 | **VS Code** (GitHub Copilot) | Opens VS Code's own "install MCP server" prompt, for your user profile. |
-| **Cursor** | Opens Cursor's install prompt. |
-| **GitHub Copilot** (app and CLI) | Adds XIV MCP to `~/.copilot/mcp-config.json`, which the Copilot CLI reads and, by GitHub's docs, the GitHub Copilot app too. |
-| **Grok** (Grok Build, in the terminal) | Adds XIV MCP to `~/.grok/config.toml`. grok.com only connects to servers on the internet, so it can't reach the game. |
-| **LM Studio** (its desktop app is now called Bionic) | Adds XIV MCP to `~/.lmstudio/mcp.json`, which LM Studio reads for its MCP servers. The rest of the file is kept, and the old one is saved as `mcp.json.xivmcp-backup`. |
+| **Cursor** | *Coming soon:* the tile is greyed out until the install link has been tested with Cursor. |
+| **GitHub Copilot** (app and CLI) | *Coming soon* (not tested yet, greyed out). Will add XIV MCP to `~/.copilot/mcp-config.json`, which the Copilot CLI reads and, by GitHub's docs, the GitHub Copilot app too. |
+| **Grok** (Grok Build, in the terminal) | *Coming soon* (not tested yet, greyed out). Will add XIV MCP to `~/.grok/config.toml`. grok.com only connects to servers on the internet, so it can't reach the game. |
+| **LM Studio** (its desktop app is now called Bionic) | Adds XIV MCP to Bionic's server list (`~/.lmstudio/apps/bionic/.internal/ng-mcp.json`), the same list its Settings → Integrations → MCP edits. Bionic connects within a few seconds, no restart needed. The rest of the file is kept, with a backup. (The old LM Studio app gets the entry in `~/.lmstudio/mcp.json` instead.) |
 | **Claude Code** | Runs `claude mcp add` for you (no console window), for all your projects. An earlier user-wide `ffxiv` entry is replaced. Project entries are left alone. |
 | Other apps | Copy the JSON (below). |
 
@@ -415,7 +419,7 @@ Each app XIV MCP is set up in gets a **Remove XIV MCP from …** section in the 
 | **Cursor** | Delete the `ffxiv` entry from `~/.cursor/mcp.json`. |
 | **GitHub Copilot** | **Remove from GitHub Copilot** deletes the entry from `~/.copilot/mcp-config.json` (with a backup). |
 | **Grok Build** | **Remove from Grok Build** deletes the entry from `~/.grok/config.toml` (with a backup). |
-| **LM Studio** | **Remove from LM Studio** deletes the entry from `~/.lmstudio/mcp.json` (with a backup). |
+| **LM Studio** | **Remove from LM Studio** deletes the entry from Bionic's server list (or the old app's `mcp.json`), with a backup. |
 
 To cut off every app at once, switch off the server in `/xivmcp` or generate a new access token.
 

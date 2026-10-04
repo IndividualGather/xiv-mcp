@@ -152,6 +152,53 @@ public class ClientSetupTests
     public void A_json_config_that_cannot_be_read_is_not_overwritten() =>
         Assert.Throws<FormatException>(() => ClientSetup.MergeJsonServer("{ not json", "mcpServers", Endpoint, Token));
 
+    // ---- LM Studio's Bionic app: ~/.lmstudio/apps/bionic/.internal/ng-mcp.json
+
+    private const string BionicWithOther = """
+        { "servers": [ { "id": "aa61372b-407d-457a-b936-1453c4f28676", "name": "Ex", "enabled": true,
+                         "connection": { "type": "stdio", "command": "ex-mcp", "args": [], "env": {} } } ] }
+        """;
+
+    [Fact]
+    public void Bionic_gets_a_streamable_http_server_with_a_bearer_token()
+    {
+        var json = Json(ClientSetup.MergeBionicConfig(BionicWithOther, Endpoint, Token, "11111111-2222-3333-4444-555555555555"));
+        var servers = json["servers"]!.AsArray();
+        Assert.Equal(2, servers.Count);
+        Assert.Equal("Ex", servers[0]!["name"]!.GetValue<string>());
+        var mine = servers[1]!;
+        Assert.Equal("11111111-2222-3333-4444-555555555555", mine["id"]!.GetValue<string>());
+        Assert.Equal("ffxiv", mine["name"]!.GetValue<string>());
+        Assert.True(mine["enabled"]!.GetValue<bool>());
+        var connection = mine["connection"]!;
+        Assert.Equal("streamableHttp", connection["type"]!.GetValue<string>());
+        Assert.Equal(Endpoint, connection["url"]!.GetValue<string>());
+        Assert.Empty(connection["headers"]!.AsObject());
+        Assert.Equal("bearerToken", connection["auth"]!["type"]!.GetValue<string>());
+        Assert.Equal(Token, connection["auth"]!["token"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Bionic_updates_its_entry_in_place_keeping_the_id()
+    {
+        var once = ClientSetup.MergeBionicConfig(BionicWithOther, Endpoint, Token, "11111111-2222-3333-4444-555555555555");
+        var json = Json(ClientSetup.MergeBionicConfig(once, "http://localhost:1/mcp", null, "99999999-2222-3333-4444-555555555555"));
+        var servers = json["servers"]!.AsArray();
+        Assert.Equal(2, servers.Count);
+        Assert.Equal("11111111-2222-3333-4444-555555555555", servers[1]!["id"]!.GetValue<string>());
+        Assert.Equal("none", servers[1]!["connection"]!["auth"]!["type"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Bionic_entries_are_found_and_removed_by_name_leaving_the_others()
+    {
+        var added = ClientSetup.MergeBionicConfig("", Endpoint, Token, "11111111-2222-3333-4444-555555555555");
+        Assert.True(XivMcp.Connect.SetupStatus.BionicHasServer(added));
+        Assert.False(XivMcp.Connect.SetupStatus.BionicHasServer(BionicWithOther));
+        var removed = Json(ClientSetup.RemoveBionicServer(ClientSetup.MergeBionicConfig(BionicWithOther, Endpoint, Token, "11111111-2222-3333-4444-555555555555")));
+        Assert.Equal("Ex", Assert.Single(removed["servers"]!.AsArray())!["name"]!.GetValue<string>());
+    }
+
     // ---- GitHub Copilot: ~/.copilot/mcp-config.json
 
     [Fact]
