@@ -65,6 +65,7 @@ internal static class SubmarineTools
                 await InventoryActionTools.Gate.WaitAsync(ct).ConfigureAwait(false);
                 try
                 {
+                    await LoadVessels(ct).ConfigureAwait(false);
                     var vessel = await Game.Run(() => FindVessel(name)).ConfigureAwait(false);
                     if (vessel.OnVoyage) throw new ToolException($"{vessel.Name} is out on a voyage until {vessel.Returns:HH:mm}; repair it when it is back.");
                     var log = new List<string>();
@@ -112,6 +113,7 @@ internal static class SubmarineTools
                 await InventoryActionTools.Gate.WaitAsync(ct).ConfigureAwait(false);
                 try
                 {
+                    await LoadVessels(ct).ConfigureAwait(false);
                     var vessels = await Game.Run(() => name is null ? Returned() : [FindVessel(name)]).ConfigureAwait(false);
                     if (vessels.Count == 0) throw new ToolException("No submersible is back from its voyage.");
                     var results = new List<object>();
@@ -175,6 +177,19 @@ internal static class SubmarineTools
             list.Add(new Vessel(i, s.NameString, s.RankId, returns, s.CurrentExplorationPoints.ToArray().Where(p => p != 0).Select(p => (uint)p).ToArray()));
         }
         return list;
+    }
+
+    /// <summary>
+    /// The game fills the workshop's submersible list only once the voyage control panel was opened after logging in: open its menu
+    /// when the list is still empty, and wait for it (the menu stays open for the next step).
+    /// </summary>
+    private static async Task LoadVessels(CancellationToken ct)
+    {
+        if (await Game.Run(() => Vessels().Count > 0).ConfigureAwait(false)) return;
+        if (!await Game.Run(() => MenuHas(SubmersibleManagement)).ConfigureAwait(false))
+            await Game.Run(InteractWithPanel).ConfigureAwait(false);
+        if (!await GameWindows.WaitFor(() => Vessels().Count > 0, TimeSpan.FromSeconds(10), ct).ConfigureAwait(false))
+            throw new ToolException("The voyage control panel shows no submersibles: the free company may have none registered yet.");
     }
 
     private static Vessel FindVessel(string name)
