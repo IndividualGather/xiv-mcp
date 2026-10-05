@@ -417,7 +417,13 @@ internal static class InteractionTools
         return TargetSystem.Instance()->InteractWithObject(native, lineOfSight);
     }
 
-    public static bool IsSummoningBell(IGameObject obj) => BellIds.Value.Contains(obj.BaseId);
+    /// <summary>A summoning bell: the town and inn bells (event objects), or a bell placed as furniture in a house or apartment.</summary>
+    public static bool IsSummoningBell(IGameObject obj) =>
+        BellIds.Value.Contains(obj.BaseId) ||
+        obj.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.HousingEventObject && BellName.Value is { } name &&
+        obj.Name.TextValue.Equals(name, StringComparison.OrdinalIgnoreCase);
+
+    private static readonly Lazy<string?> BellName = new(() => Svc.Data.GetExcelSheet<EObjName>().GetRowOrDefault(2000401)?.Singular.ExtractText());
 
     private static IGameObject FindObject(string? name, ulong? id)
     {
