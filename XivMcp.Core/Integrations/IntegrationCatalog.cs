@@ -129,11 +129,12 @@ public static class IntegrationCatalog
             ["get_ocean_fishing_status"] = [],
             ["board_ocean_fishing"] = [MoveCharacter, GameUi],
             ["set_ocean_fishing_alarm"] = [EditSettings],
+            ["import_ocean_presets"] = [EditSettings, Network],
             ["go_ocean_fishing"] = [MoveCharacter, GameUi, SpendGil, EditSettings],
             ["fish_ocean_voyages"] = [MoveCharacter, GameUi, EditSettings],
         })
         {
-            Standalone = new HashSet<string> { "get_ocean_fishing_schedule", "get_ocean_fishing_status", "board_ocean_fishing", "go_ocean_fishing", "fish_ocean_voyages" },
+            Standalone = new HashSet<string> { "get_ocean_fishing_schedule", "get_ocean_fishing_status", "board_ocean_fishing", "go_ocean_fishing", "fish_ocean_voyages", "import_ocean_presets" },
             Helpers = new Dictionary<string, ToolRequirement[]>
             {
                 ["get_ocean_fishing_schedule"] = [OceanData],
@@ -145,6 +146,7 @@ public static class IntegrationCatalog
             {
                 ["go_ocean_fishing"] = [OceanFisher],
                 ["fish_ocean_voyages"] = [OceanFisher],
+                ["import_ocean_presets"] = [OceanFisher],
             },
         },
         new("AutoHook", "AutoHook", "Fishing with AutoHook: presets built for the fish you are after, fishing until it is caught, and a job that does it all.", new Dictionary<string, string[]>

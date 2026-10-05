@@ -139,6 +139,7 @@ public static class ToolSummaries
         ["get_ocean_fishing_schedule"] = "Lists the next ocean fishing voyages, their stops and the fish worth going for.",
         ["get_ocean_fishing_status"] = "Checks the voyage you are on: the stop, time left, spectral current, missions and points.",
         ["board_ocean_fishing"] = "Goes to the ferry docks in Limsa Lominsa and boards the voyage while boarding is open.",
+        ["import_ocean_presets"] = "Imports AutoHook's ocean fishing presets for a goal: points, legends, achievements or levelling.",
         ["set_ocean_fishing_alarm"] = "Turns the Distant Seas departure alarm on or off.",
         ["go_ocean_fishing"] = "Fishes ocean voyages with AutoHook until your target: voyages, points or a fish.",
         ["fish_ocean_voyages"] = "Boards and fishes voyages one after another, as a step of an ocean fishing job.",

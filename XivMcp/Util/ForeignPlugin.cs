@@ -58,6 +58,14 @@ internal sealed class ForeignPlugin(string internalName, string displayName)
         m.Invoke(null, null);
     }
 
+    /// <summary>Calls an instance method by name and argument count.</summary>
+    public object? Call(object target, string method, params object?[] args)
+    {
+        var m = target.GetType().GetMethods(Instance).FirstOrDefault(x => x.Name == method && x.GetParameters().Length == args.Length)
+                ?? throw Unsupported($"{target.GetType().Name}.{method}");
+        return m.Invoke(target, args);
+    }
+
     public object? Get(object target, string member)
     {
         var t = target.GetType();

@@ -116,6 +116,28 @@ internal static class OceanFishingTools
             }),
         };
 
+        yield return new McpTool
+        {
+            Name = "import_ocean_presets",
+            Description = "Imports AutoHook's ocean fishing presets for a goal (Points, Legendary, Achievement or Levelling) into AutoHook, in a " +
+                          "folder of XIV MCP's own per goal ('XIV MCP Ocean - Points', …), replacing what that folder held; your own " +
+                          "presets stay. AutoHook's ocean fishing mode picks the preset for each stop and the goal from them. The presets come " +
+                          "from AutoHook's wiki page 'Ocean Fishing' (goes online: Online lookups), or from 'presets': AutoHook export " +
+                          "strings you got elsewhere (e.g. AutoHook's Discord), which are also kept for the next imports of that goal. " +
+                          "Requires 'Ocean fishing' in /xivmcp.",
+            InputSchema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "goal": { "type": "string", "enum": ["Points", "Legendary", "Achievement", "Levelling"], "description": "Default Points." },
+                    "presets": { "type": "array", "items": { "type": "string" }, "description": "AutoHook export strings (AH…) to import and keep for this goal." }
+                  }
+                }
+                """,
+            ReadOnly = false,
+            Handler = (args, ct) => ImportPresets(args, config, ct),
+        };
+
         const string TargetProperties = """
                     "voyages": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Stop after this many voyages." },
                     "points": { "type": "integer", "minimum": 1, "description": "Stop once the voyages scored this many points in total." },
@@ -131,7 +153,8 @@ internal static class OceanFishingTools
             Name = "go_ocean_fishing",
             Description = "Starts a background job that fishes ocean voyages with AutoHook's ocean fishing mode until a target: a number of " +
                           "voyages, a points total, or a fish (with 'max_voyages' as a cap); without a target, one voyage. It switches to " +
-                          "Fisher, buys the ocean baits (Ragworm, Krill, Plump Worm) when fewer than 30 are left, then waits for each boarding " +
+                          "Fisher, buys the ocean baits (Ragworm, Krill, Plump Worm) when fewer than 30 are left, imports AutoHook's ocean " +
+                          "presets for the goal (import_ocean_presets), then waits for each boarding " +
                           "window (every 2 hours), boards, lets AutoHook fish (moving to the railing, switching bait per stop and spectral " +
                           "current), and collects the results. Distant Seas' overlay is shown during voyages. Follow it with get_job. " +
                           "Requires 'Ocean fishing' in /xivmcp; buying bait follows 'Market & purchases'.",
@@ -160,6 +183,9 @@ internal static class OceanFishingTools
                 foreach (var key in new[] { "voyages", "points", "fish", "fish_count", "max_voyages", "goal", "route" })
                     if (args.Node(key) is { } v) voyageArgs[key] = v.DeepClone();
                 var target = Target(args);
+                var goalName = (OceanPresetPage.Goal(args.String("goal") ?? "Points") ?? OceanGoal.Points).ToString();
+                steps.Add(new() { Id = "presets", Tool = "import_ocean_presets", Args = new JsonObject { ["goal"] = goalName },
+                                  Note = $"Import AutoHook's ocean presets for {goalName}" });
                 steps.Add(new() { Id = "voyages", Tool = "fish_ocean_voyages", Args = voyageArgs, Note = $"Fish ocean voyages until {Describe(target)}" });
                 var job = jobs().Start($"Ocean fishing: {Describe(target)}", steps, client());
                 return new { started = JobManager.Describe(job), next = await Game.Run(() => NextVoyage()).ConfigureAwait(false) };
@@ -439,6 +465,53 @@ internal static class OceanFishingTools
     {
         var ptr = RetainerUi.Ptr(window);
         if (!ptr.IsNull) RetainerUi.Fire((AtkUnitBase*)ptr.Address, true, value);
+    }
+
+    // ---------------------------------------------------------------- AutoHook's ocean presets
+
+    private static readonly System.Net.Http.HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
+
+    private static async Task<object> ImportPresets(ToolArgs args, Configuration config, CancellationToken ct)
+    {
+        if (!AutoHookTools.Loaded) throw new ToolException("AutoHook is not loaded.");
+        var goal = OceanPresetPage.Goal(args.String("goal") ?? "Points")
+                   ?? throw new ToolException("'goal' must be Points, Legendary, Achievement or Levelling.");
+        var pasted = args.Array("presets")?.Select(n => n?.ToString().Trim() ?? "").Where(s => s.StartsWith("AH", StringComparison.Ordinal)).ToList();
+        if (args.Array("presets") is { Count: > 0 } && pasted is { Count: 0 })
+            throw new ToolException("None of 'presets' is an AutoHook export string (they start with AH).");
+
+        List<string> exports;
+        string source;
+        if (pasted is { Count: > 0 })
+        {
+            exports = pasted;
+            source = "the presets given";
+            config.OceanPresets[goal.ToString()] = pasted;
+            config.Save();
+        }
+        else
+        {
+            List<string>? wiki = null;
+            string? wikiNote = null;
+            if (config.AllowOnlineData)
+            {
+                try
+                {
+                    var page = await Http.GetStringAsync(OceanPresetPage.Url, ct).ConfigureAwait(false);
+                    wiki = OceanPresetPage.Parse(page).GetValueOrDefault(goal)?.Select(b => b.Export).ToList();
+                    if (wiki is null or { Count: 0 }) wikiNote = $"AutoHook's wiki has no {goal} presets at the moment.";
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException) { wikiNote = $"AutoHook's wiki could not be read ({ex.Message})."; }
+            }
+            else wikiNote = "Online lookups are off in /xivmcp, so AutoHook's wiki was not read.";
+
+            if (wiki is { Count: > 0 }) { exports = wiki; source = "AutoHook's wiki"; }
+            else if (config.OceanPresets.TryGetValue(goal.ToString(), out var saved) && saved.Count > 0) { exports = saved; source = "the presets you gave before"; }
+            else throw new ToolException($"{wikiNote} Pass AutoHook export strings for {goal} in 'presets' (AutoHook's Discord shares the current ocean presets).");
+        }
+
+        var count = await Game.Run(() => AutoHookOcean.ImportPresets(goal, exports)).ConfigureAwait(false);
+        return new { goal = goal.ToString(), folder = OceanPresetPage.FolderName(goal), imported = count, from = source };
     }
 
     // ---------------------------------------------------------------- voyages until a target

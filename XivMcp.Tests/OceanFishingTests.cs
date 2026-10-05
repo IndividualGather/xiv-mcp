@@ -229,3 +229,71 @@ public class RailingTests
         Assert.DoesNotContain(players, p => p.X == spot.Position.X && p.Z == spot.Position.Z);
     }
 }
+
+public class OceanPresetPageTests
+{
+    // The layout of AutoHook's wiki page "Ocean Fishing": a section per goal (and stop), each with export strings in code blocks.
+    private const string Page = """
+        # Ocean Fishing
+        These presets aim to get you the maximum points.
+
+        ### POINTS - Indigo - Galadion Bay
+        ```
+        AHFOLDER_aaa
+        ```
+
+        ### POINTS - Ruby - Kugane
+        ```
+        AHFOLDER_bbb
+        ```
+
+        ### ACHIEVES
+        ```
+
+        ```
+
+        ### LEGENDS
+        ```
+        AH4_ccc
+        ```
+
+        ### LEVELING
+        ```
+        not a preset
+        ```
+        """;
+
+    [Fact]
+    public void Export_strings_are_grouped_by_the_goal_of_their_section()
+    {
+        var presets = OceanPresetPage.Parse(Page);
+        Assert.Equal(["AHFOLDER_aaa", "AHFOLDER_bbb"], presets[OceanGoal.Points].Select(p => p.Export));
+        Assert.Equal("POINTS - Ruby - Kugane", presets[OceanGoal.Points][1].Title);
+        Assert.Equal(["AH4_ccc"], presets[OceanGoal.Legendary].Select(p => p.Export));
+    }
+
+    [Fact]
+    public void Empty_sections_and_other_text_give_no_presets()
+    {
+        var presets = OceanPresetPage.Parse(Page);
+        Assert.False(presets.ContainsKey(OceanGoal.Achievement));
+        Assert.False(presets.ContainsKey(OceanGoal.Levelling));
+    }
+
+    [Theory]
+    [InlineData("points", OceanGoal.Points)]
+    [InlineData("Legends", OceanGoal.Legendary)]
+    [InlineData("legendary", OceanGoal.Legendary)]
+    [InlineData("achievements", OceanGoal.Achievement)]
+    [InlineData("leveling", OceanGoal.Levelling)]
+    public void Goals_are_read_the_way_people_write_them(string text, OceanGoal goal)
+    {
+        Assert.Equal(goal, OceanPresetPage.Goal(text));
+    }
+
+    [Fact]
+    public void Each_goal_has_its_own_folder_in_AutoHook()
+    {
+        Assert.Equal("XIV MCP Ocean - Points", OceanPresetPage.FolderName(OceanGoal.Points));
+    }
+}

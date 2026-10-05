@@ -71,6 +71,9 @@ public sealed class Configuration : IPluginConfiguration
 
     public int FashionReportDiscardMaxValue { get; set; } = 5000;
 
+    /// <summary>AutoHook ocean fishing preset strings the player pasted, by goal (Points, Legendary, Achievement, Levelling).</summary>
+    public System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<string>> OceanPresets { get; set; } = new();
+
     /// <summary>Longer walks ride a mount (Mount Roulette) and fly where the zone allows it.</summary>
     public bool UseMountForWalks { get; set; } = true;
 
