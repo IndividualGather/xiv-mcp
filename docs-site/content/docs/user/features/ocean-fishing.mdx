@@ -12,6 +12,7 @@ Your assistant can tell you when the next ocean fishing boats leave and where th
 | `get_ocean_fishing_status` | The voyage you are on: the stop, the time left there, the spectral current, the voyage missions, your catches and points, and the results at the end |
 | `board_ocean_fishing` | Goes to Dryskthota at Limsa Lominsa's ferry docks and boards the voyage while boarding is open |
 | `go_ocean_fishing` | Fishes voyages with AutoHook until your target, as a background job |
+| `import_ocean_presets` | Imports AutoHook's ocean fishing presets for a goal: points, legends, achievements or levelling |
 | `set_ocean_fishing_alarm` | Turns Distant Seas' departure alarm on or off |
 
 > "When does the next ocean fishing boat leave, and what's worth catching?"
@@ -36,13 +37,25 @@ With Distant Seas, each stop lists:
 
 1. **Fisher**: it switches to your Fisher gear set.
 2. **Bait**: it buys 99 Ragworm, Krill and Plump Worm from the Merchant & Mender at the docks when you have fewer than 30 of one.
-3. **Waiting**: it waits for boarding to open.
-4. **Boarding**: it walks to Dryskthota, registers, picks the route and accepts the duty.
-5. **A spot at the railing**: after the loading screen, it walks to the free spot along the railing that is furthest from the other passengers, faces the ocean, and checks again once there, in case someone else just took it.
-6. **Fishing**: AutoHook's ocean fishing mode fishes the voyage: it casts, and switches bait for each stop and each spectral current. XIV MCP switches that mode on with your goal for the voyage only, and puts AutoHook's settings back afterwards. Distant Seas' overlay is shown while you sail.
-7. **Results**: it records your points and catches, closes the results, and you are back in Limsa Lominsa.
+3. **Presets**: it imports AutoHook's ocean presets for your goal (see below).
+4. **Waiting**: it waits for boarding to open.
+5. **Boarding**: it walks to Dryskthota, registers, picks the route and accepts the duty.
+6. **A spot at the railing**: once the boat has left (until then the deck is fenced off), it walks to the free spot along the railing that is furthest from the other passengers, faces the ocean, and checks again once there, in case someone else just took it.
+7. **Fishing**: AutoHook's ocean fishing mode fishes the voyage with the preset for each stop and your goal, switching bait for each stop and each spectral current. XIV MCP switches that mode on for the voyage only, and puts AutoHook's settings back afterwards. If you stand idle at a stop with time left, it puts on a bait and starts fishing again. Distant Seas' overlay is shown while you sail.
+8. **Results**: it records your points and catches, closes the results, and you are back in Limsa Lominsa.
 
-It repeats 3 to 7 until the target is reached. `get_job` shows the voyages so far and their points.
+It repeats 4 to 8 until the target is reached. `get_job` shows the voyages so far and their points.
+
+## AutoHook's ocean presets
+
+AutoHook's ocean fishing mode needs presets made for it: one per stop, time of day and goal. `import_ocean_presets` brings them in for a goal (**Points**, **Legendary**, **Achievement** or **Levelling**):
+
+- From **AutoHook's wiki** page *Ocean Fishing* (goes online: *Online lookups*).
+- Or from preset strings you give it, for example the current ones shared on AutoHook's Discord. XIV MCP keeps them for that goal and uses them whenever the wiki has none.
+
+They go into a folder of XIV MCP's own in AutoHook, one per goal (*XIV MCP Ocean - Points*, …). Importing again replaces that folder; your own presets and folders are never touched.
+
+> "Import the ocean fishing presets for legends."
 
 ## Plugins
 
