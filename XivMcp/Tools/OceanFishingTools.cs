@@ -331,7 +331,7 @@ internal static class OceanFishingTools
         var caught = new Dictionary<uint, (int Count, int Points)>();
         foreach (var f in oc->FishData)
         {
-            if (f.ItemId == 0) continue;
+            if (f.ItemId == 0 || f.NqAmount + f.HqAmount == 0) continue; // the route's fish list holds every fish, caught or not
             caught.TryGetValue(f.ItemId, out var had);
             caught[f.ItemId] = (had.Count + f.NqAmount + f.HqAmount, had.Points + (int)f.TotalPoints);
         }
