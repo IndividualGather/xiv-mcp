@@ -1,0 +1,55 @@
+---
+title: Ocean fishing
+description: The voyage schedule, the fish worth going for at each stop, boarding at the ferry docks, and fishing voyages with AutoHook.
+icon: Ship
+---
+
+Your assistant can tell you when the next ocean fishing boats leave and where they go, board one for you, and, with **AutoHook**, fish whole voyages until you reach a target. **Distant Seas** adds the fish worth going for at each stop, and its overlay during the voyage.
+
+| Tool | What it does |
+|---|---|
+| `get_ocean_fishing_schedule` | The next voyages: when boarding opens, the route (Indigo, and Ruby once you unlocked it), its three stops and their time of day, and with Distant Seas the fish worth going for at each stop |
+| `get_ocean_fishing_status` | The voyage you are on: the stop, the time left there, the spectral current, the voyage missions, your catches and points, and the results at the end |
+| `board_ocean_fishing` | Goes to Dryskthota at Limsa Lominsa's ferry docks and boards the voyage while boarding is open |
+| `go_ocean_fishing` | Fishes voyages with AutoHook until your target, as a background job |
+| `set_ocean_fishing_alarm` | Turns Distant Seas' departure alarm on or off |
+
+> "When does the next ocean fishing boat leave, and what's worth catching?"
+>
+> "Do three ocean fishing voyages."
+>
+> "Go ocean fishing until I have 20,000 points."
+
+## The schedule
+
+Boarding opens at every even hour (UTC) for 15 minutes; the boat leaves when it closes. The route changes with each boat, in a fixed rotation the game itself describes, so the schedule is known days ahead. Each voyage has three stops of 7 minutes, each at a time of day: day, sunset or night.
+
+With Distant Seas, each stop lists:
+
+- **Spectral triggers**: the fish that can start a spectral current.
+- **Best fish**: the highest-scoring other fish, with the bait they bite on best.
+- **Spectral current**: the best fish while the current lasts.
+
+## The ocean fishing job
+
+`go_ocean_fishing` takes a target: a number of `voyages`, a total of `points`, or a `fish` (with `max_voyages` as a cap). Without one, it does one voyage. `goal` tells AutoHook what to aim for: **Points** (the default), Legendary, Achievement or Levelling. `route` picks Indigo (the default) or Ruby.
+
+1. **Fisher**: it switches to your Fisher gear set.
+2. **Bait**: it buys 99 Ragworm, Krill and Plump Worm from the Merchant & Mender at the docks when you have fewer than 30 of one.
+3. **Waiting**: it waits for boarding to open.
+4. **Boarding**: it walks to Dryskthota, registers, picks the route and accepts the duty.
+5. **A spot at the railing**: after the loading screen, it walks to the free spot along the railing that is furthest from the other passengers, faces the ocean, and checks again once there, in case someone else just took it.
+6. **Fishing**: AutoHook's ocean fishing mode fishes the voyage: it casts, and switches bait for each stop and each spectral current. XIV MCP switches that mode on with your goal for the voyage only, and puts AutoHook's settings back afterwards. Distant Seas' overlay is shown while you sail.
+7. **Results**: it records your points and catches, closes the results, and you are back in Limsa Lominsa.
+
+It repeats 3 to 7 until the target is reached. `get_job` shows the voyages so far and their points.
+
+## Plugins
+
+| Plugin | What it adds |
+|---|---|
+| **AutoHook** | Fishes the voyages. Needed for `go_ocean_fishing`. |
+| **Distant Seas** | The fish worth going for at each stop, its overlay during voyages, and its departure alarm. |
+| vnavmesh, Lifestream | Walk and teleport to the docks and to the railing; without them, XIV MCP shows you the way and waits. |
+
+The schedule, the voyage status and boarding work without any plugin.
