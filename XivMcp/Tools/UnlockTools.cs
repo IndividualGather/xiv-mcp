@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using Lumina.Excel.Sheets;
@@ -14,6 +15,9 @@ namespace XivMcp.Tools;
 
 internal static class UnlockTools
 {
+    /// <summary>The game command the journal's Abandon button sends, with the quest number.</summary>
+    private const int AbandonQuestCommand = 800;
+
     private sealed record Category(string Name, Type RowType, MethodInfo Check);
 
     /// <summary>Rows that are real, player-facing entries of a category.</summary>
@@ -263,6 +267,57 @@ internal static class UnlockTools
                     };
                 }
             }),
+        };
+
+        yield return new McpTool
+        {
+            Name = "abandon_quest",
+            Description = "Abandons a quest in the journal, as the journal's Abandon button does: its progress is lost. A daily (allied " +
+                          "society) quest's allowance is not given back. Use it for a quest accepted on the wrong job, for example. Some " +
+                          "quests (most main scenario quests) cannot be abandoned. Not while in combat, a duty or a cutscene.",
+            InputSchema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "quest": { "type": "string", "description": "The accepted quest's name (or part of it) or id, see get_active_quests." }
+                  },
+                  "required": ["quest"]
+                }
+                """,
+            ReadOnly = false,
+            Destructive = true,
+            Handler = async (args, ct) =>
+            {
+                var query = args.String("quest") ?? throw new ToolException("'quest' is required.");
+                var quest = await Game.RunLoggedIn(() =>
+                {
+                    var c = Svc.Condition;
+                    if (c[ConditionFlag.InCombat] || c[ConditionFlag.BoundByDuty] || c[ConditionFlag.OccupiedInCutSceneEvent] || c[ConditionFlag.BetweenAreas])
+                        throw new ToolException("Quests cannot be abandoned in combat, in a duty, in a cutscene or during a zone change.");
+                    var sheet = Svc.Data.GetExcelSheet<Quest>();
+                    var accepted = new List<XivMcp.Quests.QuestInfo>();
+                    unsafe
+                    {
+                        foreach (ref var q in QuestManager.Instance()->NormalQuests)
+                            if (q.QuestId != 0)
+                                accepted.Add(new(q.QuestId + 65536u, Game.Clean(sheet.GetRowOrDefault(q.QuestId + 65536u)?.Name.ExtractText()) ?? $"Quest {q.QuestId}"));
+                    }
+                    XivMcp.Quests.QuestInfo match;
+                    try { match = XivMcp.Quests.QuestMatch.Accepted(query, accepted); }
+                    catch (ArgumentException e) { throw new ToolException(e.Message); }
+                    if (sheet.GetRowOrDefault(match.Id) is { CanCancel: false })
+                        throw new ToolException($"{match.Name} cannot be abandoned.");
+                    unsafe { GameMain.ExecuteCommand(AbandonQuestCommand, (int)(match.Id & 0xFFFF)); }
+                    return match;
+                }).ConfigureAwait(false);
+                for (var i = 0; i < 20; i++)
+                {
+                    await Task.Delay(250, ct).ConfigureAwait(false);
+                    if (!await Game.Run(() => { unsafe { return QuestManager.Instance()->IsQuestAccepted((ushort)(quest.Id & 0xFFFF)); } }).ConfigureAwait(false))
+                        return new { abandoned = quest.Name, questId = quest.Id };
+                }
+                throw new ToolException($"The game did not abandon {quest.Name}.");
+            },
         };
 
         yield return new McpTool

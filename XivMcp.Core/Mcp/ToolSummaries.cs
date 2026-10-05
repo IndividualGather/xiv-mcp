@@ -138,6 +138,13 @@ public static class ToolSummaries
         ["fish_until"] = "Fishes until you have caught a fish, waiting for its time and weather.",
         ["catch_fish"] = "Catches a fish for you: travels there, buys bait, waits for its window and fishes.",
         ["stop_fishing"] = "Stops fishing and reels in your line.",
+        ["abandon_quest"] = "Abandons a quest in your journal. Its progress is lost.",
+        ["get_questing_status"] = "Looks at which quest is being done for you, and at your allied society reputation.",
+        ["complete_quest"] = "Does a quest for you, together with the quests it needs first.",
+        ["do_tribe_dailies"] = "Does the day's allied society quests for you, rank-up quests included.",
+        ["do_quests"] = "Does quests for you until they are done.",
+        ["start_main_scenario"] = "Starts doing the main scenario quests for you.",
+        ["stop_questing"] = "Stops doing quests for you, once a fight is over.",
 
         // Plugin management
         ["list_plugin_config_files"] = "Lists the settings files of another plugin.",

@@ -116,7 +116,6 @@ internal sealed class PermissionsPanel(IPermissionsHost host)
     private static readonly Feature[] Upcoming =
     [
         new("ocean-fishing", "Ocean fishing", "Ocean fishing voyages: the route, the spectral currents and the fish worth going for at each stop.", FontAwesomeIcon.Water),
-        new("quests", "Quests", "Quest help and automation with Questionable.", FontAwesomeIcon.Scroll),
     ];
 
     /// <summary>A "Coming soon" card: dimmed, with the feature's icon, title, description and a label instead of a switch.</summary>

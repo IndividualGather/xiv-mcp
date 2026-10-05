@@ -351,7 +351,7 @@ public sealed partial class McpServer : IDisposable
                 ["isError"] = true,
             };
         // A background job step owns the character: other state-changing calls would collide with it.
-        if (!tool.ReadOnly && !XivMcp.Util.JobManager.ControlTools.Contains(name) && XivMcp.Util.JobManager.Instance is { ActingStepRunning: true } jm)
+        if (!tool.ReadOnly && !XivMcp.Util.JobManager.ControlTools.Contains(name) && !XivMcp.Util.JobManager.StopTools.Contains(name) && XivMcp.Util.JobManager.Instance is { ActingStepRunning: true } jm)
             return new JsonObject
             {
                 ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = $"The background job '{jm.RunningJobName}' is running a step; pause_job it first (reading tools still work)." }),

@@ -121,6 +121,15 @@ public static class IntegrationCatalog
                 ["catch_fish"] = Travel,
             },
         },
+        new("Questionable", "Questionable", "Quests with Questionable: a quest with the quests it needs first, the day's allied society quests, and the main scenario.", new Dictionary<string, string[]>
+        {
+            ["get_questing_status"] = [],
+            ["complete_quest"] = [Combat, MoveCharacter, GameUi, EditSettings],
+            ["do_tribe_dailies"] = [Combat, MoveCharacter, GameUi, EditSettings],
+            ["do_quests"] = [Combat, MoveCharacter, GameUi, EditSettings],
+            ["start_main_scenario"] = [Combat, MoveCharacter, GameUi],
+            ["stop_questing"] = [GameUi],
+        }),
     ];
 
     /// <summary>Whether a tool of an integration is offered: its plugin, or one of the plugins that also make it available, is loaded.</summary>

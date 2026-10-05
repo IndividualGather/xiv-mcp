@@ -6,7 +6,7 @@ A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV th
 
 - **Local only:** MCP Streamable HTTP at `http://localhost:37521/mcp`, with an access token
 - **You decide:** reading is allowed by default; acting, editing and going online are denied until you allow them, per module and per tool, in `/xivmcp`
-- **Works alone:** no other plugin is required; vnavmesh, Lifestream, AutoDuty, Artisan, Saucy, AutoHook and others are used when installed
+- **Works alone:** no other plugin is required; vnavmesh, Lifestream, AutoDuty, Artisan, Saucy, AutoHook, Questionable and others are used when installed
 
 ## Documentation
 

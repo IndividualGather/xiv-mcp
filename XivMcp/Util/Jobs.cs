@@ -57,6 +57,9 @@ internal sealed class JobManager : IDisposable, ICache
     /// <summary>Tools that may not be steps (job control itself).</summary>
     public static readonly HashSet<string> ControlTools = ["start_job", "list_jobs", "get_job", "update_job", "pause_job", "resume_job", "cancel_job"];
 
+    /// <summary>Tools that stop what a job step drives and pause that job themselves, so they may run while a step does.</summary>
+    public static readonly HashSet<string> StopTools = ["stop_questing"];
+
     /// <summary>Steps that only wait (for time, or for the player to get somewhere): while they run, the agent may still act.</summary>
     public static readonly HashSet<string> PassiveTools = ["wait", "wait_until_arrived"];
 

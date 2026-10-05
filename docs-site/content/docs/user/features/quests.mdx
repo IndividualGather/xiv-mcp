@@ -1,0 +1,91 @@
+---
+title: Quests
+description: A quest with everything it needs first, the day's allied society quests, and the main scenario, with Questionable.
+icon: Scroll
+---
+
+With **Questionable** installed, your assistant can do quests for you: one quest with every quest it needs first, the day's quests for an allied society (beast tribe) to raise your reputation with them, or the main scenario from where you are.
+
+These tools have their own module, **Questionable**, under **Integrations maintained by XIV MCP**. Everything that changes something is denied until you allow it. They are only offered while Questionable is loaded.
+
+| Tool | What it does |
+|---|---|
+| `get_questing_status` | Whether Questionable is running, the quest it is on, its priority list, your next main scenario quest, the allied society allowances left today and your reputation with each allied society |
+| `complete_quest` | Does a quest, with every quest it needs first, as a background job |
+| `do_tribe_dailies` | Does the day's quests for one allied society as a background job, rank-up quests included |
+| `start_main_scenario` | Starts on the main scenario and carries on until stopped |
+| `stop_questing` | Stops Questionable once a fight is over |
+
+Things to ask:
+
+> "Do the quests I need to unlock Eureka."
+
+> "Do today's Pelupelu quests."
+
+> "Carry on with the main scenario. Stop when I say so."
+
+## A quest and the quests before it
+
+`complete_quest` works out the chain from the game's quest data: the quests the quest needs, the quests those need, and so on. It leaves out what you completed and starts a [background job](/docs/user/features/jobs) that does the rest in order.
+
+Before it starts, it tells you:
+
+- **The quests** it will do, in order.
+- **Quests Questionable has no path for.** It does not start then: do those yourself first.
+- **Duties** the quests need done first, such as dungeons and trials.
+- **Levels:** a quest that needs a higher level than your current job has.
+- **Quests you can no longer do**, because you completed another one that shuts it out, such as another Grand Company's quest.
+
+When several quests share a name, such as the first quests of each starting city, it picks the one your character can do.
+
+### When Questionable needs you
+
+Some steps Questionable leaves to you: a duty it cannot run (or cannot have [AutoDuty](/docs/user/features/dungeons) run, for example below the duty's item level), a solo duty, or something to do by hand. Questionable says so in chat. The job then stops and tells you what Questionable said. Do that step, then start again: the quests you completed are left out.
+
+When Questionable stops making progress, for example after a teleport took you to the wrong place, XIV MCP starts it again: when you stand in the same spot for two minutes without talking, fighting, gathering, crafting, a cutscene or a zone change. After three times the job stops.
+
+## Allied society quests
+
+`do_tribe_dailies` does the day's quests for one allied society, to raise your reputation with them:
+
+<Steps>
+<Step>
+
+**Quests you already accepted** for them.
+
+</Step>
+<Step>
+
+**Rank-up and story quests** that open once the reputation bar is full (shown in blue in the game). They come before the dailies, because a full bar gains nothing more until the rank goes up. They use no allowance.
+
+</Step>
+<Step>
+
+**The day's daily quests**, as many as your allowances left allow. Each issuer offers a few quests a day. Questionable knows which ones, and XIV MCP does those.
+
+</Step>
+</Steps>
+
+After each quest it looks again, so a rank-up reached on the way is done too, and so are the new rank's dailies. Allowances come back at the daily reset, at 15:00 UTC.
+
+If you have not unlocked an allied society yet, it names the quest that unlocks them. `complete_quest` can do that quest, with the quests before it.
+
+## The main scenario
+
+`start_main_scenario` starts Questionable on your next main scenario quest. It carries on with the next ones, and with the quests on its own priority list first, until you stop it or it cannot go on, at a duty or a level it does not have. To stop at a certain quest, use `complete_quest` with that quest instead.
+
+## Jobs
+
+A quest remembers the job you accepted it on, and Questionable does not change jobs. So before a quest is accepted, XIV MCP switches to a gearset of a job that may do it: your current job when it may, else the highest level one. Gathering quests are always done as Miner or Botanist, never as Fisher, because Questionable gathers them on land. A gathering quest you already accepted as Fisher cannot be finished this way: abandon it, then start again. Your assistant can abandon it for you with `abandon_quest`, a tool of **Game & navigation**. Its progress is lost, and a daily quest's allowance is not given back.
+
+When the quests need different jobs, XIV MCP does the quests of one job, then switches, after any fight is over.
+
+## Stopping
+
+`stop_questing` stops Questionable, but never mid-fight: it lets the fight end first, then stops. A running quest job is paused, and `resume_job` carries on. Cancelling the job with `cancel_job` stops Questionable the same way.
+
+## Questionable's priority list
+
+XIV MCP gives Questionable the quests to do as its priority list. Your own list is put back when the job ends, however it ends.
+
+<Callout type="warn">Questionable walks, teleports (which costs gil), talks to NPCs and fights on its own. Set up its combat module in Questionable's settings, and stay near the game while it quests.</Callout>
