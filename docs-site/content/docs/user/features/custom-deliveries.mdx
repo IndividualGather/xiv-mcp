@@ -25,9 +25,9 @@ Each client asks for three things a week: something to **craft**, to **gather** 
 
 - **Crafting**: Satisfier buys the ingredient from the client's vendor, crafts with **Artisan** and turns the items in.
 - **Gathering**: Satisfier gathers with **Questionable**, teleports back and turns in.
-- **Fishing**: XIV MCP catches the fish with **AutoHook** (switch to Fisher, bait, the spot, fishing until there are enough), then Satisfier turns them in. Spearfishing requests aren't supported yet.
+- **Fishing**, only when you ask for it: XIV MCP catches the fish with **AutoHook** (switch to Fisher, bait, the spot, fishing until there are enough), then Satisfier turns them in. Spearfishing requests aren't supported yet.
 
-Without `kind`, the request with the bonus comes first (it pays more), then crafting, gathering, fishing, among the kinds a plugin can do.
+Without `kind`, the gathering request comes first (Miner or Botanist, whichever it needs), and the crafting one when gathering isn't possible. Fishing is never chosen unless you ask for it.
 
 ## The weekly job
 

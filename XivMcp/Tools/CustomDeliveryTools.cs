@@ -36,14 +36,14 @@ internal static class CustomDeliveryTools
             Name = "deliver_custom_delivery",
             Description = "Delivers one client's request with Satisfier and waits until it is done. 'kind' craft: buys the ingredient from " +
                           "the client's vendor, crafts with Artisan and turns in; gather: gathers with Questionable and turns in; fish: turns " +
-                          "in the fish you carry (catch them first: do_custom_deliveries does both, or catch_fish). Without 'kind': the bonus " +
-                          "request if it can be done, else crafting, gathering, fishing. Requires 'Custom Deliveries' in /xivmcp.",
+                          "in the fish you carry (catch them first: do_custom_deliveries does both, or catch_fish). Without 'kind': gathering " +
+                          "(Miner or Botanist), else crafting; fishing only when the player asks for it. Requires 'Custom Deliveries' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
                   "properties": {
                     "client": { "type": "string", "description": "The client's name (as get_custom_deliveries names them)." },
-                    "kind": { "type": "string", "enum": ["craft", "gather", "fish"] }
+                    "kind": { "type": "string", "enum": ["craft", "gather", "fish"], "description": "Default gather, else craft. Use 'fish' only when the player asked for fishing." }
                   },
                   "required": ["client"]
                 }
@@ -56,15 +56,15 @@ internal static class CustomDeliveryTools
         {
             Name = "do_custom_deliveries",
             Description = "Starts a background job for this week's custom deliveries: plans every client's remaining deliveries within the " +
-                          "weekly allowance (bonus requests first, then crafting, gathering, fishing; only kinds a plugin can do), then " +
+                          "weekly allowance (gathering with Miner or Botanist, else crafting; never fishing unless asked for; only kinds a plugin can do), then " +
                           "delivers them one client after another with deliver_custom_delivery. Fishing requests are caught first with " +
-                          "AutoHook (switch to Fisher, bait, the spot, fish_until). Optional 'kind' for everyone and 'clients' to limit it. " +
+                          "AutoHook (switch to Fisher, bait, the spot, fish_until), only with kind 'fish'. Optional 'kind' for everyone and 'clients' to limit it. " +
                           "Follow it with get_job. Requires 'Custom Deliveries' in /xivmcp; each step follows its own module.",
             InputSchema = """
                 {
                   "type": "object",
                   "properties": {
-                    "kind": { "type": "string", "enum": ["craft", "gather", "fish"], "description": "Deliver this kind for every client." },
+                    "kind": { "type": "string", "enum": ["craft", "gather", "fish"], "description": "Deliver this kind for every client. Use 'fish' only when the player asked for fishing." },
                     "clients": { "type": "array", "items": { "type": "string" }, "description": "Only these clients." }
                   }
                 }

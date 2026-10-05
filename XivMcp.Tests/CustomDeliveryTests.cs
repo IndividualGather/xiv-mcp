@@ -17,17 +17,25 @@ public class DeliveryPlanTests
     }
 
     [Fact]
-    public void Crafting_comes_first_unless_another_request_has_the_bonus()
+    public void Gathering_comes_first_then_crafting_whatever_the_bonus()
     {
-        var plan = DeliveryPlan.Choose([Npc("Zhloe"), Npc("Adkiragh", bonus: DeliveryKind.Fish)], All, allowances: 12);
-        Assert.Equal([DeliveryKind.Craft, DeliveryKind.Fish], plan.Select(p => p.Kind));
+        var plan = DeliveryPlan.Choose([Npc("Zhloe", bonus: DeliveryKind.Craft), Npc("Adkiragh", gather: 0, bonus: DeliveryKind.Fish)], All, allowances: 12);
+        Assert.Equal([DeliveryKind.Gather, DeliveryKind.Craft], plan.Select(p => p.Kind));
+    }
+
+    [Fact]
+    public void Fishing_only_when_asked_for()
+    {
+        var onlyFish = new HashSet<DeliveryKind> { DeliveryKind.Fish };
+        Assert.Empty(DeliveryPlan.Choose([Npc("Zhloe", bonus: DeliveryKind.Fish)], onlyFish, allowances: 12));
+        Assert.Equal(DeliveryKind.Fish, DeliveryPlan.Choose([Npc("Zhloe")], onlyFish, allowances: 12, kind: DeliveryKind.Fish).Single().Kind);
     }
 
     [Fact]
     public void Only_kinds_that_can_be_done_are_chosen()
     {
-        var plan = DeliveryPlan.Choose([Npc("Zhloe", bonus: DeliveryKind.Craft)], new HashSet<DeliveryKind> { DeliveryKind.Gather }, allowances: 12);
-        Assert.Equal(DeliveryKind.Gather, plan.Single().Kind);
+        var plan = DeliveryPlan.Choose([Npc("Zhloe")], new HashSet<DeliveryKind> { DeliveryKind.Craft }, allowances: 12);
+        Assert.Equal(DeliveryKind.Craft, plan.Single().Kind);
     }
 
     [Fact]
@@ -41,7 +49,7 @@ public class DeliveryPlanTests
     public void Locked_and_finished_npcs_are_skipped_and_a_partial_last_one_is_capped()
     {
         var plan = DeliveryPlan.Choose(
-            [Npc("Locked", unlocked: false), Npc("Done", craft: 0, gather: 0, fish: 0), Npc("Zhloe", craft: 3), Npc("Kurenai")], All, allowances: 5);
+            [Npc("Locked", unlocked: false), Npc("Done", craft: 0, gather: 0, fish: 0), Npc("Zhloe", gather: 3), Npc("Kurenai")], All, allowances: 5);
         Assert.Equal([("Zhloe", 3), ("Kurenai", 2)], plan.Select(p => (p.Npc.Name, p.Count)));
     }
 
