@@ -31,6 +31,8 @@ internal static class SubmarineTools
     private static readonly string[] Repair = ["Repair submersible components", "パーツの修理", "Bauteile reparieren", "Réparer des éléments", "修理配件", "부품 수리"];
     private static readonly string[] PreviousLog = ["View previous voyage log", "前回のボイジャー報告", "上次的远航报告", "上次的遠航報告", "Bericht der letzten Erkundung", "Consulter le journal de la précédente expédition", "이전 탐사 보고서"];
     private static readonly string[] DeployNew = ["Deploy submersible on subaquatic voyage", "ボイジャー出港", "出发", "出發", "Auf Erkundung gehen", "Expédier le sous-marin", "탐사 출항"];
+    // Only the English text is known for sure; elsewhere the entry is found by its place (first, while the vessel is out).
+    private static readonly string[] Recall = ["Recall submersible"];
     private static readonly string[] QuitVessel = ["Quit", "やめる", "取消", "Beenden", "Annuler", "그만두기"];
     private static readonly string[] Nothing = ["Nothing.", "やめる", "取消", "Nichts", "Annuler", "그만두기"];
     private static readonly string[] Cancel = ["Cancel", "キャンセル", "取消", "Abbrechen", "Annuler", "취소"];
@@ -39,6 +41,46 @@ internal static class SubmarineTools
 
     public static IEnumerable<McpTool> Create(Configuration config)
     {
+        yield return new McpTool
+        {
+            Name = "recall_submersible",
+            Description = "Recalls a submersible from its voyage at the voyage control panel in the FC workshop, as the panel's \"Recall " +
+                          "submersible\" does: the voyage is cancelled and the submersible is back at once, with no loot; the Ceruleum " +
+                          "Tanks used for it are not refunded. Then send it out again with deploy_submersible (a new route, or it repeats " +
+                          "the cancelled one). The character must stand at the voyage control panel (navigate_to destination workshop). " +
+                          "Requires 'Items & retainers' in /xivmcp.",
+            InputSchema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "submersible": { "type": "string", "description": "The submersible's name." }
+                  },
+                  "required": ["submersible"]
+                }
+                """,
+            ReadOnly = false,
+            Handler = async (args, ct) =>
+            {
+                RequireEnabled(config);
+                var name = args.String("submersible") ?? throw new ToolException("'submersible' is required.");
+                await InventoryActionTools.Gate.WaitAsync(ct).ConfigureAwait(false);
+                try
+                {
+                    await LoadVessels(ct).ConfigureAwait(false);
+                    var vessel = await Game.Run(() => FindVessel(name)).ConfigureAwait(false);
+                    if (!vessel.OnVoyage) throw new ToolException($"{vessel.Name} is not out on a voyage.");
+                    var log = new List<string>();
+                    await RecallVessel(vessel, log, ct).ConfigureAwait(false);
+                    return new { recalled = vessel.Name, log, next = "deploy_submersible with a route to send it out again" };
+                }
+                finally
+                {
+                    await Leave(ct).ConfigureAwait(false);
+                    InventoryActionTools.Gate.Release();
+                }
+            },
+        };
+
         yield return new McpTool
         {
             Name = "repair_submersible",
@@ -273,6 +315,57 @@ internal static class SubmarineTools
             if (!await GameWindows.WaitFor(() => MenuHas(Repair), TimeSpan.FromSeconds(8), ct).ConfigureAwait(false))
                 throw new ToolException($"{vessel.Name}'s menu did not open after the voyage log.");
         }
+    }
+
+    /// <summary>Picks the vessel from the panel's list, chooses Recall and confirms, and waits until it is back.</summary>
+    private static async Task RecallVessel(Vessel vessel, List<string> log, CancellationToken ct)
+    {
+        await Game.RunLoggedIn(() => { InventoryActionTools.EnsureNotBusy(); return true; }).ConfigureAwait(false);
+        var inList = await Game.Run(() => RetainerUi.MenuEntries()?.Any(e => e.Contains(vessel.Name, StringComparison.Ordinal)) == true).ConfigureAwait(false);
+        if (!inList)
+        {
+            if (!await Game.Run(() => MenuHas(SubmersibleManagement)).ConfigureAwait(false))
+            {
+                await Game.Run(InteractWithPanel).ConfigureAwait(false);
+                if (!await GameWindows.WaitFor(() => MenuHas(SubmersibleManagement), TimeSpan.FromSeconds(8), ct).ConfigureAwait(false))
+                    throw new ToolException("The voyage control panel's menu did not open.");
+            }
+            await Game.Run(() => Pick(SubmersibleManagement)).ConfigureAwait(false);
+            if (!await GameWindows.WaitFor(() => RetainerUi.MenuEntries()?.Any(e => e.Contains(vessel.Name, StringComparison.Ordinal)) == true, TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
+                throw new ToolException($"{vessel.Name} is not in the panel's list of submersibles.");
+        }
+        await Game.Run(() => Pick(null, vessel.Name)).ConfigureAwait(false);
+        if (!await GameWindows.WaitFor(() => MenuHas(PreviousLog), TimeSpan.FromSeconds(8), ct).ConfigureAwait(false))
+            throw new ToolException($"{vessel.Name}'s menu did not open.");
+        var picked = await Game.Run(() =>
+        {
+            if (Pick(Recall)) return true;
+            // Other languages: while out on a voyage, Recall is the menu's first entry.
+            if (RetainerUi.MenuEntries() is { Count: > 0 }) { RetainerUi.SelectMenuIndex(0); return true; }
+            return false;
+        }).ConfigureAwait(false);
+        if (!picked) throw new ToolException($"{vessel.Name}'s menu has no Recall entry.");
+
+        // "Recall the voyage?" and "…any items used will not be returned. Proceed?": confirm each, until it is back.
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (DateTime.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (await Game.Run(() => GameWindows.Ready("SelectYesno")).ConfigureAwait(false))
+            {
+                await Game.Run(() => Fire("SelectYesno", 0)).ConfigureAwait(false);
+                log.Add("Confirmed the recall.");
+                await Task.Delay(800, ct).ConfigureAwait(false);
+                continue;
+            }
+            if (await Game.Run(() => !FindVessel(vessel.Name).OnVoyage).ConfigureAwait(false))
+            {
+                log.Add($"{vessel.Name} is back.");
+                return;
+            }
+            await Task.Delay(300, ct).ConfigureAwait(false);
+        }
+        throw new ToolException($"{vessel.Name} was not recalled: the confirmation did not come, or the game refused.");
     }
 
     private static unsafe bool InteractWithPanel()
