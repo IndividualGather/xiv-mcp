@@ -151,6 +151,10 @@ public sealed partial class McpServer : IDisposable
                     // The client gave up on the request (its own timeout) before the answer was written: nothing to report.
                     Svc.Log.Debug($"MCP client closed the connection before the answer: {ex.Message}");
                 }
+                catch (ObjectDisposedException) when (ct.IsCancellationRequested)
+                {
+                    // The plugin is being unloaded (an update or a restart) while a request was answered.
+                }
                 catch (Exception ex)
                 {
                     Svc.Log.Error(ex, "Unhandled MCP request error");

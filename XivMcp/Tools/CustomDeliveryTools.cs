@@ -227,13 +227,19 @@ internal static class CustomDeliveryTools
 
                 // The turn-in window can get in the way: Questionable opens it before gathering and leaves it open, and the game
                 // then counts the player as busy. Close it unless Satisfier is turning in; when turning in stalls, it is stuck.
-                var supplyOpen = await Game.Run(() => RetainerUi.Ready("SatisfactionSupply")).ConfigureAwait(false);
+                // Closing it returns to the client's menu, which keeps the conversation open: leave with the menu's last entry.
+                var supplyOpen = await Game.Run(() => RetainerUi.Ready("SatisfactionSupply") || RetainerUi.Ready("SelectString")).ConfigureAwait(false);
                 supplyOpenSince = supplyOpen ? supplyOpenSince ?? DateTime.UtcNow : null;
                 var turningIn = status.StartsWith("Turning in", StringComparison.OrdinalIgnoreCase);
                 if (supplyOpenSince is { } openSince && !turningIn && DateTime.UtcNow - openSince > TimeSpan.FromSeconds(5))
                 {
-                    await Game.Run(() => { CloseWindow("SatisfactionSupply"); return true; }).ConfigureAwait(false);
-                    statuses.Add("Closed the turn-in window that was in the way.");
+                    var left = await Game.Run(() =>
+                    {
+                        if (RetainerUi.Ready("SatisfactionSupply")) { CloseWindow("SatisfactionSupply"); return "the turn-in window"; }
+                        if (RetainerUi.MenuEntries() is { Count: > 0 } entries) { RetainerUi.SelectMenuIndex(entries.Count - 1); return $"the menu ({entries[^1]})"; }
+                        return null;
+                    }).ConfigureAwait(false);
+                    if (left is not null) statuses.Add($"Left {left}, which was in the way.");
                     supplyOpenSince = null;
                 }
                 else if (turningIn && DateTime.UtcNow - progressAt > TimeSpan.FromSeconds(45))
