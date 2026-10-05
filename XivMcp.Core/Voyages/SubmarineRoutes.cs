@@ -17,18 +17,27 @@ public static class SubmarineRoutes
     public const int MaxPoints = 5;
 
     /// <summary>
-    /// The route for points given by name, letter or id, in the order given. Letters are read on the sea of the points named
-    /// otherwise (or the first sea). Throws <see cref="FormatException"/> for a route the game would not take.
+    /// The route for points given by name, letter or id, in the order given. Letters (A, B, …, which every sea uses again) are read
+    /// on the sea of the points named otherwise, else on <paramref name="vesselSea"/> (the sea of the submersible's last voyage);
+    /// a letter that several seas have is refused when neither tells the sea. Throws <see cref="FormatException"/> for a route the
+    /// game would not take.
     /// </summary>
-    public static IReadOnlyList<SubmarinePoint> Resolve(IReadOnlyList<string> wanted, IReadOnlyList<SubmarinePoint> all, int vesselRank)
+    public static IReadOnlyList<SubmarinePoint> Resolve(IReadOnlyList<string> wanted, IReadOnlyList<SubmarinePoint> all, int vesselRank, uint? vesselSea = null)
     {
         if (wanted.Count == 0) throw new FormatException("A route needs at least one point.");
         if (wanted.Count > MaxPoints) throw new FormatException($"A voyage visits at most {MaxPoints} points, not {wanted.Count}.");
 
-        // The sea, from the points named in full or by id.
+        // The sea, from the points named in full or by id, else the submersible's own.
         var seas = wanted.Select(w => ByNameOrId(w.Trim(), all)).Where(p => p is not null).Select(p => p!.Map).Distinct().ToList();
         if (seas.Count > 1) throw new FormatException("All points of a voyage must be on one sea.");
-        var sea = seas.Count == 1 ? seas[0] : all.Select(p => p.Map).DefaultIfEmpty().Min();
+        uint? sea = seas.Count == 1 ? seas[0] : vesselSea;
+        if (sea is null)
+        {
+            var letterSeas = wanted.SelectMany(w => all.Where(p => p.Code.Equals(w.Trim(), StringComparison.OrdinalIgnoreCase)).Select(p => p.Map)).Distinct().ToList();
+            if (letterSeas.Count > 1)
+                throw new FormatException("Those letters are on several seas: name the points (e.g. \"Crow's Drop\") or add one by name, so the sea is clear.");
+            sea = letterSeas.FirstOrDefault();
+        }
 
         var route = new List<SubmarinePoint>();
         foreach (var raw in wanted)

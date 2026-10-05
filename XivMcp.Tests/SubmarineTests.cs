@@ -25,15 +25,29 @@ public class SubmarineRouteTests
     [Fact]
     public void Letters_are_read_on_the_sea_of_the_named_points()
     {
-        Assert.Equal([2u, 1u], SubmarineRoutes.Resolve(["B", "A"], Points, 40).Select(p => p.Id));
+        Assert.Equal([2u, 1u], SubmarineRoutes.Resolve(["B", "A"], Points, 40, vesselSea: 1).Select(p => p.Id));
+        Assert.Equal([2u, 1u], SubmarineRoutes.Resolve(["deep-sea site 1", "A"], Points, 40).Select(p => p.Id));
         Assert.Contains("No voyage point 'B'", Assert.Throws<FormatException>(() => SubmarineRoutes.Resolve(["The Ashen Trench", "B"], Points, 40)).Message);
+    }
+
+    [Fact]
+    public void Letters_alone_are_read_on_the_submersible_s_own_sea()
+    {
+        Assert.Equal([32u], SubmarineRoutes.Resolve(["A"], Points, 40, vesselSea: 2).Select(p => p.Id));
+    }
+
+    [Fact]
+    public void A_letter_on_several_seas_is_refused_when_the_sea_is_unknown()
+    {
+        Assert.Contains("several seas", Assert.Throws<FormatException>(() => SubmarineRoutes.Resolve(["A"], Points, 40)).Message);
+        Assert.Equal([2u], SubmarineRoutes.Resolve(["B"], Points, 40).Select(p => p.Id)); // only one sea has a B
     }
 
     [Theory]
     [InlineData(new[] { "Nowhere" }, "No voyage point")]
     [InlineData(new[] { "D" }, "not been unlocked")]
     [InlineData(new[] { "C" }, "rank 10")]
-    [InlineData(new[] { "A", "A" }, "twice")]
+    [InlineData(new[] { "B", "B" }, "twice")]
     [InlineData(new[] { "A", "B", "C", "A", "B", "C" }, "at most 5")]
     [InlineData(new[] { "1", "32" }, "one sea")]
     public void Refuses_routes_the_game_does_not_allow(string[] wanted, string message)

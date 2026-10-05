@@ -82,7 +82,8 @@ internal static class SubmarineTools
         {
             Name = "deploy_submersible",
             Description = "Sends a submersible on a voyage from the voyage control panel in the FC workshop. route: \"previous\" (the default: " +
-                          "the route of its last voyage) or the points to visit, in order, by name, map letter or id (up to 5, one sea, " +
+                          "the route of its last voyage) or the points to visit, in order, by name, map letter (every sea uses A, B, …: letters " +
+                          "are read on the sea of its last voyage, so name a point to change seas) or id (up to 5, one sea, " +
                           "unlocked and within its rank; get_submersibles lists the sectors). A submersible that is back is first " +
                           "finalized (its loot is collected), and parts below 'repair_below' percent are repaired first (default 20; 0: " +
                           "never). Without 'submersible', every submersible that is back is redeployed on its previous route. Uses " +
@@ -220,7 +221,9 @@ internal static class SubmarineTools
             .Select(r => new SubmarinePoint(r.RowId, r.Map.RowId, r.Destination.ExtractText().Trim(), r.Location.ExtractText().Trim(), r.RankReq,
                                             HousingManager.IsSubmarineExplorationUnlocked((byte)r.RowId)))
             .ToList();
-        try { return SubmarineRoutes.Resolve(points, all, vessel.Rank); }
+        // Letters are read on the sea of the submersible's last voyage.
+        uint? sea = vessel.Points.Length > 0 ? all.FirstOrDefault(p => p.Id == vessel.Points[0])?.Map : null;
+        try { return SubmarineRoutes.Resolve(points, all, vessel.Rank, sea); }
         catch (FormatException ex) { throw new ToolException(ex.Message); }
     }
 
