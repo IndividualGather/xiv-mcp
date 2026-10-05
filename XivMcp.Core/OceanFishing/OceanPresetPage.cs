@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 
 namespace XivMcp.OceanFishing;
@@ -11,12 +12,14 @@ public enum OceanGoal { Points, Legendary, Achievement, Levelling }
 public sealed record OceanPresetBlock(string Title, string Export);
 
 /// <summary>
-/// Reads AutoHook's wiki page "Ocean Fishing": its sections (### POINTS …, ### ACHIEVES, ### LEGENDS, ### LEVELING) hold AutoHook
-/// export strings (AH…) in code blocks, one per stop or one folder for all.
+/// Reads AutoHook's wiki pages with ocean fishing presets: "Ocean Fishing" (sections ### POINTS …, ### ACHIEVES, ### LEGENDS,
+/// ### LEVELING) and "TESTING PRESETS" (the next version while it is tested, among other presets, e.g. "### Ocean Fishing POINTS v3").
+/// Each section holds AutoHook export strings (AH…) in code blocks, one per stop or one folder for all.
 /// </summary>
 public static partial class OceanPresetPage
 {
     public const string Url = "https://raw.githubusercontent.com/wiki/PunishXIV/AutoHook/Ocean-Fishing.md";
+    public const string TestingUrl = "https://raw.githubusercontent.com/wiki/PunishXIV/AutoHook/TESTING-PRESETS.md";
 
     public static string FolderName(OceanGoal goal) => $"XIV MCP Ocean - {goal}";
 
@@ -31,7 +34,8 @@ public static partial class OceanPresetPage
         return null;
     }
 
-    public static Dictionary<OceanGoal, List<OceanPresetBlock>> Parse(string markdown)
+    /// <param name="oceanHeadingsOnly">For pages with other presets too: only sections whose heading says "Ocean", with the goal anywhere in it.</param>
+    public static Dictionary<OceanGoal, List<OceanPresetBlock>> Parse(string markdown, bool oceanHeadingsOnly = false)
     {
         var result = new Dictionary<OceanGoal, List<OceanPresetBlock>>();
         string? title = null;
@@ -57,7 +61,9 @@ public static partial class OceanPresetPage
             if (Heading().Match(line) is { Success: true } m)
             {
                 title = m.Groups[1].Value.Trim();
-                goal = Goal(title.Split(' ', 2)[0]);
+                var words = title.Split([' ', '-', '_'], StringSplitOptions.RemoveEmptyEntries);
+                goal = !oceanHeadingsOnly ? Goal(words.FirstOrDefault() ?? "")
+                     : words.Any(w => w.Equals("ocean", StringComparison.OrdinalIgnoreCase)) ? words.Select(Goal).FirstOrDefault(g => g is not null) : null;
             }
         }
         return result;

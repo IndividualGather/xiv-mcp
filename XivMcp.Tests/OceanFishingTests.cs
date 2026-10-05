@@ -297,3 +297,46 @@ public class OceanPresetPageTests
         Assert.Equal("XIV MCP Ocean - Points", OceanPresetPage.FolderName(OceanGoal.Points));
     }
 }
+
+public class OceanTestingPresetsTests
+{
+    // AutoHook's wiki page "TESTING PRESETS": ocean presets among others, the goal anywhere in the heading.
+    private const string Page = """
+        # Testing Presets
+        ### Template do not delete
+        ```
+        AH4_template
+        ```
+        ### LEVELING Ocean - Low Levels
+        ```
+        AHFOLDER_lvl
+        ```
+        ### StB The Ruby Dragon
+        ```
+        AH4_dragon
+        ```
+        ### TESTING Ocean V3 - LEGENDS
+        ```
+        AHFOLDER_leg
+        ```
+        ### TESTING Ocean V3 - ACHIEVES
+        ```
+        AHFOLDER_ach
+        ```
+        ### Ocean Fishing POINTS v3
+        ```
+        AHFOLDER_pts
+        ```
+        """;
+
+    [Fact]
+    public void Only_ocean_presets_count_and_the_goal_can_be_anywhere_in_the_heading()
+    {
+        var presets = OceanPresetPage.Parse(Page, oceanHeadingsOnly: true);
+        Assert.Equal(["AHFOLDER_pts"], presets[OceanGoal.Points].Select(p => p.Export));
+        Assert.Equal(["AHFOLDER_leg"], presets[OceanGoal.Legendary].Select(p => p.Export));
+        Assert.Equal(["AHFOLDER_ach"], presets[OceanGoal.Achievement].Select(p => p.Export));
+        Assert.Equal(["AHFOLDER_lvl"], presets[OceanGoal.Levelling].Select(p => p.Export));
+        Assert.Equal(4, presets.Values.Sum(l => l.Count));
+    }
+}

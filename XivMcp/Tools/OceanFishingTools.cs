@@ -493,19 +493,28 @@ internal static class OceanFishingTools
         {
             List<string>? wiki = null;
             string? wikiNote = null;
+            var wikiSource = "AutoHook's wiki";
             if (config.AllowOnlineData)
             {
                 try
                 {
+                    // The released presets first; while a new version is tested, AutoHook keeps it on the testing page.
                     var page = await Http.GetStringAsync(OceanPresetPage.Url, ct).ConfigureAwait(false);
                     wiki = OceanPresetPage.Parse(page).GetValueOrDefault(goal)?.Select(b => b.Export).ToList();
+                    wikiSource = "AutoHook's wiki (Ocean Fishing)";
+                    if (wiki is null or { Count: 0 })
+                    {
+                        var testing = await Http.GetStringAsync(OceanPresetPage.TestingUrl, ct).ConfigureAwait(false);
+                        wiki = OceanPresetPage.Parse(testing, oceanHeadingsOnly: true).GetValueOrDefault(goal)?.Select(b => b.Export).ToList();
+                        wikiSource = "AutoHook's wiki (Testing Presets: not final, may change)";
+                    }
                     if (wiki is null or { Count: 0 }) wikiNote = $"AutoHook's wiki has no {goal} presets at the moment.";
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException) { wikiNote = $"AutoHook's wiki could not be read ({ex.Message})."; }
             }
             else wikiNote = "Online lookups are off in /xivmcp, so AutoHook's wiki was not read.";
 
-            if (wiki is { Count: > 0 }) { exports = wiki; source = "AutoHook's wiki"; }
+            if (wiki is { Count: > 0 }) { exports = wiki; source = wikiSource; }
             else if (config.OceanPresets.TryGetValue(goal.ToString(), out var saved) && saved.Count > 0) { exports = saved; source = "the presets you gave before"; }
             else throw new ToolException($"{wikiNote} Pass AutoHook export strings for {goal} in 'presets' (AutoHook's Discord shares the current ocean presets).");
         }
