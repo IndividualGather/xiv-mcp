@@ -361,15 +361,20 @@ internal static class SubmarineTools
     /// </summary>
     private static async Task ConfirmRecall(Vessel vessel, List<string> log, CancellationToken ct)
     {
+        // The yes/no ("Recall the voyage?") opens on top of the details window, which stays open behind it: answer it first, and
+        // press Recall in the details window once.
         var deadline = DateTime.UtcNow.AddSeconds(15);
+        var recallPressed = false;
         while (DateTime.UtcNow < deadline)
         {
             ct.ThrowIfCancellationRequested();
-            var window = await Game.Run(() => GameWindows.Ready("AirShipExplorationDetail") ? "AirShipExplorationDetail" : GameWindows.Ready("SelectYesno") ? "SelectYesno" : null).ConfigureAwait(false);
+            var window = await Game.Run(() => GameWindows.Ready("SelectYesno") ? "SelectYesno"
+                                            : !recallPressed && GameWindows.Ready("AirShipExplorationDetail") ? "AirShipExplorationDetail" : null).ConfigureAwait(false);
             if (window is not null)
             {
                 await Game.Run(() => Fire(window, 0)).ConfigureAwait(false);
-                log.Add("Confirmed the recall.");
+                if (window == "SelectYesno") log.Add("Confirmed the recall.");
+                else recallPressed = true;
                 await Task.Delay(800, ct).ConfigureAwait(false);
                 continue;
             }
