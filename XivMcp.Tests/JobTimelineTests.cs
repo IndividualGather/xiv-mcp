@@ -88,3 +88,20 @@ public class JobTimelineTests
         Assert.Equal(hidden, JobTimeline.HiddenBefore(count, current));
     }
 }
+
+public class StepWindowTests
+{
+    [Theory]
+    [InlineData(5, 2, 3, 1, 4)]    // the step before, the current one, the one after
+    [InlineData(5, 0, 3, 0, 3)]    // at the start: the next two
+    [InlineData(5, 4, 3, 2, 5)]    // at the end: the two before
+    [InlineData(2, 1, 3, 0, 2)]    // fewer steps than room
+    [InlineData(5, -1, 3, 2, 5)]   // the job is over: the last ones
+    [InlineData(30, 10, 12, 6, 18)] // a long job: some before, more ahead
+    [InlineData(30, 1, 12, 0, 12)]
+    [InlineData(30, 29, 12, 18, 30)]
+    public void The_window_keeps_the_current_step_in_view(int count, int current, int size, int start, int end)
+    {
+        Assert.Equal((start, end), XivMcp.Jobs.JobTimeline.StepWindow(count, current, size));
+    }
+}

@@ -30,6 +30,12 @@ internal sealed class OverlayWindow : Window
     private readonly Plugin plugin;
     private readonly ConfigWindow settingsWindow;
     private readonly Dictionary<string, DateTime> cancelArmed = [];
+    private readonly HashSet<string> expanded = [];
+
+    /// <summary>Steps shown per job: a few around the current one, or up to this many when the job is clicked open.</summary>
+    private const int CollapsedSteps = 3, ExpandedSteps = 12;
+
+    private static readonly Vector4 Bright = new(0.93f, 0.94f, 0.96f, 1);
     private List<JobManager.Job> jobs = [];
     private IReadOnlyList<CallActivity> calls = [];
     private bool resetPosition;
@@ -201,12 +207,19 @@ internal sealed class OverlayWindow : Window
         var now = DateTime.UtcNow;
         var color = JobColor(job.State);
         var start = ImGui.GetCursorPosX();
+        var open = expanded.Contains(job.Id);
         using (ImRaii.Group())
         {
             IconText(JobIcon(job.State), job.State == JobState.Running ? color with { W = 0.55f + 0.45f * Pulse() } : color);
             ImGui.SameLine();
             ImGui.TextUnformatted(job.Name);
+            if (Settings.CanClick)
+            {
+                ImGui.SameLine();
+                IconText(open ? FontAwesomeIcon.ChevronUp : FontAwesomeIcon.ChevronDown, Muted);
+            }
         }
+        ToggleOnClick(job, open);
         DrawJobButtons(job, start + width, sample);
 
         DrawStepBar(job, width);
@@ -217,21 +230,95 @@ internal sealed class OverlayWindow : Window
             ImGui.TextColored(color, job.State == JobState.Completed ? "Done" : job.State == JobState.Failed ? "Failed" : "Cancelled");
             ImGui.SameLine();
             ImGui.TextColored(Muted, $"after {elapsed}");
+            if (open) DrawStepRows(job, start, width, ExpandedSteps);
         }
-        else if (job.Current is { } cur)
+        else
         {
-            ImGui.TextColored(Muted, $"Step {job.Steps.IndexOf(cur) + 1}/{job.Steps.Count}");
-            ImGui.SameLine();
-            using (Ui.MonoFont()) ImGui.TextColored(StepColor(cur.State), cur.Tool);
-            RightAligned(elapsed, start + width, Muted);
-            if (cur.State == StepState.Running && JobTimeline.LatestProgress(job.Log, cur.Id) is { } progress)
+            if (job.Current is { } cur)
             {
+                ImGui.TextColored(Muted, $"Step {job.Steps.IndexOf(cur) + 1} of {job.Steps.Count}");
+                RightAligned(elapsed, start + width, Muted);
+            }
+            DrawStepRows(job, start, width, open ? ExpandedSteps : CollapsedSteps);
+            if (job.State == JobState.Queued) ImGui.TextColored(Muted, "Waiting for another job's step to finish");
+        }
+    }
+
+    /// <summary>Clicking a job's header shows or hides all its steps (when the overlay takes clicks).</summary>
+    private void ToggleOnClick(JobManager.Job job, bool open)
+    {
+        var pressed = settingsWindow.Controls.Consume($"overlay:job:{job.Id}:expand");
+        if (Settings.CanClick && ImGui.IsItemHovered())
+        {
+            ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
+            Tooltip(open ? "Hide the steps" : "Show all steps");
+            pressed |= ImGui.IsItemClicked();
+        }
+        if (!pressed) return;
+        if (open) expanded.Remove(job.Id);
+        else expanded.Add(job.Id);
+    }
+
+    /// <summary>
+    /// A job's steps around the current one: an icon for its state, its note (or tool), and how long it took or has run; the
+    /// current step stands out, with its latest progress below.
+    /// </summary>
+    private static void DrawStepRows(JobManager.Job job, float start, float width, int room)
+    {
+        var current = job.Current is { } c ? job.Steps.IndexOf(c) : -1;
+        var (from, to) = JobTimeline.StepWindow(job.Steps.Count, current, room);
+        var now = DateTime.UtcNow;
+        if (from > 0) ImGui.TextColored(Muted, $"   … {from} earlier step{(from == 1 ? "" : "s")}");
+        for (var i = from; i < to; i++)
+        {
+            var step = job.Steps[i];
+            var isCurrent = i == current;
+            var color = StepColor(step.State);
+            IconText(StepIcon(step.State), step.State == StepState.Running ? color with { W = 0.55f + 0.45f * Pulse() } : color);
+            ImGui.SameLine();
+            var label = string.IsNullOrWhiteSpace(step.Note) ? step.Tool : step.Note!;
+            var time = step.StartedUtc is { } began ? JobTimeline.Compact((step.FinishedUtc ?? now) - began) : "";
+            var space = width - (ImGui.GetCursorPosX() - start) - ImGui.CalcTextSize(time).X - 12 * Ui.Scale;
+            ImGui.TextColored(isCurrent ? Bright : step.State is StepState.Done or StepState.Skipped ? Muted : Bright with { W = 0.75f }, Fit(label, space));
+            if (ImGui.IsItemHovered() && label != step.Tool) Tooltip(step.Tool);
+            if (time.Length > 0) RightAligned(time, start + width, Muted);
+            if (isCurrent && step.State == StepState.Running && JobTimeline.LatestProgress(job.Log, step.Id) is { } progress)
+            {
+                ImGui.Indent(18 * Ui.Scale);
                 ImGui.PushTextWrapPos(start + width);
                 ImGui.TextColored(Accent, progress);
                 ImGui.PopTextWrapPos();
+                ImGui.Unindent(18 * Ui.Scale);
             }
-            else if (job.State == JobState.Queued) ImGui.TextColored(Muted, "Waiting for another job's step to finish");
+            else if (isCurrent && step.State == StepState.Failed && step.Error is { } error)
+            {
+                ImGui.Indent(18 * Ui.Scale);
+                ImGui.PushTextWrapPos(start + width);
+                ImGui.TextColored(Red, error);
+                ImGui.PopTextWrapPos();
+                ImGui.Unindent(18 * Ui.Scale);
+            }
         }
+        var more = job.Steps.Count - to;
+        if (more > 0) ImGui.TextColored(Muted, $"   … {more} more step{(more == 1 ? "" : "s")}");
+    }
+
+    private static FontAwesomeIcon StepIcon(StepState s) => s switch
+    {
+        StepState.Done => FontAwesomeIcon.Check,
+        StepState.Running => FontAwesomeIcon.Play,
+        StepState.Failed => FontAwesomeIcon.Times,
+        StepState.Skipped => FontAwesomeIcon.Forward,
+        _ => FontAwesomeIcon.Circle,
+    };
+
+    /// <summary>The text, shortened with an ellipsis to fit <paramref name="room"/> pixels.</summary>
+    private static string Fit(string text, float room)
+    {
+        if (room <= 0 || ImGui.CalcTextSize(text).X <= room) return text;
+        var cut = text.Length;
+        while (cut > 1 && ImGui.CalcTextSize(text[..cut] + "…").X > room) cut--;
+        return text[..cut].TrimEnd() + "…";
     }
 
     private void DrawJobMinimal(JobManager.Job job, bool sample)
@@ -239,7 +326,10 @@ internal sealed class OverlayWindow : Window
         var color = JobColor(job.State);
         Dot(job.State == JobState.Running ? color with { W = 0.5f + 0.5f * Pulse() } : color);
         ImGui.SameLine();
+        var open = expanded.Contains(job.Id);
+        var rowStart = ImGui.GetCursorPosX();
         ImGui.TextUnformatted(job.Name);
+        ToggleOnClick(job, open);
         ImGui.SameLine();
         var done = job.Steps.Count(st => st.State is StepState.Done or StepState.Skipped);
         if (job.Finished) ImGui.TextColored(color, job.State == JobState.Completed ? "done" : job.State.ToString().ToLowerInvariant());
@@ -256,6 +346,7 @@ internal sealed class OverlayWindow : Window
             ImGui.SameLine();
             DrawJobButtons(job, null, sample);
         }
+        if (open) DrawStepRows(job, rowStart, 300 * Settings.Scale * Ui.Scale, ExpandedSteps);
     }
 
     /// <summary>Pause or resume, and cancel (a second click within 4 seconds confirms). Right-aligned at <paramref name="right"/> if given.</summary>
@@ -270,9 +361,13 @@ internal sealed class OverlayWindow : Window
         if (right is { } r)
         {
             ImGui.SameLine();
-            ImGui.SetCursorPosX(r - 2 * size - ImGui.GetStyle().ItemSpacing.X);
+            ImGui.SetCursorPosX(r - 3 * size - 2 * ImGui.GetStyle().ItemSpacing.X);
         }
         using var id = ImRaii.PushId($"ov-{job.Id}");
+        if (ImGuiComponents.IconButton("##open", FontAwesomeIcon.ListUl) | settingsWindow.Controls.Consume($"overlay:job:{job.Id}:open"))
+            if (!sample) settingsWindow.Show("Jobs", job.Id);
+        Tooltip("Open this job in /xivmcp → Jobs: every step, its results and the log");
+        ImGui.SameLine();
         var primary = running ? FontAwesomeIcon.Pause : failed ? FontAwesomeIcon.Redo : FontAwesomeIcon.Play;
         var primaryAction = running ? "pause" : failed ? "retry" : "resume";
         bool clicked;

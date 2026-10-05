@@ -66,4 +66,17 @@ public static class JobTimeline
     /// </summary>
     public static int HiddenBefore(int count, int current) =>
         Math.Max(0, (current < 0 ? count : current) - KeepBefore);
+
+    /// <summary>
+    /// Which steps to show when there is room for <paramref name="size"/>: [start, end), with the current step in view (a third of
+    /// the room before it, the rest ahead) and the room filled at either end. A finished job (-1) shows its last steps.
+    /// </summary>
+    public static (int Start, int End) StepWindow(int count, int current, int size)
+    {
+        if (count <= size) return (0, count);
+        var at = current < 0 ? count - 1 : current;
+        var start = Math.Max(0, at - size / 3);
+        var end = Math.Min(count, start + size);
+        return (Math.Max(0, end - size), end);
+    }
 }
