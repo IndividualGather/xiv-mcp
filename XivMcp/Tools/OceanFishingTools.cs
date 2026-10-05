@@ -585,6 +585,7 @@ internal static class OceanFishingTools
         if (!Navigation.VnavmeshLoaded || !await WaitFor(() => Navigation.NavReady, TimeSpan.FromSeconds(20), ct).ConfigureAwait(false))
         {
             steps.Add("No path on the boat: AutoHook walks to the railing.");
+            await StartFishing(steps, ct).ConfigureAwait(false);
             return false;
         }
         for (var attempt = 0; attempt < 3; attempt++)
@@ -601,6 +602,7 @@ internal static class OceanFishingTools
                 if (!await Game.Run(() => Navigation.MoveCloseTo(spot.Position, 0.2f)).ConfigureAwait(false))
                 {
                     steps.Add("No path on the boat: AutoHook walks to the railing.");
+                    await StartFishing(steps, ct).ConfigureAwait(false);
                     return false;
                 }
                 await Task.Delay(500, ct).ConfigureAwait(false);
