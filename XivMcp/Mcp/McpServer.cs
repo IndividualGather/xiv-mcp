@@ -146,6 +146,11 @@ public sealed partial class McpServer : IDisposable
             _ = Task.Run(async () =>
             {
                 try { await HandleHttp(ctx, ct).ConfigureAwait(false); }
+                catch (HttpListenerException ex) when (ex.ErrorCode is 1229 or 64 or 995)
+                {
+                    // The client gave up on the request (its own timeout) before the answer was written: nothing to report.
+                    Svc.Log.Debug($"MCP client closed the connection before the answer: {ex.Message}");
+                }
                 catch (Exception ex)
                 {
                     Svc.Log.Error(ex, "Unhandled MCP request error");
