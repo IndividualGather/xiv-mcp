@@ -9,9 +9,10 @@ icon: MonitorPlay
 While your assistant calls a tool or a background job runs, a small window on your screen shows it. It appears only while something runs, and closes a few seconds after. Its settings are in `/xivmcp` → **Overlay**.
 
 - **Show preview** shows the overlay with sample content, so you can drag it where you want it. **Reset position** moves it back to the left of the screen.
-- **Layout:** *Full* shows a card per job with its progress bar, current step and progress, and each tool call with what it does. *Minimal* shows one line per job or call.
+- **Layout:** *Full* shows a card per job with its progress bar, the steps around the current one (the last done, the current one with its progress, the next), and each tool call with what it does. *Minimal* shows one line per job or call.
+- **A job's steps:** click a job's name to see all its steps (up to twelve around the current one on long jobs), with what each does and how long it took; click again to fold them. The list button next to pause and cancel opens the job in `/xivmcp` → **Jobs**, with every step, its results and the log.
 - **Size** and **Background** change the size of the text and how opaque the background is.
-- **Lock position** keeps it from being dragged. **Click-through** lets clicks pass through it to the game; it can then not be moved, and its buttons do not work.
+- **Lock position** keeps it from being dragged. **Click-through** lets clicks pass through it to the game; it can then not be moved, and its buttons and job names do not take clicks.
 - **Pause and cancel buttons** let you pause, resume or cancel a job on the overlay itself. Cancel asks for a second click.
 - **Content:** show tool calls, background jobs, or both. Calls appear only once they have run a moment (400 ms by default), so quick reads do not make the overlay flicker. Finished items stay for a few seconds, and at most four are shown; the rest are counted.
 

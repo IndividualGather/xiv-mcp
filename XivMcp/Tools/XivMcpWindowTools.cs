@@ -159,7 +159,7 @@ internal static class XivMcpWindowTools
                           "as a click, to test the window. Without 'control', lists the controls that can be pressed right now. Ids: " +
                           "'tab:<Connect|Modules|Third-party|Jobs|Overlay|Info>'; on the Jobs tab 'job:<id>:<pause|resume|retry|skip|cancel|fold|" +
                           "show-earlier|hide-earlier>'; on the Overlay tab 'overlay:preview', 'overlay:reset-position', 'overlay:layout:<minimal|full>'; " +
-                          "on the overlay itself 'overlay:job:<id>:<pause|resume|retry|cancel>'. Cancel asks for a second press within 4 seconds, " +
+                          "on the overlay itself 'overlay:job:<id>:<pause|resume|retry|cancel|expand|open>'. Cancel asks for a second press within 4 seconds, " +
                           "like a click. The approval window and the permission settings can't be pressed. Only controls on screen can be pressed.",
             InputSchema = """
                 {
