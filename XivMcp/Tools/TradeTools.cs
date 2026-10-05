@@ -104,7 +104,7 @@ internal static class TradeTools
 
     private static async Task<object> Trade(string playerName, TradeOffer give, TradeOffer? expect, TimeSpan timeout, CancellationToken ct)
     {
-        if (TradeOffer.Problem(give) is { } giveProblem) throw new ToolException(giveProblem);
+        if (TradeCheck.PlanProblem(give, expect) is { } planProblem) throw new ToolException(planProblem);
         var stacks = await Game.RunLoggedIn(() => PlanStacks(give)).ConfigureAwait(false);
         var countsBefore = await Game.Run(() => give.Totals().Keys.Select(k => k.ItemId).Distinct().ToDictionary(id => id, Items.CountInBags)).ConfigureAwait(false);
         var partner = await Game.RunLoggedIn(() => FindPlayer(playerName)).ConfigureAwait(false);
@@ -124,6 +124,13 @@ internal static class TradeTools
             if (give.Gil > 0)
             {
                 await Game.Run(() => SetGil(give.Gil)).ConfigureAwait(false);
+                if (!await GameWindows.WaitFor(() => Read().Give.Gil == give.Gil, TimeSpan.FromSeconds(1.5), ct).ConfigureAwait(false))
+                {
+                    // As a player does it: the gil field (trade window callback 2) opens the number box, which takes the amount.
+                    await Game.Run(OpenGilInput).ConfigureAwait(false);
+                    if (await GameWindows.WaitFor(() => GameWindows.Ready("InputNumeric"), TimeSpan.FromSeconds(3), ct).ConfigureAwait(false))
+                        await Game.Run(() => GameWindows.EnterNumber((int)give.Gil)).ConfigureAwait(false);
+                }
                 if (!await GameWindows.WaitFor(() => Read().Give.Gil == give.Gil, TimeSpan.FromSeconds(4), ct).ConfigureAwait(false))
                     throw new ToolException("The gil did not show up in the trade window.");
             }
@@ -136,7 +143,7 @@ internal static class TradeTools
             Check(give, expect, window);
 
             // 4. The player approves what the window holds.
-            await Approve(partner.Name.TextValue, window, expect).ConfigureAwait(false);
+            await Approve(partner.Name, window, expect).ConfigureAwait(false);
             Check(give, expect, await Game.Run(Read).ConfigureAwait(false));
 
             // 5. Trade, then the final confirmation, checked once more.
@@ -255,23 +262,33 @@ internal static class TradeTools
         return plan;
     }
 
-    private static IPlayerCharacter FindPlayer(string name)
+    /// <summary>The other player, as plain values: game objects may only be read on the framework thread.</summary>
+    private sealed record Partner(string Name, uint EntityId);
+
+    private static Partner FindPlayer(string name)
     {
         var self = Svc.Objects.LocalPlayer!;
         var players = Svc.Objects.OfType<IPlayerCharacter>().Where(p => p.Address != self.Address).ToList();
         var match = players.FirstOrDefault(p => p.Name.TextValue.Equals(name, StringComparison.OrdinalIgnoreCase))
                     ?? (players.Where(p => Game.Matches(p.Name.TextValue, name)).ToList() is { Count: 1 } one ? one[0] : null);
-        return match ?? throw new ToolException($"No player named '{name}' is nearby.");
+        return match is null ? throw new ToolException($"No player named '{name}' is nearby.") : new Partner(match.Name.TextValue, match.EntityId);
     }
 
+    /// <summary>Where the other player stands now, or null if they left. Framework thread.</summary>
+    private static System.Numerics.Vector3? PositionOf(Partner partner) =>
+        Svc.Objects.FirstOrDefault(o => o.EntityId == partner.EntityId)?.Position;
+
+    private static bool InRange(Partner partner) => PositionOf(partner) is { } p && Game.DistanceToPlayer(p) <= TradeRange;
+
     /// <summary>Walks up to the other player with vnavmesh, or asks the player to.</summary>
-    private static async Task Approach(IPlayerCharacter partner, CancellationToken ct)
+    private static async Task Approach(Partner partner, CancellationToken ct)
     {
-        if (await Game.Run(() => Game.DistanceToPlayer(partner.Position) <= TradeRange).ConfigureAwait(false)) return;
+        if (await Game.Run(() => InRange(partner)).ConfigureAwait(false)) return;
         if (!await Game.Run(() => Navigation.VnavmeshLoaded).ConfigureAwait(false))
             throw new ToolException($"{partner.Name} is too far away to trade. Walk up to them first.");
-        await Game.Run(() => Navigation.MoveCloseTo(partner.Position, TradeRange - 1.5f)).ConfigureAwait(false);
-        if (!await GameWindows.WaitFor(() => Game.DistanceToPlayer(partner.Position) <= TradeRange, TimeSpan.FromSeconds(30), ct).ConfigureAwait(false))
+        await Game.Run(() => PositionOf(partner) is { } p ? Navigation.MoveCloseTo(p, TradeRange - 1.5f)
+                                                          : throw new ToolException($"{partner.Name} is no longer nearby.")).ConfigureAwait(false);
+        if (!await GameWindows.WaitFor(() => InRange(partner), TimeSpan.FromSeconds(30), ct).ConfigureAwait(false))
             throw new ToolException($"Could not get close enough to {partner.Name} to trade.");
         await Game.Run(() => { Navigation.StopMoving(); return true; }).ConfigureAwait(false);
     }
@@ -342,6 +359,15 @@ internal static class TradeTools
         throw new ToolException("The item's context menu has no Trade entry (it may not be tradable).");
     }
 
+    /// <summary>Opens the number box for the gil to give, as clicking the trade window's gil field does (recorded: callback 2).</summary>
+    private static unsafe bool OpenGilInput()
+    {
+        var trade = GameWindows.Addon("Trade");
+        if (trade == null) throw new ToolException("The trade window closed.");
+        RetainerUi.Fire(trade, true, 2, null);
+        return true;
+    }
+
     private static unsafe bool PressTrade() => GameWindows.Press(GameWindows.Addon("Trade"), GameWindows.Texts(TradeTexts));
 
     /// <summary>The trade confirmation that is showing ("Complete trade?" or the high-quality warning), or null.</summary>
@@ -367,11 +393,14 @@ internal static class TradeTools
     {
         var im = InventoryManager.Instance();
         var trading = im->TradeLocalState is not (0 or TradeState.NotTrading) && GameWindows.Ready("Trade");
+        // The gil each side offers is not in the trade's item data; the window shows it: ours in the gil field (a component),
+        // the other player's as plain text.
+        var (ownGil, theirGil) = trading ? GameWindows.TradeGil(GameWindows.Addon("Trade")) : (0, 0);
         return new Window(
             trading,
             trading ? im->TradePartnerNameString : null,
-            Side(im->TradeItemsLocal),
-            Side(im->TradeItemsRemote),
+            Side(im->TradeItemsLocal) with { Gil = ownGil },
+            Side(im->TradeItemsRemote) with { Gil = theirGil },
             im->TradeLocalState is TradeState.LockedIn or TradeState.WaitingForConfirmation or TradeState.Confirmed,
             im->TradeRemoteState is TradeState.LockedIn or TradeState.WaitingForConfirmation or TradeState.Confirmed,
             im->GetGil());

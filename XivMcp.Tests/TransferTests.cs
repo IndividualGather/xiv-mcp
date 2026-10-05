@@ -78,6 +78,14 @@ public class TradeCheckTests
     }
 
     [Fact]
+    public void Only_one_side_can_put_gil_in()
+    {
+        Assert.Null(TradeCheck.PlanProblem(new TradeOffer([], 100), null));
+        Assert.Null(TradeCheck.PlanProblem(new TradeOffer([new(4, false, 1)], 0), new TradeOffer([], 50)));
+        Assert.Contains("one side", TradeCheck.PlanProblem(new TradeOffer([], 100), new TradeOffer([], 50)));
+    }
+
+    [Fact]
     public void A_trade_has_room_for_five_items()
     {
         Assert.Null(TradeOffer.Problem(Give));

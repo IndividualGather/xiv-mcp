@@ -51,6 +51,11 @@ public sealed record TradeOffer(IReadOnlyList<TradeItem> Items, long Gil)
 /// </summary>
 public static class TradeCheck
 {
+    /// <summary>What the game would not allow in a planned trade, or null. Only one side of a trade can put gil in.</summary>
+    public static string? PlanProblem(TradeOffer give, TradeOffer? expect) =>
+        TradeOffer.Problem(give) ?? (expect is not null ? TradeOffer.Problem(expect) : null)
+        ?? (give.Gil > 0 && expect?.Gil > 0 ? "Only one side of a trade can put gil in: give gil, or receive it, not both." : null);
+
     public static IReadOnlyList<string> Problems(TradeOffer give, TradeOffer actualGive, TradeOffer? expect, TradeOffer actualReceive, Func<uint, string> name)
     {
         var problems = new List<string>();

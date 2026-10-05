@@ -61,6 +61,29 @@ internal static class GameWindows
         return null;
     }
 
+    /// <summary>
+    /// The gil both sides offer in the trade window, from its node ids (as inspect_window shows them): our own in the gil field
+    /// (component 13, text 2), the other player's in text 31.
+    /// </summary>
+    public static unsafe (long Own, long Theirs) TradeGil(AtkUnitBase* addon)
+    {
+        if (addon == null) return (0, 0);
+        long own = 0, theirs = 0;
+        var field = addon->GetNodeById(13);
+        if (field != null && (int)field->Type >= 1000 && ((AtkComponentNode*)field)->Component is var c && c != null
+            && c->UldManager.SearchNodeById(2) is var t && t != null && t->Type == NodeType.Text && Number(((AtkTextNode*)t)->NodeText.ToString()) is { } n)
+            own = n;
+        var other = addon->GetNodeById(31);
+        if (other != null && other->Type == NodeType.Text && Number(((AtkTextNode*)other)->NodeText.ToString()) is { } m) theirs = m;
+        return (own, theirs);
+    }
+
+    private static long? Number(string text)
+    {
+        var digits = text.Trim().Replace(",", "").Replace(".", "").Replace(" ", "");
+        return digits.Length > 0 && long.TryParse(digits, out var n) ? n : null;
+    }
+
     /// <summary>Presses the first visible, enabled button (or tab) of a window whose label is one of <paramref name="labels"/>.</summary>
     public static unsafe bool Press(AtkUnitBase* addon, IReadOnlySet<string> labels)
     {
