@@ -490,22 +490,32 @@ internal static class OceanFishingTools
                 await Task.Delay(wait > TimeSpan.FromMinutes(1) ? TimeSpan.FromMinutes(1) : wait < TimeSpan.Zero ? TimeSpan.FromSeconds(1) : wait, ct).ConfigureAwait(false);
             }
             await Board(ruby, steps, ct).ConfigureAwait(false);
-            var placed = await TakeRailSpot(steps, ct).ConfigureAwait(false);
 
             int voyagePoints;
             Dictionary<uint, (int Count, int Points)> caught;
-            var autoHook = await Game.Run(() => AutoHookOcean.Enable(goal, walkToRailing: !placed)).ConfigureAwait(false);
+            // XIV MCP takes the railing spot itself when it can walk on the boat; otherwise AutoHook walks there.
+            var walkOurselves = Navigation.VnavmeshLoaded;
+            var autoHook = await Game.Run(() => AutoHookOcean.Enable(goal, walkToRailing: !walkOurselves)).ConfigureAwait(false);
             var overlay = await Game.Run(() => DistantSeasBridge.Loaded ? DistantSeasBridge.ShowOverlay() : null).ConfigureAwait(false);
             try
             {
                 await Game.Run(() => { AutoHookTools.SetAutoHook(true); return true; }).ConfigureAwait(false);
                 steps.Add($"AutoHook fishes the voyage (goal: {goal}).");
+                if (walkOurselves) await TakeRailSpot(steps, ct).ConfigureAwait(false);
+                var idleSince = (DateTime?)null;
                 // The voyage: three stops of 7 minutes, plus the sailing between them.
                 var until = DateTime.UtcNow.AddMinutes(40);
                 while (DateTime.UtcNow < until)
                 {
                     var state = await Game.Run(() => { unsafe { var oc = Voyage(); return oc == null ? (InstanceContentOceanFishing.OceanFishingStatus?)null : oc->Status; } }).ConfigureAwait(false);
                     if (state == InstanceContentOceanFishing.OceanFishingStatus.Finished || !await Game.Run(() => OnBoat).ConfigureAwait(false)) break;
+                    var idle = await Game.Run(() => { unsafe { var oc = Voyage(); return oc != null && oc->Status == InstanceContentOceanFishing.OceanFishingStatus.Fishing && (SecondsLeft(oc) ?? 0) > 35 && !Fishing; } }).ConfigureAwait(false);
+                    idleSince = idle ? idleSince ?? DateTime.UtcNow : null;
+                    if (idleSince is { } since && DateTime.UtcNow - since > TimeSpan.FromSeconds(15))
+                    {
+                        await StartFishing(steps, ct).ConfigureAwait(false);
+                        idleSince = null;
+                    }
                     await Task.Delay(2000, ct).ConfigureAwait(false);
                 }
                 (voyagePoints, caught) = await Game.Run(() =>
@@ -566,7 +576,11 @@ internal static class OceanFishingTools
     {
         if (!await WaitFor(() => OnBoat && Svc.Objects.LocalPlayer is not null && !Svc.Condition[ConditionFlag.BetweenAreas], TimeSpan.FromSeconds(60), ct).ConfigureAwait(false))
             return false;
-        await Task.Delay(3000, ct).ConfigureAwait(false); // let the other passengers appear
+        // Until the boat leaves, the deck is fenced off: wait for the first stop to begin.
+        await WaitFor(() => { unsafe { var oc = Voyage(); return oc != null && oc->Status == InstanceContentOceanFishing.OceanFishingStatus.Fishing; } },
+                      TimeSpan.FromMinutes(16), ct).ConfigureAwait(false);
+        await Task.Delay(2000, ct).ConfigureAwait(false);
+        if (await Game.Run(() => Fishing).ConfigureAwait(false)) return true; // AutoHook got there first
         if (!Navigation.VnavmeshLoaded || !await WaitFor(() => Navigation.NavReady, TimeSpan.FromSeconds(20), ct).ConfigureAwait(false))
         {
             steps.Add("No path on the boat: AutoHook walks to the railing.");
@@ -604,11 +618,26 @@ internal static class OceanFishingTools
             {
                 steps.Add(spot.Gap == float.MaxValue ? "At the railing, facing the ocean (nobody else around)."
                                                      : $"At the railing, facing the ocean, {spot.Gap:0.#} yalms from the nearest player.");
+                await StartFishing(steps, ct).ConfigureAwait(false);
                 return true;
             }
         }
         steps.Add("The railing is crowded: stayed at the freest spot found.");
+        await StartFishing(steps, ct).ConfigureAwait(false);
         return true;
+    }
+
+    private static bool Fishing => Svc.Condition[ConditionFlag.Fishing] || Svc.Condition[ConditionFlag.Gathering];
+
+    /// <summary>Gets AutoHook fishing when the line isn't out: its start command, then a cast (AutoHook hooks and recasts from there).</summary>
+    private static async Task StartFishing(List<string> steps, CancellationToken ct)
+    {
+        if (await WaitFor(() => Fishing, TimeSpan.FromSeconds(3), ct).ConfigureAwait(false)) return;
+        await Game.Run(() => { AutoHookTools.SetAutoHook(true); Svc.Commands.ProcessCommand("/ahstart"); return true; }).ConfigureAwait(false);
+        if (await WaitFor(() => Fishing, TimeSpan.FromSeconds(4), ct).ConfigureAwait(false)) { steps.Add("Started fishing (AutoHook)."); return; }
+        await Game.Run(() => { unsafe { return ActionManager.Instance()->UseAction(ActionType.Action, 289); } }).ConfigureAwait(false);
+        if (await WaitFor(() => Fishing, TimeSpan.FromSeconds(4), ct).ConfigureAwait(false)) steps.Add("Started fishing (cast).");
+        else steps.Add("Could not start fishing here.");
     }
 
     private static async Task<bool> WaitFor(Func<bool> condition, TimeSpan timeout, CancellationToken ct)
