@@ -223,11 +223,33 @@ internal static class SubmarineTools
     }
 
     /// <summary>
+    /// Windows an earlier, interrupted attempt can leave open in front of the panel: a yes/no (answered No), the voyage details
+    /// (Cancel) and the voyage map (closed). Clears them so the panel's menu can open.
+    /// </summary>
+    private static async Task ClearLeftovers(CancellationToken ct)
+    {
+        for (var i = 0; i < 6; i++)
+        {
+            var cleared = await Game.Run(() =>
+            {
+                if (GameWindows.Ready("SelectYesno")) return Fire("SelectYesno", 1);
+                if (GameWindows.Ready("AirShipExplorationDetail")) return Fire("AirShipExplorationDetail", -1);
+                if (GameWindows.Ready("AirShipExploration")) return Fire("AirShipExploration", -1);
+                if (GameWindows.Ready("SubmarineExplorationMapSelect")) return Fire("SubmarineExplorationMapSelect", -1);
+                return false;
+            }).ConfigureAwait(false);
+            if (!cleared) return;
+            await Task.Delay(600, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
     /// The game fills the workshop's submersible list only once the voyage control panel was opened after logging in: open its menu
     /// when the list is still empty, and wait for it (the menu stays open for the next step).
     /// </summary>
     private static async Task LoadVessels(CancellationToken ct)
     {
+        await ClearLeftovers(ct).ConfigureAwait(false);
         if (await Game.Run(() => Vessels().Count > 0).ConfigureAwait(false)) return;
         if (!await Game.Run(() => MenuHas(SubmersibleManagement)).ConfigureAwait(false))
         {
@@ -320,7 +342,7 @@ internal static class SubmarineTools
     /// <summary>Picks the vessel from the panel's list, chooses Recall and confirms, and waits until it is back.</summary>
     private static async Task RecallVessel(Vessel vessel, List<string> log, CancellationToken ct)
     {
-        // The confirmation may already be open (an earlier attempt): go straight to it.
+        // The confirmation may still be open (an earlier attempt): go straight to it.
         if (!await Game.Run(() => GameWindows.Ready("AirShipExplorationDetail")).ConfigureAwait(false))
             await ChooseRecall(vessel, ct).ConfigureAwait(false);
         await ConfirmRecall(vessel, log, ct).ConfigureAwait(false);
@@ -373,13 +395,10 @@ internal static class SubmarineTools
             if (window is not null)
             {
                 await Game.Run(() => Fire(window, 0)).ConfigureAwait(false);
-                if (window == "SelectYesno") log.Add("Confirmed the recall.");
-                else recallPressed = true;
-                await Task.Delay(800, ct).ConfigureAwait(false);
-                continue;
-            }
-            if (await Game.Run(() => !FindVessel(vessel.Name).OnVoyage).ConfigureAwait(false))
-            {
+                if (window == "AirShipExplorationDetail") { recallPressed = true; await Task.Delay(800, ct).ConfigureAwait(false); continue; }
+                // The yes/no was the last question: the game recalls on it (its return time only updates when the panel reloads).
+                log.Add("Confirmed the recall.");
+                await Task.Delay(1200, ct).ConfigureAwait(false);
                 log.Add($"{vessel.Name} is back.");
                 return;
             }

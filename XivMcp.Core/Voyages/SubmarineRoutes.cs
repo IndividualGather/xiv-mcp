@@ -56,7 +56,18 @@ public static class SubmarineRoutes
 
     private static SubmarinePoint? ByNameOrId(string w, IReadOnlyList<SubmarinePoint> all) =>
         uint.TryParse(w, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? all.FirstOrDefault(p => p.Id == id)
-        : all.FirstOrDefault(p => p.Name.Equals(w, StringComparison.OrdinalIgnoreCase));
+        : all.FirstOrDefault(p => SameName(p.Name, w) || SameName($"{p.Name} ({p.Code})", w));
+
+    /// <summary>Names match whatever apostrophe either side uses (the game writes ’), in any case, with or without "the".</summary>
+    private static bool SameName(string a, string b)
+    {
+        static string Norm(string s)
+        {
+            var t = s.Replace('’', '\'').Replace('‘', '\'').Trim();
+            return t.StartsWith("the ", StringComparison.OrdinalIgnoreCase) ? t[4..] : t;
+        }
+        return Norm(a).Equals(Norm(b), StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 /// <summary>Part condition, which parts to repair, and the "used/available" numbers of the voyage window.</summary>

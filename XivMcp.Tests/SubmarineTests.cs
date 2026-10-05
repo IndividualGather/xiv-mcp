@@ -31,6 +31,15 @@ public class SubmarineRouteTests
     }
 
     [Fact]
+    public void Names_match_with_any_apostrophe_the_letter_suffix_and_without_the()
+    {
+        SubmarinePoint[] points = [new(80, 4, "Crow’s Drop", "G", 95, true), new(81, 4, "the Anthemoessa Undertow", "I", 96, true)];
+        Assert.Equal([80u], SubmarineRoutes.Resolve(["Crow's Drop"], points, 95).Select(p => p.Id));
+        Assert.Equal([80u], SubmarineRoutes.Resolve(["crow's drop (g)"], points, 95).Select(p => p.Id));
+        Assert.Equal([81u], SubmarineRoutes.Resolve(["Anthemoessa Undertow"], points, 96).Select(p => p.Id));
+    }
+
+    [Fact]
     public void Letters_alone_are_read_on_the_submersible_s_own_sea()
     {
         Assert.Equal([32u], SubmarineRoutes.Resolve(["A"], Points, 40, vesselSea: 2).Select(p => p.Id));
