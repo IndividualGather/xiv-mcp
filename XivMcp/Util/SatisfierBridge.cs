@@ -42,7 +42,8 @@ internal static class SatisfierBridge
             var used = Int(npc, "UsedDeliveries");
             var fish = Plugin.Get(npc, "FishData");
             var remaining = Enumerable.Range(0, 3).Select(i => Convert.ToInt32(Plugin.Call(npc, "RemainingTurnins", i))).ToArray();
-            clients.Add(new Client(npc, Int(npc, "Index"), Plugin.Get(npc, "Name") as string ?? "?", Plugin.Get(npc, "Unlocked") is true,
+            var index = Int(npc, "Index");
+            clients.Add(new Client(npc, index, Plugin.Get(npc, "Name") as string ?? "?", IsUnlocked(index),
                 Int(npc, "Rank"), Int(npc, "SatisfactionCur"), Int(npc, "SatisfactionMax"), Math.Max(0, max - used),
                 (uint[])(Plugin.Get(npc, "TurnInItems") ?? new uint[3]), (bool[])(Plugin.Get(npc, "IsBonusEffective") ?? new bool[3]), remaining,
                 Plugin.Get(npc, "CraftData") is not null, Plugin.Get(npc, "GatherData") is not null, fish is not null,
@@ -53,6 +54,14 @@ internal static class SatisfierBridge
     }
 
     private static int Int(object o, string member) => Convert.ToInt32(Plugin.Get(o, member));
+
+    /// <summary>
+    /// Whether the client's unlock quest is done. Satisfier's own flag looks at the previous client's row (its index is the row id
+    /// minus one), so XIV MCP reads the right row itself.
+    /// </summary>
+    private static bool IsUnlocked(int index) =>
+        Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.SatisfactionNpc>().GetRowOrDefault((uint)index + 1) is { } row
+        && QuestManager.IsQuestComplete(row.QuestRequired.RowId);
 
     /// <summary>Deliveries left this week for all clients together.</summary>
     public static unsafe int Allowances() => SatisfactionSupplyManager.Instance()->GetRemainingAllowances();
