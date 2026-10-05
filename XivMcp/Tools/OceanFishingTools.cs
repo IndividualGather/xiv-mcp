@@ -9,6 +9,7 @@ using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Event;
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Excel;
 using Lumina.Excel.Sheets;
@@ -627,12 +628,41 @@ internal static class OceanFishingTools
         return true;
     }
 
+    /// <summary>
+    /// Puts on a bait when none is chosen, or the chosen one ran out: during a spectral current the bait of its best fish, otherwise
+    /// the bait of the stop's spectral trigger (Distant Seas' data), else any ocean bait in the bags. Returns its name when it switched.
+    /// </summary>
+    private static unsafe string? ChooseBait()
+    {
+        var current = PlayerState.Instance()->FishingBait;
+        if (current != 0 && Items.CountInBags(current) > 0) return null;
+        var oc = Voyage();
+        var wanted = new List<uint>();
+        if (oc != null && DistantSeasBridge.Spots() is { } data)
+        {
+            var (_, stops) = RouteInfo(oc->CurrentRoute);
+            if (oc->CurrentZone < stops.Count)
+            {
+                var stop = stops[(int)oc->CurrentZone];
+                var h = OceanFishData.Highlights(data, stop.SpotId, stop.Time, 3);
+                var fish = oc->SpectralCurrentActive ? h.Spectral : h.Normal.Where(f => f.TriggersSpectral).Concat(h.Normal);
+                wanted.AddRange(fish.Where(f => f.BestBait is not null).Select(f => f.BestBait!.Value));
+            }
+        }
+        wanted.AddRange(Baits);
+        var bait = wanted.FirstOrDefault(b => Items.CountInBags(b) > 0);
+        if (bait == 0) return null;
+        Svc.PluginInterface.GetIpcSubscriber<uint, bool>("AutoHook.SwapBaitById").InvokeFunc(bait);
+        return Items.Name(bait);
+    }
+
     private static bool Fishing => Svc.Condition[ConditionFlag.Fishing] || Svc.Condition[ConditionFlag.Gathering];
 
     /// <summary>Gets AutoHook fishing when the line isn't out: its start command, then a cast (AutoHook hooks and recasts from there).</summary>
     private static async Task StartFishing(List<string> steps, CancellationToken ct)
     {
         if (await WaitFor(() => Fishing, TimeSpan.FromSeconds(3), ct).ConfigureAwait(false)) return;
+        if (await Game.Run(ChooseBait).ConfigureAwait(false) is { } bait) steps.Add($"Bait: {bait}.");
         await Game.Run(() => { AutoHookTools.SetAutoHook(true); Svc.Commands.ProcessCommand("/ahstart"); return true; }).ConfigureAwait(false);
         if (await WaitFor(() => Fishing, TimeSpan.FromSeconds(4), ct).ConfigureAwait(false)) { steps.Add("Started fishing (AutoHook)."); return; }
         await Game.Run(() => { unsafe { return ActionManager.Instance()->UseAction(ActionType.Action, 289); } }).ConfigureAwait(false);
