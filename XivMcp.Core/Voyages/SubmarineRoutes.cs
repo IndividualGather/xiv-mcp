@@ -56,14 +56,18 @@ public static class SubmarineRoutes
 
     private static SubmarinePoint? ByNameOrId(string w, IReadOnlyList<SubmarinePoint> all) =>
         uint.TryParse(w, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? all.FirstOrDefault(p => p.Id == id)
-        : all.FirstOrDefault(p => SameName(p.Name, w) || SameName($"{p.Name} ({p.Code})", w));
+        : all.FirstOrDefault(p => SameName(p.Name, w));
 
-    /// <summary>Names match whatever apostrophe either side uses (the game writes ’), in any case, with or without "the".</summary>
+    /// <summary>
+    /// Names match in any case, whatever apostrophe either side uses, with or without "the", and with or without the map letter the
+    /// game adds ("Crow's Drop (G)").
+    /// </summary>
     private static bool SameName(string a, string b)
     {
         static string Norm(string s)
         {
             var t = s.Replace('’', '\'').Replace('‘', '\'').Trim();
+            if (t.EndsWith(')') && t.LastIndexOf(" (", StringComparison.Ordinal) is var open and > 0 && t.Length - open <= 6) t = t[..open].TrimEnd();
             return t.StartsWith("the ", StringComparison.OrdinalIgnoreCase) ? t[4..] : t;
         }
         return Norm(a).Equals(Norm(b), StringComparison.OrdinalIgnoreCase);

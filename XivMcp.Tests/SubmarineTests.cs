@@ -40,6 +40,14 @@ public class SubmarineRouteTests
     }
 
     [Fact]
+    public void The_game_s_names_carry_the_letter_and_match_without_it()
+    {
+        SubmarinePoint[] points = [new(80, 4, "Crow's Drop (G)", "G", 95, true)];
+        Assert.Equal([80u], SubmarineRoutes.Resolve(["Crow's Drop"], points, 95).Select(p => p.Id));
+        Assert.Equal([80u], SubmarineRoutes.Resolve(["Crow's Drop (G)"], points, 95).Select(p => p.Id));
+    }
+
+    [Fact]
     public void Letters_alone_are_read_on_the_submersible_s_own_sea()
     {
         Assert.Equal([32u], SubmarineRoutes.Resolve(["A"], Points, 40, vesselSea: 2).Select(p => p.Id));
