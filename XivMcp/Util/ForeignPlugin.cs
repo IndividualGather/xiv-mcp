@@ -24,6 +24,25 @@ internal sealed class ForeignPlugin(string internalName, string displayName)
 
     public bool Loaded => Plugin() is not null;
 
+    /// <summary>The plugin's own object (its IDalamudPlugin), for its instance members.</summary>
+    public object Self => Plugin() ?? throw new ToolException($"{displayName} is not loaded. Install or enable it in the plugin installer.");
+
+    /// <summary>
+    /// An assembly the plugin brought along (plugins load their own copies of shared libraries, such as clib), from the plugin's own
+    /// load context.
+    /// </summary>
+    public Assembly Library(string name) =>
+        System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(Assembly)?.Assemblies.FirstOrDefault(a => a.GetName().Name == name)
+        ?? throw Unsupported($"its {name} library");
+
+    public object? StaticValue(Assembly assembly, string type, string member)
+    {
+        var t = assembly.GetType(type) ?? throw Unsupported(type);
+        if (t.GetField(member, Static) is { } f) return f.GetValue(null);
+        if (t.GetProperty(member, Static) is { } p) return p.GetValue(null);
+        throw Unsupported($"{type}.{member}");
+    }
+
     /// <summary>The folder the plugin's DLL was installed to (its Assembly.Location can be empty when loaded from memory).</summary>
     public string? Directory
     {

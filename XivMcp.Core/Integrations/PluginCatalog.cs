@@ -30,6 +30,7 @@ public static class PluginCatalog
         new("Saucy", "Saucy", "https://love.puni.sh/ment.json"),
         new("AutoHook", "AutoHook", "https://love.puni.sh/ment.json"),
         new("DistantSeas", "Distant Seas", Official),
+        new("vsatisfy", "Satisfier", "https://puni.sh/api/repository/veyn"),
         new("TriadBuddy", "TriadBuddy", Official),
         new("Questionable", "Questionable", "https://love.puni.sh/ment.json"),
         // Saucy uses these for features XIV MCP does not drive (GATE movement, pausing for retainers).

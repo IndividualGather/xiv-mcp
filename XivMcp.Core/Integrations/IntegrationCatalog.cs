@@ -35,6 +35,14 @@ public static class IntegrationCatalog
         public IReadOnlyDictionary<string, ToolRequirement[]> Requires { get; init; } = new Dictionary<string, ToolRequirement[]>();
     }
 
+    private static ToolRequirement[] DeliveryHelpers =>
+    [
+        new("Artisan", Need.Improves, "Crafts the crafting requests.", "Crafting requests can't be delivered; gathering and fishing ones can."),
+        new("Questionable", Need.Improves, "Gathers the gathering requests.", "Gathering requests can't be delivered; crafting and fishing ones can."),
+        new("AutoHook", Need.Improves, "Fishes the fishing requests.", "Satisfier takes you to the fishing spot and you fish yourself."),
+        new("vnavmesh", Need.Improves, "Walks Satisfier to vendors, clients and gathering spots.", "Satisfier can't move you, and stops."),
+    ];
+
     private static ToolRequirement OceanData =>
         new("DistantSeas", Need.Improves, "Its community data names the fish worth going for at each stop.", "Only the route and its stops.");
 
@@ -121,6 +129,20 @@ public static class IntegrationCatalog
                 ["play_jumbo_cactpot"] = Travel,
                 ["present_fashion_report"] = Travel,
                 ["complete_fashion_report"] = Travel,
+            },
+        },
+        new("vsatisfy", "Custom Deliveries", "Custom deliveries with Satisfier: this week's requests, and delivering them by crafting, gathering or fishing.", new Dictionary<string, string[]>
+        {
+            ["get_custom_deliveries"] = [],
+            ["deliver_custom_delivery"] = [MoveCharacter, GameUi, SpendGil],
+            ["do_custom_deliveries"] = [MoveCharacter, GameUi, SpendGil],
+            ["stop_custom_delivery"] = [GameUi],
+        })
+        {
+            Helpers = new Dictionary<string, ToolRequirement[]>
+            {
+                ["deliver_custom_delivery"] = DeliveryHelpers,
+                ["do_custom_deliveries"] = DeliveryHelpers,
             },
         },
         new("DistantSeas", "Ocean fishing", "Ocean fishing voyages: the schedule and routes, boarding at the ferry docks, and a job that fishes voyages with AutoHook until a target.", new Dictionary<string, string[]>

@@ -1,0 +1,46 @@
+---
+title: Custom deliveries
+description: This week's custom delivery requests, and delivering them by crafting, gathering or fishing, with Satisfier.
+icon: PackageCheck
+---
+
+With **Satisfier** (vsatisfy) installed, your assistant can see this week's custom delivery requests and deliver them for you: one client at a time, or the whole week as a background job.
+
+| Tool | What it does |
+|---|---|
+| `get_custom_deliveries` | The deliveries left this week, and per client: unlocked or not, rank, satisfaction, deliveries left, and the three requests (craft, gather, fish) with the item, the bonus, how many it still takes and how many you carry |
+| `deliver_custom_delivery` | Delivers one client's request and waits until it is done |
+| `do_custom_deliveries` | Does this week's deliveries for all clients, one after another, as a background job |
+| `stop_custom_delivery` | Stops what Satisfier is doing |
+
+> "What do my custom delivery clients want this week?"
+>
+> "Do my custom deliveries."
+>
+> "Deliver the crafting request to Zhloe."
+
+## How a request is delivered
+
+Each client asks for three things a week: something to **craft**, to **gather** and to **fish**. Each delivery counts once against the weekly allowance shared by all clients (12).
+
+- **Crafting**: Satisfier buys the ingredient from the client's vendor, crafts with **Artisan** and turns the items in.
+- **Gathering**: Satisfier gathers with **Questionable**, teleports back and turns in.
+- **Fishing**: XIV MCP catches the fish with **AutoHook** (switch to Fisher, bait, the spot, fishing until there are enough), then Satisfier turns them in. Spearfishing requests aren't supported yet.
+
+Without `kind`, the request with the bonus comes first (it pays more), then crafting, gathering, fishing, among the kinds a plugin can do.
+
+## The weekly job
+
+`do_custom_deliveries` plans every client's remaining deliveries within the weekly allowance, then delivers them one client after another. `kind` uses one kind for everyone, `clients` limits it to some clients. `get_job` follows it.
+
+While a delivery runs, Satisfier's window stays open: Satisfier keeps its client data up to date while it is shown.
+
+## Plugins
+
+| Plugin | What it adds |
+|---|---|
+| **Satisfier** (vsatisfy) | Needed for all of it: the requests, buying, turning in. |
+| **Artisan** | Crafting requests. |
+| **Questionable** | Gathering requests. |
+| **AutoHook** | Fishing requests. |
+| **vnavmesh** | Satisfier's walking to vendors, clients and gathering spots. |

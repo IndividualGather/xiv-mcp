@@ -101,35 +101,12 @@ internal static class AutoHookTools
             ReadOnly = false,
             Handler = async (args, ct) =>
             {
-                var (guide, _) = await Prepare(args, config, ct, preferCurrentZone: false).ConfigureAwait(false);
-                var fishName = Items.Name(guide.Fish);
                 var quantity = args.Int("quantity", 1, 1, 999);
                 // Ten casts' worth per fish wanted: some baits cost hundreds of gil.
                 var baitQuantity = args.Int("bait_quantity", Math.Clamp(quantity * 10, 10, 99), 0, 999);
-                var (haveBait, isFisher) = await Game.Run(() => (Items.CountInBags(guide.FirstBait) > 0, Svc.Objects.LocalPlayer?.ClassJob.RowId == NavigationTools.FisherJob))
-                                                     .ConfigureAwait(false);
-
-                var steps = new List<JobManager.Step>
-                {
-                    new() { Id = "fish", Tool = "find_fish", Args = new JsonObject { ["fish"] = guide.Fish.ToString(), ["spot"] = guide.Spot.ToString() },
-                            Note = $"How to catch {fishName}" },
-                };
-                if (!isFisher) steps.Add(new() { Id = "job", Tool = "switch_gearset", Args = new JsonObject { ["gearset"] = "FSH" }, Note = "Switch to Fisher" });
-                if (!haveBait && baitQuantity > 0)
-                    steps.Add(new() { Id = "bait", Tool = "buy_item", Args = new JsonObject { ["item"] = guide.FirstBait.ToString(), ["quantity"] = baitQuantity },
-                                      Note = $"Buy {baitQuantity} {Items.Name(guide.FirstBait)}" });
-                steps.Add(new() { Id = "travel", Tool = "navigate_to", Args = new JsonObject { ["destination"] = "fishing_spot", ["name"] = guide.Spot.ToString() },
-                                  Note = $"Go to {FishingTools.SpotName(guide.Spot)}" });
-                steps.Add(new()
-                {
-                    Id = "catch", Tool = "fish_until",
-                    Args = new JsonObject
-                    {
-                        ["fish"] = guide.Fish.ToString(), ["quantity"] = quantity, ["spot"] = guide.Spot.ToString(),
-                        ["timeout_minutes"] = args.Int("timeout_minutes", 240, 1, 1440),
-                    },
-                    Note = $"Catch {quantity} {fishName} with AutoHook",
-                });
+                var (guide, steps, haveBait) = await CatchSteps(args, config, quantity, baitQuantity, args.Int("timeout_minutes", 240, 1, 1440), "", ct)
+                                                   .ConfigureAwait(false);
+                var fishName = Items.Name(guide.Fish);
 
                 var job = jobs().Start($"Fishing: {quantity} {fishName}", steps, client());
                 return new
@@ -159,6 +136,41 @@ internal static class AutoHookTools
     // ------------------------------------------------------------------ the steps
 
     /// <summary>The guide for the fish in the arguments, at the given spot, the spot in the current zone, or the best one.</summary>
+    /// <summary>
+    /// The steps that catch a fish (catch_fish's job, or part of another job): look it up, switch to Fisher, buy bait when the bags
+    /// have none, go to the spot, fish with AutoHook. 'fish' and optionally 'spot' come from <paramref name="args"/>;
+    /// <paramref name="idPrefix"/> keeps step ids unique within a bigger job.
+    /// </summary>
+    internal static async Task<(FishGuide Guide, List<JobManager.Step> Steps, bool HaveBait)> CatchSteps(
+        ToolArgs args, Configuration config, int quantity, int baitQuantity, int timeoutMinutes, string idPrefix, CancellationToken ct)
+    {
+        var (guide, _) = await Prepare(args, config, ct, preferCurrentZone: false).ConfigureAwait(false);
+        var fishName = Items.Name(guide.Fish);
+        var (haveBait, isFisher) = await Game.Run(() => (Items.CountInBags(guide.FirstBait) > 0, Svc.Objects.LocalPlayer?.ClassJob.RowId == NavigationTools.FisherJob))
+                                             .ConfigureAwait(false);
+        var steps = new List<JobManager.Step>
+        {
+            new() { Id = idPrefix + "fish", Tool = "find_fish", Args = new JsonObject { ["fish"] = guide.Fish.ToString(), ["spot"] = guide.Spot.ToString() },
+                    Note = $"How to catch {fishName}" },
+        };
+        if (!isFisher) steps.Add(new() { Id = idPrefix + "job", Tool = "switch_gearset", Args = new JsonObject { ["gearset"] = "FSH" }, Note = "Switch to Fisher" });
+        if (!haveBait && baitQuantity > 0)
+            steps.Add(new() { Id = idPrefix + "bait", Tool = "buy_item", Args = new JsonObject { ["item"] = guide.FirstBait.ToString(), ["quantity"] = baitQuantity },
+                              Note = $"Buy {baitQuantity} {Items.Name(guide.FirstBait)}" });
+        steps.Add(new() { Id = idPrefix + "travel", Tool = "navigate_to", Args = new JsonObject { ["destination"] = "fishing_spot", ["name"] = guide.Spot.ToString() },
+                          Note = $"Go to {FishingTools.SpotName(guide.Spot)}" });
+        steps.Add(new()
+        {
+            Id = idPrefix + "catch", Tool = "fish_until",
+            Args = new JsonObject
+            {
+                ["fish"] = guide.Fish.ToString(), ["quantity"] = quantity, ["spot"] = guide.Spot.ToString(), ["timeout_minutes"] = timeoutMinutes,
+            },
+            Note = $"Catch {quantity} {fishName} with AutoHook",
+        });
+        return (guide, steps, haveBait);
+    }
+
     private static async Task<(FishGuide Guide, FishingSources.Data Data)> Prepare(ToolArgs args, Configuration config, CancellationToken ct, bool preferCurrentZone = true)
     {
         ItemSourceTools.RequireOnline(config);
