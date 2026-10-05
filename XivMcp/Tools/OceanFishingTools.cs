@@ -599,8 +599,11 @@ internal static class OceanFishingTools
                         var oc = Voyage();
                         if (oc == null) return (0, new Dictionary<uint, (int Count, int Points)>());
                         var c = Caught(oc);
-                        var total = oc->Status == InstanceContentOceanFishing.OceanFishingStatus.Finished && oc->IndividualResult.TotalPoints > 0
-                            ? (int)oc->IndividualResult.TotalPoints : c.Values.Sum(x => x.Points);
+                        // The game's result (with bonuses) is only filled in a moment after the voyage ends: use it when it looks
+                        // like a score, otherwise the points of the catches.
+                        var result = (long)oc->IndividualResult.TotalPoints;
+                        var total = oc->Status == InstanceContentOceanFishing.OceanFishingStatus.Finished && result is > 0 and < 100_000
+                            ? (int)result : c.Values.Sum(x => x.Points);
                         return (total, c);
                     }
                 }).ConfigureAwait(false);
@@ -616,14 +619,21 @@ internal static class OceanFishingTools
                 }).ConfigureAwait(false);
             }
 
-            // Close the results, which takes the player back to Limsa Lominsa.
-            var leaveBy = DateTime.UtcNow.AddMinutes(3);
-            while (await Game.Run(() => OnBoat).ConfigureAwait(false) && DateTime.UtcNow < leaveBy)
+            // The arrival scene, then the results (closing them leaves the boat); done once back on land and free to move.
+            var leaveBy = DateTime.UtcNow.AddMinutes(4);
+            var landed = false;
+            while (DateTime.UtcNow < leaveBy)
             {
-                await Game.Run(() => { if (RetainerUi.Ready("IKDResult")) FireIn("IKDResult", 0); return true; }).ConfigureAwait(false);
+                landed = await Game.Run(() =>
+                {
+                    if (RetainerUi.Ready("IKDResult")) FireIn("IKDResult", 0);
+                    return !OnBoat && Svc.Objects.LocalPlayer is not null && !Svc.Condition[ConditionFlag.BetweenAreas]
+                           && !Svc.Condition[ConditionFlag.BoundByDuty] && !Svc.Condition[ConditionFlag.OccupiedInCutSceneEvent];
+                }).ConfigureAwait(false);
+                if (landed) break;
                 await Task.Delay(1000, ct).ConfigureAwait(false);
             }
-            steps.Add("Back in Limsa Lominsa.");
+            steps.Add(landed ? "Back in Limsa Lominsa." : "Still not off the boat after 4 minutes.");
 
             points += voyagePoints;
             foreach (var (fish, c) in caught) caughtTotal[fish] = caughtTotal.GetValueOrDefault(fish) + c.Count;
