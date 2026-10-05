@@ -200,6 +200,9 @@ internal static class CustomDeliveryTools
         var planned = c.Remaining[(int)chosen];
         var statuses = new List<string>();
         var rankedUp = false;
+        var lastLeft = c.DeliveriesLeft;
+        var progressAt = DateTime.UtcNow;
+        DateTime? supplyOpenSince = null;
         var window = await Game.Run(SatisfierBridge.KeepWindowOpen).ConfigureAwait(false);
         try
         {
@@ -220,6 +223,30 @@ internal static class CustomDeliveryTools
                 // Done once the planned deliveries are in. A rank-up brings new requests, which Satisfier would wait for in the
                 // turn-in window without the items: stop it there too.
                 var now = await Game.Run(() => Find(c.Name)).ConfigureAwait(false);
+                if (now.DeliveriesLeft != lastLeft) { lastLeft = now.DeliveriesLeft; progressAt = DateTime.UtcNow; }
+
+                // The turn-in window can get in the way: Questionable opens it before gathering and leaves it open, and the game
+                // then counts the player as busy. Close it unless Satisfier is turning in; when turning in stalls, it is stuck.
+                var supplyOpen = await Game.Run(() => RetainerUi.Ready("SatisfactionSupply")).ConfigureAwait(false);
+                supplyOpenSince = supplyOpen ? supplyOpenSince ?? DateTime.UtcNow : null;
+                var turningIn = status.StartsWith("Turning in", StringComparison.OrdinalIgnoreCase);
+                if (supplyOpenSince is { } openSince && !turningIn && DateTime.UtcNow - openSince > TimeSpan.FromSeconds(5))
+                {
+                    await Game.Run(() => { CloseWindow("SatisfactionSupply"); return true; }).ConfigureAwait(false);
+                    statuses.Add("Closed the turn-in window that was in the way.");
+                    supplyOpenSince = null;
+                }
+                else if (turningIn && DateTime.UtcNow - progressAt > TimeSpan.FromSeconds(45))
+                {
+                    await Game.Run(() =>
+                    {
+                        SatisfierBridge.Stop();
+                        if (RetainerUi.Ready("SatisfactionSupply")) CloseWindow("SatisfactionSupply");
+                        return true;
+                    }).ConfigureAwait(false);
+                    statuses.Add("Turning in stalled for 45 seconds: stopped Satisfier and closed the turn-in window.");
+                    break;
+                }
                 rankedUp = now.Rank != c.Rank;
                 if (c.DeliveriesLeft - now.DeliveriesLeft >= planned || rankedUp)
                 {
