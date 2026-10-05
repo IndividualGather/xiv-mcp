@@ -169,7 +169,7 @@ internal static class OceanFishingTools
         {
             Name = "fish_ocean_voyages",
             Description = "Fishes ocean voyages one after another until a target (a step of go_ocean_fishing's job; it can take many hours): " +
-                          "waits for each boarding window, boards (board_ocean_fishing), turns on AutoHook's ocean fishing mode with the goal " +
+                          "waits for each boarding window, boards (board_ocean_fishing), walks to the free spot of the railing furthest from other players and faces the ocean, turns on AutoHook's ocean fishing mode with the goal " +
                           "for the voyage (put back afterwards), shows Distant Seas' overlay, waits until the voyage is over, records the " +
                           "points and fish, and closes the results. The player must be a Fisher. Requires 'Ocean fishing' in /xivmcp.",
             InputSchema = $$"""
@@ -490,10 +490,11 @@ internal static class OceanFishingTools
                 await Task.Delay(wait > TimeSpan.FromMinutes(1) ? TimeSpan.FromMinutes(1) : wait < TimeSpan.Zero ? TimeSpan.FromSeconds(1) : wait, ct).ConfigureAwait(false);
             }
             await Board(ruby, steps, ct).ConfigureAwait(false);
+            var placed = await TakeRailSpot(steps, ct).ConfigureAwait(false);
 
             int voyagePoints;
             Dictionary<uint, (int Count, int Points)> caught;
-            var autoHook = await Game.Run(() => AutoHookOcean.Enable(goal)).ConfigureAwait(false);
+            var autoHook = await Game.Run(() => AutoHookOcean.Enable(goal, walkToRailing: !placed)).ConfigureAwait(false);
             var overlay = await Game.Run(() => DistantSeasBridge.Loaded ? DistantSeasBridge.ShowOverlay() : null).ConfigureAwait(false);
             try
             {
@@ -554,6 +555,60 @@ internal static class OceanFishingTools
             fish = target.Fish is { } f ? new { fish = Items.Name(f), caught = caughtTotal.GetValueOrDefault(f) } : null,
             log,
         };
+    }
+
+    /// <summary>
+    /// After the loading screen: walks to the free spot of the railing furthest from the other players and faces the ocean, checking
+    /// again once there in case someone took it meanwhile. False when it can't (no vnavmesh, or no path on the boat): AutoHook then
+    /// walks to the railing itself.
+    /// </summary>
+    private static async Task<bool> TakeRailSpot(List<string> steps, CancellationToken ct)
+    {
+        if (!await WaitFor(() => OnBoat && Svc.Objects.LocalPlayer is not null && !Svc.Condition[ConditionFlag.BetweenAreas], TimeSpan.FromSeconds(60), ct).ConfigureAwait(false))
+            return false;
+        await Task.Delay(3000, ct).ConfigureAwait(false); // let the other passengers appear
+        if (!Navigation.VnavmeshLoaded || !await WaitFor(() => Navigation.NavReady, TimeSpan.FromSeconds(20), ct).ConfigureAwait(false))
+        {
+            steps.Add("No path on the boat: AutoHook walks to the railing.");
+            return false;
+        }
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var spot = await Game.Run(() =>
+            {
+                var me = Svc.Objects.LocalPlayer!;
+                var others = Svc.Objects.OfType<Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter>()
+                    .Where(p => p.GameObjectId != me.GameObjectId).Select(p => p.Position);
+                return Railing.FreeSpot(me.Position, others);
+            }).ConfigureAwait(false);
+            if (await Game.Run(() => Game.DistanceToPlayer(spot.Position) ?? 99).ConfigureAwait(false) > 0.4f)
+            {
+                if (!await Game.Run(() => Navigation.MoveCloseTo(spot.Position, 0.2f)).ConfigureAwait(false))
+                {
+                    steps.Add("No path on the boat: AutoHook walks to the railing.");
+                    return false;
+                }
+                await Task.Delay(500, ct).ConfigureAwait(false);
+                await WaitFor(() => !Navigation.PathRunning, TimeSpan.FromSeconds(20), ct).ConfigureAwait(false);
+            }
+            await Game.Run(() => { unsafe { ((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)Svc.Objects.LocalPlayer!.Address)->SetRotation(spot.Facing); } return true; }).ConfigureAwait(false);
+            await Task.Delay(1000, ct).ConfigureAwait(false);
+            // Someone may have walked up to the same spot meanwhile: if so, pick again.
+            var crowded = await Game.Run(() =>
+            {
+                var me = Svc.Objects.LocalPlayer!;
+                return Svc.Objects.OfType<Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter>()
+                    .Any(p => p.GameObjectId != me.GameObjectId && System.Numerics.Vector3.Distance(p.Position, me.Position) < 0.8f);
+            }).ConfigureAwait(false);
+            if (!crowded)
+            {
+                steps.Add(spot.Gap == float.MaxValue ? "At the railing, facing the ocean (nobody else around)."
+                                                     : $"At the railing, facing the ocean, {spot.Gap:0.#} yalms from the nearest player.");
+                return true;
+            }
+        }
+        steps.Add("The railing is crowded: stayed at the freest spot found.");
+        return true;
     }
 
     private static async Task<bool> WaitFor(Func<bool> condition, TimeSpan timeout, CancellationToken ct)

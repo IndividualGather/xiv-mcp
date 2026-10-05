@@ -73,12 +73,15 @@ internal static class AutoHookOcean
         return Enum.GetNames(type);
     }
 
-    /// <summary>Turns AutoOceanFish on with <paramref name="goal"/> until disposed.</summary>
-    public static IDisposable Enable(string goal)
+    /// <summary>
+    /// Turns AutoOceanFish on with <paramref name="goal"/> until disposed. <paramref name="walkToRailing"/> false when XIV MCP has
+    /// already placed the player at a free spot of the railing.
+    /// </summary>
+    public static IDisposable Enable(string goal, bool walkToRailing)
     {
         var type = Plugin.Assembly.GetTypes().FirstOrDefault(t => t.Name == "OceanFishGoalKind") ?? throw Plugin.Unsupported("OceanFishGoalKind");
         if (!Enum.TryParse(type, goal, true, out var value))
             throw new Mcp.ToolException($"AutoHook has no ocean fishing goal '{goal}'. Goals: {string.Join(", ", Enum.GetNames(type))}.");
-        return Plugin.Override(Config, ("AutoOceanFish", true), ("AutoOceanFishGoal", value));
+        return Plugin.Override(Config, ("AutoOceanFish", true), ("AutoOceanFishGoal", value), ("AOF_WalkToRailing", walkToRailing));
     }
 }

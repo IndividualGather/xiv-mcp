@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using XivMcp.Integrations;
 using XivMcp.Permissions;
 using XivMcp.OceanFishing;
@@ -190,5 +192,40 @@ public class OceanFishingModuleTests
         var group = PermissionCatalog.Find("distantseas")!;
         Assert.Equal("Ocean fishing", group.Title);
         Assert.True(group.Standalone);
+    }
+}
+
+public class RailingTests
+{
+    private static readonly System.Numerics.Vector3 Middle = new(0, 6.7f, -4);
+
+    [Fact]
+    public void Alone_on_the_boat_the_nearest_railing_spot_is_taken()
+    {
+        var spot = Railing.FreeSpot(new System.Numerics.Vector3(5, 6.7f, 0), []);
+        Assert.Equal(7.1f, spot.Position.X);
+        Assert.Equal(0f, spot.Position.Z);
+        Assert.Equal(1.5f, spot.Facing);
+    }
+
+    [Fact]
+    public void A_spot_keeps_its_distance_from_other_players()
+    {
+        var crowd = Enumerable.Range(0, 30).Select(i => new System.Numerics.Vector3(7.1f, 6.7f, -12 + i * 0.5f)).ToList();
+        var spot = Railing.FreeSpot(Middle, crowd);
+        Assert.Equal(-7.1f, spot.Position.X); // the port railing is full
+        Assert.Equal(-1.5f, spot.Facing);
+        Assert.True(spot.Gap >= 3);
+    }
+
+    [Fact]
+    public void When_the_boat_is_full_the_spot_with_the_most_room_is_taken()
+    {
+        var players = new List<System.Numerics.Vector3>();
+        foreach (var x in new[] { 7.1f, -7.1f })
+            for (var z = -12f; z <= 3.5f; z += 1f) players.Add(new(x, 6.7f, z));
+        var spot = Railing.FreeSpot(Middle, players);
+        Assert.True(spot.Gap >= 0.5f - 0.01f);
+        Assert.DoesNotContain(players, p => p.X == spot.Position.X && p.Z == spot.Position.Z);
     }
 }
