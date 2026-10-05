@@ -206,6 +206,17 @@ internal static class CustomDeliveryTools
         var window = await Game.Run(SatisfierBridge.KeepWindowOpen).ConfigureAwait(false);
         try
         {
+            if (chosen == DeliveryKind.Gather)
+            {
+                // A Questionable run left over from an earlier delivery can start at its turn-in step and wait there: reset it first.
+                await Game.Run(() =>
+                {
+                    try { Svc.PluginInterface.GetIpcSubscriber<string, bool>("Questionable.Stop").InvokeFunc("XIV MCP"); }
+                    catch (Exception ex) { Svc.Log.Debug($"[MCP] Questionable.Stop: {ex.Message}"); }
+                    return true;
+                }).ConfigureAwait(false);
+                await Task.Delay(500, ct).ConfigureAwait(false);
+            }
             await Game.Run(() => { SatisfierBridge.Start(c, chosen); return true; }).ConfigureAwait(false);
             await Task.Delay(1000, ct).ConfigureAwait(false);
             var deadline = DateTime.UtcNow.AddHours(2);
