@@ -24,6 +24,18 @@ internal sealed class ForeignPlugin(string internalName, string displayName)
 
     public bool Loaded => Plugin() is not null;
 
+    /// <summary>The folder the plugin's DLL was installed to (its Assembly.Location can be empty when loaded from memory).</summary>
+    public string? Directory
+    {
+        get
+        {
+            var local = DalamudInternals.InstalledPlugins().FirstOrDefault(p => DalamudInternals.InternalName(p) == internalName && DalamudInternals.IsLoaded(p));
+            if (local is not null && DalamudInternals.Prop(local, "DllFile") is System.IO.FileInfo dll) return dll.DirectoryName;
+            var location = Plugin()?.GetType().Assembly.Location;
+            return string.IsNullOrEmpty(location) ? null : System.IO.Path.GetDirectoryName(location);
+        }
+    }
+
     public Assembly Assembly =>
         Plugin()?.GetType().Assembly ?? throw new ToolException($"{displayName} is not loaded. Install or enable it in the plugin installer.");
 

@@ -25,13 +25,14 @@ internal static class DistantSeasBridge
     {
         if (spots is not null) return spots;
         if (!Loaded) return null;
-        var dir = Path.GetDirectoryName(Plugin.Assembly.Location);
+        var dir = Plugin.Directory;
         if (dir is null) return null;
         var all = new List<OceanSpotData>();
         foreach (var file in new[] { "indigo.json", "ruby.json" })
         {
-            var path = Path.Combine(dir, "Data", file);
-            if (!File.Exists(path)) continue;
+            // Installed builds keep the files next to the DLL; the source tree has them under Data.
+            var path = new[] { Path.Combine(dir, file), Path.Combine(dir, "Data", file) }.FirstOrDefault(File.Exists);
+            if (path is null) continue;
             try { all.AddRange(OceanFishData.Parse(File.ReadAllText(path))); }
             catch (Exception ex) { Svc.Log.Warning($"[MCP] Could not read Distant Seas' {file}: {ex.Message}"); }
         }
