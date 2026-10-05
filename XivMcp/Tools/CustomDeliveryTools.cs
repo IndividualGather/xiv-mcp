@@ -208,6 +208,8 @@ internal static class CustomDeliveryTools
             while (await Game.Run(() => SatisfierBridge.Running).ConfigureAwait(false))
             {
                 if (DateTime.UtcNow > deadline) throw new ToolException($"Satisfier is still busy after two hours ({statuses.LastOrDefault()}).");
+                // A rank-up shows its rewards in a window that waits for Accept; Satisfier doesn't press it.
+                if (await Game.Run(AcceptRankUp).ConfigureAwait(false)) statuses.Add("Accepted the rank-up rewards.");
                 var status = await Game.Run(() => SatisfierBridge.Status).ConfigureAwait(false);
                 if (status.Length > 0 && statuses.LastOrDefault() != status)
                 {
@@ -242,6 +244,14 @@ internal static class CustomDeliveryTools
             deliveriesLeftThisWeek = await Game.Run(SatisfierBridge.Allowances).ConfigureAwait(false),
             steps = statuses,
         };
+    }
+
+    /// <summary>Presses Accept on the rank-up rewards window (SatisfactionSupplyResult) when it is open.</summary>
+    private static unsafe bool AcceptRankUp()
+    {
+        if (!RetainerUi.Ready("SatisfactionSupplyResult")) return false;
+        var addon = (FFXIVClientStructs.FFXIV.Component.GUI.AtkUnitBase*)RetainerUi.Ptr("SatisfactionSupplyResult").Address;
+        return VentureTools.Click(addon, addon->GetComponentButtonById(36));
     }
 
     private static SatisfierBridge.Client Find(string name)
