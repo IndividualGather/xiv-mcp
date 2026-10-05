@@ -197,8 +197,9 @@ internal static class CustomDeliveryTools
         }
 
         var item = Items.Name(c.Items[(int)chosen]);
-        var before = c.Remaining[(int)chosen];
+        var planned = c.Remaining[(int)chosen];
         var statuses = new List<string>();
+        var rankedUp = false;
         var window = await Game.Run(SatisfierBridge.KeepWindowOpen).ConfigureAwait(false);
         try
         {
@@ -216,6 +217,21 @@ internal static class CustomDeliveryTools
                     statuses.Add(status);
                     JobManager.Instance?.StepProgress("deliver_custom_delivery", status);
                 }
+                // Done once the planned deliveries are in. A rank-up brings new requests, which Satisfier would wait for in the
+                // turn-in window without the items: stop it there too.
+                var now = await Game.Run(() => Find(c.Name)).ConfigureAwait(false);
+                rankedUp = now.Rank != c.Rank;
+                if (c.DeliveriesLeft - now.DeliveriesLeft >= planned || rankedUp)
+                {
+                    await Game.Run(() =>
+                    {
+                        SatisfierBridge.Stop();
+                        if (RetainerUi.Ready("SatisfactionSupply")) CloseWindow("SatisfactionSupply");
+                        return true;
+                    }).ConfigureAwait(false);
+                    if (rankedUp) statuses.Add($"{c.Name} ranked up: new requests.");
+                    break;
+                }
                 await Task.Delay(1000, ct).ConfigureAwait(false);
             }
         }
@@ -229,8 +245,9 @@ internal static class CustomDeliveryTools
             await Game.Run(() => { window.Dispose(); return true; }).ConfigureAwait(false);
         }
 
+        // What went in: the client's deliveries left this week (Satisfier's per-request count starts over after a rank-up).
         var after = await Game.Run(() => Find(c.Name)).ConfigureAwait(false);
-        var delivered = before - after.Remaining[(int)chosen];
+        var delivered = c.DeliveriesLeft - after.DeliveriesLeft;
         if (delivered <= 0)
             throw new ToolException($"Satisfier stopped without delivering {item} to {c.Name}. Its last step: {statuses.LastOrDefault() ?? "none"}. " +
                                     "Satisfier's window (/vsatisfy) and the Dalamud log say more.");
@@ -240,10 +257,18 @@ internal static class CustomDeliveryTools
             kind = chosen.ToString().ToLowerInvariant(),
             item,
             delivered,
-            stillTakes = after.Remaining[(int)chosen],
+            rank = after.Rank,
+            rankedUp = rankedUp ? $"{c.Name} reached rank {after.Rank}: new requests. Plan the rest again (get_custom_deliveries, do_custom_deliveries)." : null,
+            deliveriesLeft = after.DeliveriesLeft,
             deliveriesLeftThisWeek = await Game.Run(SatisfierBridge.Allowances).ConfigureAwait(false),
             steps = statuses,
         };
+    }
+
+    private static unsafe void CloseWindow(string name)
+    {
+        var addon = (FFXIVClientStructs.FFXIV.Component.GUI.AtkUnitBase*)RetainerUi.Ptr(name).Address;
+        if (addon != null) addon->Close(true);
     }
 
     /// <summary>Presses Accept on the rank-up rewards window (SatisfactionSupplyResult) when it is open.</summary>
