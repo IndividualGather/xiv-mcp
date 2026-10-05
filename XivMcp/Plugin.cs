@@ -128,6 +128,7 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(SaucyTools.Create(() => jobs!, () => Server?.LastClient))
             .Concat(AutoHookTools.Create(Config, () => jobs!, () => Server?.LastClient))
             .Concat(QuestionableTools.Create(() => jobs!, () => Server?.LastClient))
+            .Concat(OceanFishingTools.Create(Config, () => jobs!, () => Server?.LastClient))
             .Concat(XivMcpWindowTools.Create(() => configWindow, () => overlayWindow, () => jobs, pluginInterface.IsDev))
             .ToList();
         // Tools that drive one other plugin belong to that plugin's integration (same provider + capability contract as third-party tools).

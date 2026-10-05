@@ -298,7 +298,7 @@ internal static class AutoHookTools
         if (!Loaded) throw new ToolException("AutoHook is not loaded.");
     }
 
-    private static void SetAutoHook(bool on) =>
+    internal static void SetAutoHook(bool on) =>
         Svc.PluginInterface.GetIpcSubscriber<bool, object>("AutoHook.SetPluginState").InvokeAction(on);
 
     private static unsafe void UseAction(uint id) => ActionManager.Instance()->UseAction(ActionType.Action, id);

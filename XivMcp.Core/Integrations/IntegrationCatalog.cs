@@ -27,7 +27,22 @@ public static class IntegrationCatalog
 
         /// <summary>Plugins that do a part of a tool's work, which the tool also does without (walking, teleporting), like core tools' helpers.</summary>
         public IReadOnlyDictionary<string, ToolRequirement[]> Helpers { get; init; } = new Dictionary<string, ToolRequirement[]>();
+
+        /// <summary>
+        /// Other plugins a tool cannot work without, besides its own (ocean fishing's voyages need AutoHook to fish): the tool is only
+        /// offered while all of them are loaded, also when it is <see cref="Standalone"/>.
+        /// </summary>
+        public IReadOnlyDictionary<string, ToolRequirement[]> Requires { get; init; } = new Dictionary<string, ToolRequirement[]>();
     }
+
+    private static ToolRequirement OceanData =>
+        new("DistantSeas", Need.Improves, "Its community data names the fish worth going for at each stop.", "Only the route and its stops.");
+
+    private static ToolRequirement OceanOverlay =>
+        new("DistantSeas", Need.Improves, "Shows its overlay during the voyage: missions, intuition and spectral timers.", "The game's own voyage display.");
+
+    private static ToolRequirement OceanFisher =>
+        new("AutoHook", Need.Needed, "Fishes the voyage: moves to the railing, casts, and switches bait for each stop and spectral current.");
 
     private static ToolRequirement[] Travel =>
     [
@@ -108,6 +123,30 @@ public static class IntegrationCatalog
                 ["complete_fashion_report"] = Travel,
             },
         },
+        new("DistantSeas", "Ocean fishing", "Ocean fishing voyages: the schedule and routes, boarding at the ferry docks, and a job that fishes voyages with AutoHook until a target.", new Dictionary<string, string[]>
+        {
+            ["get_ocean_fishing_schedule"] = [],
+            ["get_ocean_fishing_status"] = [],
+            ["board_ocean_fishing"] = [MoveCharacter, GameUi],
+            ["set_ocean_fishing_alarm"] = [EditSettings],
+            ["go_ocean_fishing"] = [MoveCharacter, GameUi, SpendGil, EditSettings],
+            ["fish_ocean_voyages"] = [MoveCharacter, GameUi, EditSettings],
+        })
+        {
+            Standalone = new HashSet<string> { "get_ocean_fishing_schedule", "get_ocean_fishing_status", "board_ocean_fishing", "go_ocean_fishing", "fish_ocean_voyages" },
+            Helpers = new Dictionary<string, ToolRequirement[]>
+            {
+                ["get_ocean_fishing_schedule"] = [OceanData],
+                ["board_ocean_fishing"] = Travel,
+                ["go_ocean_fishing"] = [.. Travel, OceanData, OceanOverlay],
+                ["fish_ocean_voyages"] = [.. Travel, OceanOverlay],
+            },
+            Requires = new Dictionary<string, ToolRequirement[]>
+            {
+                ["go_ocean_fishing"] = [OceanFisher],
+                ["fish_ocean_voyages"] = [OceanFisher],
+            },
+        },
         new("AutoHook", "AutoHook", "Fishing with AutoHook: presets built for the fish you are after, fishing until it is caught, and a job that does it all.", new Dictionary<string, string[]>
         {
             ["set_autohook_preset"] = [EditSettings],
@@ -134,7 +173,9 @@ public static class IntegrationCatalog
 
     /// <summary>Whether a tool of an integration is offered: its plugin, or one of the plugins that also make it available, is loaded.</summary>
     public static bool IsAvailable(string toolName, Func<string, bool> isLoaded) =>
-        For(toolName) is not { } i || i.Standalone.Contains(toolName) || isLoaded(i.PluginId) || i.AlsoWith.TryGetValue(toolName, out var others) && others.Any(isLoaded);
+        For(toolName) is not { } i
+        || (i.Standalone.Contains(toolName) || isLoaded(i.PluginId) || i.AlsoWith.TryGetValue(toolName, out var others) && others.Any(isLoaded))
+           && (!i.Requires.TryGetValue(toolName, out var required) || required.All(r => isLoaded(r.PluginId)));
 
     /// <summary>The integration a tool belongs to, if any.</summary>
     public static Integration? For(string toolName) => All.FirstOrDefault(i => i.Tools.ContainsKey(toolName));

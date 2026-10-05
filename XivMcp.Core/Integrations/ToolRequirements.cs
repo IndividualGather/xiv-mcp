@@ -76,12 +76,17 @@ public static class ToolRequirements
     public static IReadOnlyList<ToolRequirement> For(string tool)
     {
         if (IntegrationCatalog.For(tool) is { } own && own.Standalone.Contains(tool))
-            return own.Helpers.TryGetValue(tool, out var standaloneHelpers) ? standaloneHelpers : [];
+            return
+            [
+                .. own.Requires.TryGetValue(tool, out var required) ? required : [],
+                .. own.Helpers.TryGetValue(tool, out var standaloneHelpers) ? standaloneHelpers : [],
+            ];
         if (IntegrationCatalog.For(tool) is { } integration)
             return
             [
                 new ToolRequirement(integration.PluginId, Need.Needed, $"Does the work: {integration.Summary}",
                     Or: integration.AlsoWith.TryGetValue(tool, out var others) ? others : null),
+                .. integration.Requires.TryGetValue(tool, out var alsoNeeded) ? alsoNeeded : [],
                 .. integration.Helpers.TryGetValue(tool, out var helpers) ? helpers : [],
             ];
         return Core.TryGetValue(tool, out var needs) ? needs : [];
