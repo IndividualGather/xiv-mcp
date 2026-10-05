@@ -187,9 +187,17 @@ internal static class SubmarineTools
     {
         if (await Game.Run(() => Vessels().Count > 0).ConfigureAwait(false)) return;
         if (!await Game.Run(() => MenuHas(SubmersibleManagement)).ConfigureAwait(false))
+        {
             await Game.Run(InteractWithPanel).ConfigureAwait(false);
-        if (!await GameWindows.WaitFor(() => Vessels().Count > 0, TimeSpan.FromSeconds(10), ct).ConfigureAwait(false))
-            throw new ToolException("The voyage control panel shows no submersibles: the free company may have none registered yet.");
+            if (!await GameWindows.WaitFor(() => MenuHas(SubmersibleManagement), TimeSpan.FromSeconds(8), ct).ConfigureAwait(false))
+                throw new ToolException("The voyage control panel's menu did not open.");
+        }
+        // Choosing "Submersible management" makes the game load the list.
+        await Game.Run(() => Pick(SubmersibleManagement)).ConfigureAwait(false);
+        var loaded = await GameWindows.WaitFor(() => Vessels().Count > 0, TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+        await Leave(ct).ConfigureAwait(false);
+        if (!loaded) throw new ToolException("The voyage control panel shows no submersibles: the free company may have none registered yet.");
+        await Task.Delay(800, ct).ConfigureAwait(false);
     }
 
     private static Vessel FindVessel(string name)
