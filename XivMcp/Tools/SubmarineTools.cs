@@ -320,6 +320,14 @@ internal static class SubmarineTools
     /// <summary>Picks the vessel from the panel's list, chooses Recall and confirms, and waits until it is back.</summary>
     private static async Task RecallVessel(Vessel vessel, List<string> log, CancellationToken ct)
     {
+        // The confirmation may already be open (an earlier attempt): go straight to it.
+        if (!await Game.Run(() => GameWindows.Ready("AirShipExplorationDetail")).ConfigureAwait(false))
+            await ChooseRecall(vessel, ct).ConfigureAwait(false);
+        await ConfirmRecall(vessel, log, ct).ConfigureAwait(false);
+    }
+
+    private static async Task ChooseRecall(Vessel vessel, CancellationToken ct)
+    {
         await Game.RunLoggedIn(() => { InventoryActionTools.EnsureNotBusy(); return true; }).ConfigureAwait(false);
         var inList = await Game.Run(() => RetainerUi.MenuEntries()?.Any(e => e.Contains(vessel.Name, StringComparison.Ordinal)) == true).ConfigureAwait(false);
         if (!inList)
@@ -345,15 +353,22 @@ internal static class SubmarineTools
             return false;
         }).ConfigureAwait(false);
         if (!picked) throw new ToolException($"{vessel.Name}'s menu has no Recall entry.");
+    }
 
-        // "Recall the voyage?" and "…any items used will not be returned. Proceed?": confirm each, until it is back.
+    /// <summary>
+    /// The voyage details window asks "Recalling your vessel will cancel the current voyage… Proceed?" with Recall (its first button,
+    /// as Deploy is when sending out) and Cancel; a yes/no may follow. Confirm until the vessel is back.
+    /// </summary>
+    private static async Task ConfirmRecall(Vessel vessel, List<string> log, CancellationToken ct)
+    {
         var deadline = DateTime.UtcNow.AddSeconds(15);
         while (DateTime.UtcNow < deadline)
         {
             ct.ThrowIfCancellationRequested();
-            if (await Game.Run(() => GameWindows.Ready("SelectYesno")).ConfigureAwait(false))
+            var window = await Game.Run(() => GameWindows.Ready("AirShipExplorationDetail") ? "AirShipExplorationDetail" : GameWindows.Ready("SelectYesno") ? "SelectYesno" : null).ConfigureAwait(false);
+            if (window is not null)
             {
-                await Game.Run(() => Fire("SelectYesno", 0)).ConfigureAwait(false);
+                await Game.Run(() => Fire(window, 0)).ConfigureAwait(false);
                 log.Add("Confirmed the recall.");
                 await Task.Delay(800, ct).ConfigureAwait(false);
                 continue;
