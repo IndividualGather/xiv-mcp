@@ -113,6 +113,7 @@ public static class ToolSummaries
         ["request_spending_approval"] = "Asks you to allow spending up to an amount of one currency, so later purchases need no more asking.",
         ["revoke_approval"] = "Withdraws a spending approval you have given.",
         ["sell_item"] = "Lists an item through a retainer, just below the cheapest offer. Prices far too low are refused.",
+        ["sell_to_vendor"] = "Sells items from your bags to a merchant for gil, while the shop is open.",
         ["reprice_listings"] = "Undercuts cheaper offers on your listings. Cuts of more than 30 percent are skipped.",
         ["get_sale_history"] = "Calls a retainer at the summoning bell to look at their recent sales.",
 

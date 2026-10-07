@@ -17,6 +17,7 @@ icon: Coins
 | `get_sale_history` | A retainer's last 20 sales (item, quantity, price, buyer, date), at the bell | Market & purchases |
 | `buy_from_market_board` | Walks to a market board in the current zone, reads the listings and buys the cheapest ones until the quantity is reached, never above your price per item. Above your gil limit it asks first, or uses a standing approval. | Market & purchases |
 | `sell_item` | Puts a stack up for sale, just below the cheapest offer, unless you give a price | Market & purchases |
+| `sell_to_vendor` | Sells items from your bags to a merchant for gil, while its shop is open: whole stacks, all of an item, at most a quantity, or all but what you keep | Market & purchases |
 | `reprice_listings` | Undercuts competing listings where someone else is cheaper. Big cuts are skipped and reported; a dry run only reports. | Market & purchases |
 
 **Online lookups** is denied by default, because those tools send requests to websites. Allow it in `/xivmcp` → **Modules** to get item sources and market prices.
@@ -31,3 +32,7 @@ icon: Coins
 ## Selling and undercutting
 
 Undercuts follow **Penny Pincher**'s settings when it is installed (amount, rounding, minimum, HQ, never your own retainers), and are 1 gil otherwise. A price below half the recent Universalis average is refused, unless you allow it.
+
+### Selling to a merchant
+
+`sell_to_vendor` sells to an NPC merchant, as the inventory's *Sell* does while a shop is open. Open a merchant's shop first. It sells whole stacks, the smallest first, so the big stacks are what you keep. Merchants pay little, often 1 to 10 gil each, so check the market board first. Items merchants do not buy are left alone, and what you sold stays in the shop's buyback tab until you close the shop.

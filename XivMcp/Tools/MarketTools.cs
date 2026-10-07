@@ -241,7 +241,8 @@ internal static class MarketTools
                 }
                 finally
                 {
-                    await Game.Run(() => { CloseAddon("RetainerSell"); return true; }).ConfigureAwait(false);
+                    // However the sale ended: no sell window or market list is left in front of the retainer's menu.
+                    await Game.Run(() => { CloseAddon("RetainerSell"); CloseAddon("ItemSearchResult"); CloseAddon("RetainerSellList"); return true; }).ConfigureAwait(false);
                     InventoryActionTools.Gate.Release();
                 }
             },
@@ -384,13 +385,21 @@ internal static class MarketTools
             if (competitor is null)
             {
                 if (currentPrice is { } keep) return new { action = "kept", price = keep, reason = "no competing listing" };
-                throw new ToolException("No competing listing on the market board to undercut; give 'price'.");
+                // Nobody else sells it: the recent average sale price, when online lookups are allowed.
+                var average = config.AllowOnlineData ? await RecentAverage(itemId, hq, ct).ConfigureAwait(false) : null;
+                if (average is not { } avgPrice || avgPrice < 1)
+                    throw new ToolException("No competing listing on the market board to undercut, and no recent sales to go by; give 'price'.");
+                newPrice = (long)Math.Round(avgPrice);
+                steps.Add($"Nobody else lists it; using the recent average sale price, {newPrice:N0} gil.");
             }
-            cheapest = competitor.PricePerUnit;
-            cheapestRetainer = competitor.RetainerName;
-            if (currentPrice is { } cur && cur <= cheapest && !rules.UndercutSelf)
-                return new { action = "kept", price = cur, reason = $"already the cheapest (next: {cheapest:N0} by {cheapestRetainer})" };
-            newPrice = rules.Apply(competitor.PricePerUnit);
+            else
+            {
+                cheapest = competitor.PricePerUnit;
+                cheapestRetainer = competitor.RetainerName;
+                if (currentPrice is { } cur && cur <= cheapest && !rules.UndercutSelf)
+                    return new { action = "kept", price = cur, reason = $"already the cheapest (next: {cheapest:N0} by {cheapestRetainer})" };
+                newPrice = rules.Apply(competitor.PricePerUnit);
+            }
         }
 
         // Guards against dumping.
@@ -435,6 +444,13 @@ internal static class MarketTools
         return new { action = currentPrice is null ? "listed" : "repriced", from = currentPrice, to = newPrice, cheapest, cheapestRetainer };
     }
 
+    private static async Task<double?> RecentAverage(uint itemId, bool hq, CancellationToken ct)
+    {
+        var world = await Game.Run(() => Universalis.HomeScopes().World).ConfigureAwait(false);
+        var market = await Universalis.Get([itemId], world, 0, 10, ct).ConfigureAwait(false);
+        return market.TryGetValue(itemId, out var m) ? (hq ? m.AveragePriceHq : m.AveragePriceNq) : null;
+    }
+
     /// <summary>Clicks "Compare prices" in the open sell window and waits for the market board listings the server sends.</summary>
     private static async Task<List<IMarketBoardItemListing>> ComparePrices(uint itemId, CancellationToken ct)
     {
@@ -448,6 +464,7 @@ internal static class MarketTools
             if (offers.ItemListings.Count == 0 || offers.ItemListings[0].ItemId == itemId) received.TrySetResult(offers.ItemListings.ToList());
         }
         Svc.MarketBoard.OfferingsReceived += Handler;
+        using var feedback = new GameCommands.Feedback();
         try
         {
             var clicked = await Game.Run(() =>
@@ -460,9 +477,21 @@ internal static class MarketTools
             }).ConfigureAwait(false);
             if (!clicked) throw new ToolException("Could not click \"Compare prices\".");
             lastCompare = DateTime.UtcNow;
-            var done = await Task.WhenAny(received.Task, Task.Delay(TimeSpan.FromSeconds(10), ct)).ConfigureAwait(false);
-            if (done != received.Task) throw new ToolException("The market board did not answer \"Compare prices\" (the server may be throttling searches; retry shortly).");
-            return received.Task.Result;
+            // Nobody selling: the server sends no offerings, the search window just shows no results. Tell that from a throttled search
+            // (the game says "Please wait and try your search again").
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+            DateTime? windowSince = null;
+            while (DateTime.UtcNow < deadline)
+            {
+                if (received.Task.IsCompleted) return received.Task.Result;
+                if (feedback.Messages.Any(m => m.Contains("Please wait", StringComparison.OrdinalIgnoreCase)))
+                    throw new ToolException("The market board is throttling searches (\"Please wait and try your search again\"); retry shortly.");
+                windowSince = await Game.Run(() => GameWindows.Ready("ItemSearchResult")).ConfigureAwait(false) ? windowSince ?? DateTime.UtcNow : null;
+                if (DateTime.UtcNow - windowSince > TimeSpan.FromSeconds(3)) return [];
+                await Task.Delay(250, ct).ConfigureAwait(false);
+            }
+            if (received.Task.IsCompleted) return received.Task.Result;
+            throw new ToolException("The market board did not answer \"Compare prices\" (the server may be throttling searches; retry shortly).");
         }
         finally
         {

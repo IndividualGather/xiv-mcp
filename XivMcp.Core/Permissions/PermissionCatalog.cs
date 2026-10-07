@@ -78,7 +78,7 @@ public static class PermissionCatalog
         ["market"] =
         [
             "get_market_listings", "get_sales", "list_approvals",
-            "buy_item", "buy_from_market_board", "request_spending_approval", "revoke_approval", "sell_item", "reprice_listings", "get_sale_history",
+            "buy_item", "buy_from_market_board", "request_spending_approval", "revoke_approval", "sell_item", "sell_to_vendor", "reprice_listings", "get_sale_history",
         ],
         ["ui_editing"] = ["get_macros", "list_waymark_presets", "get_waymark_preset", "set_macro", "clear_macro", "set_waymark_preset"],
         ["online"] = ["get_item_sources", "get_market_prices", "find_fish", "get_fashion_report"],

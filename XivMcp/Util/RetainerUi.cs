@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Memory;
@@ -116,6 +117,14 @@ internal static class RetainerUi
         if (active is not null && active != name) throw new ToolException($"Retainer {active} opened instead of {name}; aborting.");
         if (state.Throttled) return false;
 
+        // Market windows left open (an earlier sale that stopped halfway) hide the retainer's menu: close them first.
+        if (MarketWindows.FirstOrDefault(Ready) is { } market)
+        {
+            Addon(market)->Close(true);
+            state.Acted();
+            return false;
+        }
+
         // After selecting from the list, the retainer menu belongs to the retainer we selected.
         if ((active == name || (active is null && state.LastAction != DateTime.MinValue && !RetainerListOpen)) && Ready("SelectString"))
         {
@@ -140,6 +149,9 @@ internal static class RetainerUi
     }
 
     /// <summary>One framework tick of closing a retainer. Returns true once back at the retainer list (or nothing is open).</summary>
+    /// <summary>Market windows over a retainer's menu, the innermost first.</summary>
+    private static readonly string[] MarketWindows = ["ItemSearchResult", "ItemHistory", "RetainerSell", "RetainerSellList"];
+
     private static unsafe bool CloseStep(StepState state)
     {
         // Done once no retainer window is left AND we are either back at the retainer list or no longer at the bell.
@@ -148,7 +160,13 @@ internal static class RetainerUi
             (RetainerListOpen || !AtBell)) return true;
         if (state.Throttled) return false;
 
-        if (InventoryOpen)
+        // The market windows (a retainer's sale list, a price being set, the price comparison) sit in front of the retainer's menu.
+        if (MarketWindows.FirstOrDefault(Ready) is { } market)
+        {
+            Addon(market)->Close(true);
+            state.Acted();
+        }
+        else if (InventoryOpen)
         {
             foreach (var addon in InventoryAddons)
                 if (Ready(addon)) Addon(addon)->Close(true);
