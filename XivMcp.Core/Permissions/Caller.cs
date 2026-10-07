@@ -18,4 +18,9 @@ public sealed record Caller(string Id, string Name, ToolProvider? Plugin = null)
     public static Caller ForPlugin(ToolProvider plugin) => new($"plugin:{plugin.Id}", plugin.DisplayName, plugin);
 
     public bool IsPlugin => Plugin is not null;
+
+    /// <summary>
+    /// Whose standing approvals this caller may use: the assistant's (in chat or its jobs, whatever its client says) or one plugin's.
+    /// </summary>
+    public string ApprovalOwner => IsPlugin ? Id : "assistant";
 }

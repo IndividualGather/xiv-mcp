@@ -91,7 +91,7 @@ internal static class MarketBoardTools
         Approvals.Approval? approval = null;
         if (args.String("approval") is { } approvalId)
         {
-            try { approval = Approvals.Get(approvalId, item.RowId); }
+            try { approval = Approvals.Get(approvalId, item.RowId, args.Caller?.ApprovalOwner ?? "assistant"); }
             catch (ToolException) { await Game.Run(CloseMarketBoard).ConfigureAwait(false); throw; }
         }
         if (approval is null && config.AskAboveGil > 0 && total > config.AskAboveGil)

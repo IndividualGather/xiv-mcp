@@ -110,6 +110,19 @@ public class CallerTests
     }
 
     [Fact]
+    public async Task The_tool_learns_who_called_it_and_whose_approvals_it_may_use()
+    {
+        store.Core.Set("game_navigation", Access.Write, PolicyMode.Allow);
+        EnablePlugin(p => p.Modes[Capabilities.MoveCharacter] = PolicyMode.Allow);
+        Caller? seen = null;
+        var tool = new McpTool { Name = "navigate_to", Description = "d", ReadOnly = false, Handler = (a, _) => { seen = a.Caller; return Task.FromResult<object?>(null); } };
+        await Gate().InvokeAsync(tool, Args(), default, caller: Caller.Assistant("claude-code 2.1"));
+        Assert.Equal("assistant", seen!.ApprovalOwner);
+        await Gate().InvokeAsync(tool, Args(), default, inJob: true, caller: FromPlugin);
+        Assert.Equal("plugin:HelloMcp", seen!.ApprovalOwner);
+    }
+
+    [Fact]
     public async Task Calls_without_a_caller_are_the_assistant_s()
     {
         store.Core.Set("game_navigation", Access.Write, PolicyMode.Allow);

@@ -96,6 +96,9 @@ public sealed class ToolArgs(JsonObject? args)
     /// <summary>The arguments as sent by the client.</summary>
     public JsonObject Raw => args;
 
+    /// <summary>Who asked for the call (set by the permission gate): tools that hand out or use approvals check it.</summary>
+    public XivMcp.Permissions.Caller? Caller { get; set; }
+
     public JsonNode? Node(string name) => args[name];
 
     /// <summary>An array argument; also one sent as a JSON string (clients whose copy of the schema predates the parameter do that).</summary>

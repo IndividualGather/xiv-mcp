@@ -27,6 +27,9 @@ internal static class Approvals
         public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
         public bool Revoked { get; set; }
 
+        /// <summary>Who may use it: "assistant" or "plugin:&lt;id&gt;" (see Caller.ApprovalOwner). Older approvals (null) are the assistant's.</summary>
+        public string? Owner { get; set; }
+
         public long Remaining => Math.Max(0, MaxAmount - Spent);
         public bool Active => !Revoked && DateTime.UtcNow < ExpiresUtc && Remaining > 0;
     }
@@ -59,23 +62,25 @@ internal static class Approvals
         lock (Sync) return Load().OrderByDescending(a => a.CreatedUtc).Select(Clone).ToList();
     }
 
-    public static Approval Add(string purpose, uint currency, long max, List<uint> items, TimeSpan validFor)
+    public static Approval Add(string purpose, uint currency, long max, List<uint> items, TimeSpan validFor, string owner = "assistant")
     {
         var a = new Approval
         {
             Id = Convert.ToHexString(Guid.NewGuid().ToByteArray())[..8].ToLowerInvariant(), Purpose = purpose, CurrencyId = currency, MaxAmount = max,
-            Items = items, ExpiresUtc = DateTime.UtcNow + validFor,
+            Items = items, ExpiresUtc = DateTime.UtcNow + validFor, Owner = owner,
         };
         lock (Sync) { Load().Add(a); Save(); }
         return Clone(a);
     }
 
     /// <summary>The active approval with that id, if it covers the item. Throws with a reason otherwise.</summary>
-    public static Approval Get(string id, uint itemId)
+    /// <param name="owner">Who wants to use it (Caller.ApprovalOwner): an approval only works for whoever it was made for.</param>
+    public static Approval Get(string id, uint itemId, string owner = "assistant")
     {
         lock (Sync)
         {
             var a = Load().FirstOrDefault(x => x.Id.Equals(id, StringComparison.OrdinalIgnoreCase)) ?? throw new ToolException($"No approval '{id}'.");
+            if (!(a.Owner ?? "assistant").Equals(owner, StringComparison.OrdinalIgnoreCase)) throw new ToolException($"Approval {a.Id} was given to someone else.");
             if (a.Revoked) throw new ToolException($"Approval {a.Id} was revoked in game.");
             if (DateTime.UtcNow >= a.ExpiresUtc) throw new ToolException($"Approval {a.Id} has expired.");
             if (a.Remaining <= 0) throw new ToolException($"Approval {a.Id} is used up ({a.Spent:N0}/{a.MaxAmount:N0} {Items.Name(a.CurrencyId)}).");

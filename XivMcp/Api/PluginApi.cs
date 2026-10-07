@@ -93,14 +93,16 @@ internal sealed class PluginApi : IDisposable
         Func<string, string, string>(P + "FailCall", Guard2(FailCall));
         Func<string, string, string>(P + "ReportProgress", Guard2(ReportProgress));
         Func<string, string, string>(P + "StartJob", Guard2(StartJob));
-        Func<string, string>(P + "GetJob", Guard1(id => Ok(new JsonObject { ["job"] = Job(m => JobManager.Describe(m.Get(id))) })));
-        Func<string, string>(P + "ListJobs", Guard1(owner => Ok(new JsonObject
+        // A plugin sees and controls only its own jobs (the calling plugin, from the call stack).
+        Func<string, string>(P + "GetJob", Guard1(id => Ok(new JsonObject { ["job"] = Job(m => JobManager.Describe(OwnJob(m, id))) })));
+        Func<string, string>(P + "ListJobs", Guard1(_ =>
         {
-            ["jobs"] = Job(m => m.All().Where(j => string.IsNullOrEmpty(owner) || j.Client == ClientName(owner)).Select(JobManager.Describe).ToList()),
-        })));
-        Func<string, string>(P + "PauseJob", Guard1(id => { Manager().Pause(id, "Paused by a plugin."); return Ok(new JsonObject()); }));
-        Func<string, string>(P + "ResumeJob", Guard1(id => { Manager().Resume(id); return Ok(new JsonObject()); }));
-        Func<string, string>(P + "CancelJob", Guard1(id => { Manager().Cancel(id); return Ok(new JsonObject()); }));
+            var mine = ClientName(CallingPlugin());
+            return Ok(new JsonObject { ["jobs"] = Job(m => m.All().Where(j => j.Client == mine).Select(JobManager.Describe).ToList()) });
+        }));
+        Func<string, string>(P + "PauseJob", Guard1(id => { OwnJob(Manager(), id); Manager().Pause(id, "Paused by a plugin."); return Ok(new JsonObject()); }));
+        Func<string, string>(P + "ResumeJob", Guard1(id => { OwnJob(Manager(), id); Manager().Resume(id); return Ok(new JsonObject()); }));
+        Func<string, string>(P + "CancelJob", Guard1(id => { OwnJob(Manager(), id); Manager().Cancel(id); return Ok(new JsonObject()); }));
 
         ready = Svc.PluginInterface.GetIpcProvider<object>(P + "Ready");
         disposing = Svc.PluginInterface.GetIpcProvider<object>(P + "Disposing");
@@ -445,6 +447,18 @@ internal sealed class PluginApi : IDisposable
     // ------------------------------------------------------------------ jobs
 
     private static string ClientName(string owner) => $"plugin:{owner}";
+
+    /// <summary>The plugin making the current IPC call (from the call stack); refused when it can't be told.</summary>
+    private static string CallingPlugin() =>
+        IpcCaller.Find() ?? throw new ToolException("XIV MCP could not tell which plugin made this call; call it from your plugin's own code.");
+
+    /// <summary>The job, if it is the calling plugin's own (started by it); other jobs are not found.</summary>
+    private static JobManager.Job OwnJob(JobManager manager, string id)
+    {
+        var job = manager.Get(id);
+        if (job.Client != ClientName(CallingPlugin())) throw new ToolException($"No job '{id}' of yours.");
+        return job;
+    }
 
     private JobManager Manager() => jobs() ?? throw new ToolException("The job system is not running.");
 

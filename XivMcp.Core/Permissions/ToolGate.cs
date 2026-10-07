@@ -101,6 +101,7 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
     public async Task<object?> InvokeAsync(McpTool tool, ToolArgs args, CancellationToken ct, bool inJob = false, Caller? caller = null)
     {
         caller ??= Caller.Assistant();
+        args.Caller = caller;
         if (tool.Provider.Trust != ProviderTrust.ThirdParty) return await InvokeBuiltInAsync(tool, args, ct, inJob, caller).ConfigureAwait(false);
 
         var provider = tool.Provider;

@@ -141,7 +141,7 @@ internal static class ShopTools
                         Approvals.Approval? approval = null;
                         if (!isGil && args.String("approval") is { } approvalId)
                         {
-                            try { approval = Approvals.Get(approvalId, item.RowId); }
+                            try { approval = Approvals.Get(approvalId, item.RowId, args.Caller?.ApprovalOwner ?? "assistant"); }
                             catch { await CloseShop(ct).ConfigureAwait(false); throw; }
                             steps.Add($"Using standing approval {approval.Id} ({approval.Remaining:N0} {Items.Name(approval.CurrencyId)} left).");
                         }
@@ -239,7 +239,7 @@ internal static class ShopTools
                     $"Valid for {hours} hours; you can revoke it any time in /xivmcp → Jobs.",
                 };
                 await Consent.Require($"Approve spending {Items.Name(currency)}?", details, ConsentTimeout, ct).ConfigureAwait(false);
-                var approval = Approvals.Add(purpose, currency, max, items, TimeSpan.FromHours(hours));
+                var approval = Approvals.Add(purpose, currency, max, items, TimeSpan.FromHours(hours), args.Caller?.ApprovalOwner ?? "assistant");
                 return Approvals.Describe(approval);
             },
         };
