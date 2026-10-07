@@ -24,12 +24,27 @@ internal sealed class PluginDecisions(ToolRegistry registry, IPolicyStore polici
         return RegistrationReview.Check(policies.Get(pluginId), tools, caps);
     }
 
-    /// <summary>Enable (consent to the current registration) or keep disabled (remembered until the registration changes).</summary>
-    public void Decide(string pluginId, bool enable)
+    /// <summary>Called when the player's Enable leaves something registered since unconsented, so it is announced again.</summary>
+    public Action<string>? ChangedSinceShown { get; set; }
+
+    /// <summary>
+    /// Enable or keep disabled (remembered until the registration changes). <paramref name="shown"/> is the registration the player was
+    /// looking at: Enable consents to exactly that, and anything registered since waits for consent again.
+    /// </summary>
+    public void Decide(string pluginId, bool enable, (System.Collections.Generic.List<string> Tools, System.Collections.Generic.List<string> Capabilities)? shown = null)
     {
         var (tools, caps) = Registration(pluginId);
         var policy = policies.Get(pluginId);
-        if (enable) RegistrationReview.Enable(policy, tools, caps);
+        if (enable)
+        {
+            var (seenTools, seenCaps) = shown ?? (tools, caps);
+            var since = RegistrationReview.EnableShown(policy, seenTools, seenCaps, tools, caps);
+            if (since.What != RegistrationReview.Kind.None)
+            {
+                Svc.Log.Warning($"[MCP] {pluginId} registered more while the player was deciding: {string.Join(", ", since.NewTools)}; that waits for consent.");
+                ChangedSinceShown?.Invoke(pluginId);
+            }
+        }
         else
         {
             RegistrationReview.KeepDisabled(policy, tools, caps);
@@ -66,7 +81,8 @@ internal sealed class RegistrationNotifier(PluginDecisions decisions, IPolicySto
 
     private void Announce(string pluginId)
     {
-        var (tools, _) = decisions.Registration(pluginId);
+        var shownRegistration = decisions.Registration(pluginId);
+        var tools = shownRegistration.Tools;
         if (tools.Count == 0) return;
         var review = decisions.Pending(pluginId);
         if (review.What == RegistrationReview.Kind.None) return;
@@ -105,7 +121,8 @@ internal sealed class RegistrationNotifier(PluginDecisions decisions, IPolicySto
         shown[pluginId] = note;
         note.DrawActions += _ =>
         {
-            if (ImGui.Button("Enable")) Close(note, () => decisions.Decide(pluginId, true));
+            // Enable consents to what this notice showed, not to whatever is registered by the time of the click.
+            if (ImGui.Button("Enable")) Close(note, () => decisions.Decide(pluginId, true, shownRegistration));
             ImGui.SameLine();
             if (ImGui.Button("Keep disabled")) Close(note, () => decisions.Decide(pluginId, false));
             ImGui.SameLine();

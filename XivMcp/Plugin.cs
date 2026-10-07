@@ -151,6 +151,7 @@ public sealed class Plugin : IDalamudPlugin
         pluginApi = new XivMcp.Api.PluginApi(registry, policyStore, gate, () => jobs);
         decisions = new PluginDecisions(registry, policyStore, gate, () => Server.NotifyIfToolsChanged());
         var announcer = new RegistrationNotifier(decisions, policyStore, id => configWindow?.ShowThirdParty(id));
+        decisions.ChangedSinceShown = announcer.Registered;
         pluginApi.Registered += announcer.Registered;
 
         configWindow = new ConfigWindow(this);

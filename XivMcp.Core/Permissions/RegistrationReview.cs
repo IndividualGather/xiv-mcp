@@ -65,4 +65,17 @@ public static class RegistrationReview
         policy.AwaitingConsent = false;
         MarkReviewed(policy, tools, declared);
     }
+
+    /// <summary>
+    /// The player clicked Enable on what they were shown: consent to exactly that registration. Anything the plugin registered since
+    /// (between the notice and the click) is not consented to: the plugin waits for consent again, and the result says what is new.
+    /// </summary>
+    public static Result EnableShown(PluginPolicy policy, IEnumerable<string> shownTools, IEnumerable<string> shownCapabilities,
+                                     IEnumerable<string> currentTools, IEnumerable<string> currentCapabilities)
+    {
+        Enable(policy, shownTools, shownCapabilities);
+        var since = Check(policy, currentTools, currentCapabilities);
+        if (since.What != Kind.None) policy.AwaitingConsent = true;
+        return since;
+    }
 }

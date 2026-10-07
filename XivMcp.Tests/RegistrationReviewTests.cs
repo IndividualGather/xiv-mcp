@@ -136,3 +136,28 @@ public class RegistrationReviewTests
         Assert.Equal(RegistrationReview.Kind.Changed, RegistrationReview.Check(policy, [.. Tools, "hellomcp_old"], Declared).What);
     }
 }
+
+public class EnableWhatWasShownTests
+{
+    [Fact]
+    public void Enabling_consents_to_the_registration_shown_and_anything_added_since_waits_again()
+    {
+        var policy = new XivMcp.Permissions.PluginPolicy();
+        var result = XivMcp.Permissions.RegistrationReview.EnableShown(policy,
+            shownTools: ["hello_read"], shownCapabilities: [XivMcp.Permissions.Capabilities.ReadGame],
+            currentTools: ["hello_read", "hello_discard"], currentCapabilities: [XivMcp.Permissions.Capabilities.ReadGame, XivMcp.Permissions.Capabilities.DiscardItems]);
+        Assert.True(policy.Enabled);
+        Assert.True(policy.AwaitingConsent);
+        Assert.DoesNotContain("hello_discard", policy.ReviewedTools);
+        Assert.Equal(["hello_discard"], result.NewTools);
+    }
+
+    [Fact]
+    public void Nothing_added_since_means_simply_enabled()
+    {
+        var policy = new XivMcp.Permissions.PluginPolicy();
+        XivMcp.Permissions.RegistrationReview.EnableShown(policy, ["a"], [], ["a"], []);
+        Assert.True(policy.Enabled);
+        Assert.False(policy.AwaitingConsent);
+    }
+}
