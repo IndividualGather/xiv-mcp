@@ -130,7 +130,7 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(QuestionableTools.Create(() => jobs!, () => Server?.LastClient))
             .Concat(OceanFishingTools.Create(Config, () => jobs!, () => Server?.LastClient))
             .Concat(CustomDeliveryTools.Create(Config, () => jobs!, () => Server?.LastClient))
-            .Concat(XivMcpWindowTools.Create(() => configWindow, () => overlayWindow, () => jobs, pluginInterface.IsDev))
+            .Concat(XivMcpWindowTools.Create(() => configWindow, () => overlayWindow, () => jobs, pluginInterface.IsDev, () => Config.EnableDevTools))
             .ToList();
         // Tools that drive one other plugin belong to that plugin's integration (same provider + capability contract as third-party tools).
         tools = XivMcp.Integrations.IntegrationCatalog.Apply(tools, PluginCompat.IsLoaded).ToList();

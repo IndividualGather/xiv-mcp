@@ -219,8 +219,24 @@ internal sealed partial class ConfigWindow : Window
         if (!tabs) return;
         SubTab(FontAwesomeIcon.History, "Recent activity", DrawActivity);
         SubTab(FontAwesomeIcon.Robot, "Compatibility", DrawCompatibility);
-        SubTab(FontAwesomeIcon.Wrench, $"Tools ({plugin.Server.Tools.Count})", DrawTools);
+        SubTab(FontAwesomeIcon.Wrench, $"Tools ({plugin.Server.Tools.Count})", () => { DrawDevToolsSwitch(); DrawTools(); });
         SubTab(FontAwesomeIcon.Database, "Caches", DrawCaches);
+    }
+
+    /// <summary>Dev builds only: the switch for the developer tools (off by default; they are never offered in normal builds).</summary>
+    private void DrawDevToolsSwitch()
+    {
+        if (!Svc.PluginInterface.IsDev) return;
+        var on = plugin.Config.EnableDevTools;
+        if (ImGui.Checkbox("Developer tools##dev-tools", ref on))
+        {
+            plugin.Config.EnableDevTools = on;
+            plugin.Config.Save();
+            plugin.Server.NotifyIfToolsChanged();
+        }
+        Tooltip("Offers press_xivmcp_control (presses XIV MCP's own buttons) and capture_ui_events (records what is clicked in game " +
+                "windows) to your assistant. For developing XIV MCP; leave off otherwise.");
+        ImGui.Separator();
     }
 
     private void SubTab(FontAwesomeIcon icon, string label, Action draw)
@@ -293,7 +309,6 @@ internal sealed partial class ConfigWindow : Window
         ImGui.Spacing();
         var mount = config.UseMountForWalks;
         var changed = ImGui.Checkbox("Ride a mount for longer walks##use-mount", ref mount);
-        if (Controls.Consume("navigation:use-mount") && !changed) { mount = !mount; changed = true; } // press_xivmcp_control (dev builds)
         if (changed)
         {
             config.UseMountForWalks = mount;
@@ -356,7 +371,6 @@ internal sealed partial class ConfigWindow : Window
         ImGui.Spacing();
         var vip = config.FashionReportVipCard;
         var vipChanged = ImGui.Checkbox("Use a Gold Saucer VIP Card for the Fashion Report##fr-vip", ref vip);
-        if (Controls.Consume("saucy:vip-card") && !vipChanged) { vip = !vip; vipChanged = true; } // press_xivmcp_control (dev builds)
         if (vipChanged)
         {
             config.FashionReportVipCard = vip;
@@ -367,7 +381,6 @@ internal sealed partial class ConfigWindow : Window
 
         var discard = config.FashionReportDiscard;
         var changed = ImGui.Checkbox("Discard cheap pieces bought for the Fashion Report##fr-discard", ref discard);
-        if (Controls.Consume("saucy:discard") && !changed) { discard = !discard; changed = true; } // press_xivmcp_control (dev builds)
         if (changed)
         {
             config.FashionReportDiscard = discard;

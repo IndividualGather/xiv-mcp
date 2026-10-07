@@ -21,7 +21,7 @@ internal static class XivMcpWindowTools
         ["connect"] = "Connect", ["modules"] = "Modules", ["third_party"] = "Third-party", ["jobs"] = "Jobs", ["overlay"] = "Overlay", ["info"] = "Info",
     };
 
-    public static IEnumerable<McpTool> Create(Func<ConfigWindow> window, Func<OverlayWindow> overlay, Func<JobManager?> jobs, bool dev)
+    public static IEnumerable<McpTool> Create(Func<ConfigWindow> window, Func<OverlayWindow> overlay, Func<JobManager?> jobs, bool dev, Func<bool>? devEnabled = null)
     {
         yield return new McpTool
         {
@@ -126,6 +126,7 @@ internal static class XivMcpWindowTools
 
         yield return new McpTool
         {
+            Available = () => devEnabled?.Invoke() ?? false,
             Name = "capture_ui_events",
             Description = "Development builds only: records, for seconds, what game windows send while the player clicks: callbacks with their " +
                           "values and component events, optionally only for some windows (addon names, e.g. [\"ColorantColoring\", \"ContextMenu\", " +
@@ -154,6 +155,7 @@ internal static class XivMcpWindowTools
 
         yield return new McpTool
         {
+            Available = () => devEnabled?.Invoke() ?? false,
             Name = "press_xivmcp_control",
             Description = "Development builds only: presses a control in XIV MCP's own window as if it were clicked, running the same code " +
                           "as a click, to test the window. Without 'control', lists the controls that can be pressed right now. Ids: " +

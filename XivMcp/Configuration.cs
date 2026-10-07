@@ -77,6 +77,12 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Longer walks ride a mount (Mount Roulette) and fly where the zone allows it.</summary>
     public bool UseMountForWalks { get; set; } = true;
 
+    /// <summary>
+    /// Developer tools (press_xivmcp_control, capture_ui_events): only in dev builds, and only when turned on here. Off by default, as
+    /// capture_ui_events records what is clicked in game windows.
+    /// </summary>
+    public bool EnableDevTools { get; set; }
+
     // ---- Permissions before version 2 (merged above). Read once from older settings files, never written again.
     public bool AllowInventoryActions { get; set; }
     public bool AllowGameInteraction { get; set; }
