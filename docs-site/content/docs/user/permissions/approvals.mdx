@@ -48,6 +48,8 @@ One `buy_item` call asks once, for the whole quantity, even when it buys in seve
 
 For jobs that buy repeatedly, a **standing approval** asks once: "spend up to this much of this currency (on these items, for this long)". Your assistant asks for it with `request_spending_approval`, and later purchases with `buy_item` use it without asking again.
 
+- The question stays up for **five minutes**. Your assistant doesn't wait that long: it gets an answer within 20 seconds, either yours or "still waiting", and checks `list_approvals` later. Until you approve, nothing can be bought with it; a declined or unanswered one never becomes usable.
+- Its time ("for this long") starts when you approve it.
 - Every purchase under it counts its real cost, measured from your currency balance.
 - It stops when the approved amount is used up.
 - It stops if a purchase turns out to be paid with another currency.

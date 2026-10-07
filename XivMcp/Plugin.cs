@@ -147,6 +147,7 @@ public sealed class Plugin : IDalamudPlugin
 
         jobs = new JobManager(registry, gate);
         caches.Add(jobs);
+        Approvals.AbandonWaiting(); // questions from before a crash are gone and can't be answered any more
         foreach (var t in tools) t.ParsedSchema(); // logs any tool whose input schema is not valid JSON, right at startup
         Server = new McpServer(registry, gate, Config, caches);
         pluginApi = new XivMcp.Api.PluginApi(registry, policyStore, gate, () => jobs);
@@ -199,6 +200,7 @@ public sealed class Plugin : IDalamudPlugin
         Svc.PluginInterface.UiBuilder.Draw -= windows.Draw;
         Svc.PluginInterface.UiBuilder.OpenConfigUi -= configWindow.Toggle;
         Svc.PluginInterface.UiBuilder.OpenMainUi -= configWindow.Toggle;
+        Approvals.AbandonWaiting(); // their questions close now unanswered, not declined by the player
         Consent.DeclineAll();
         configWindow.RememberForReload();
         windows.RemoveAllWindows();

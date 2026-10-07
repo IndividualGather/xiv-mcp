@@ -11,6 +11,7 @@ using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Excel.Sheets;
 using XivMcp.Maps;
 using XivMcp.Mcp;
+using XivMcp.Permissions;
 using XivMcp.Shops;
 using XivMcp.Util;
 
@@ -30,6 +31,9 @@ internal static class ShopTools
 
     private const int MaxBatch = 99;
     private static readonly TimeSpan ConsentTimeout = TimeSpan.FromMinutes(2);
+
+    /// <summary>How long a standing approval question stays up in game (the call that asks returns long before).</summary>
+    private static readonly TimeSpan ApprovalQuestionTimeout = TimeSpan.FromMinutes(5);
     private static readonly string[] ShopAddons = ["Shop", "ShopExchangeItem", "ShopExchangeCurrency", "InclusionShop"];
     private static readonly string[] ConfirmAddons = ["ShopExchangeItemDialog", "ShopExchangeCurrencyDialog"];
     private static readonly SemaphoreSlim Gate = new(1, 1);
@@ -203,8 +207,9 @@ internal static class ShopTools
         {
             Name = "request_spending_approval",
             Description = "Asks the player once, in game, to approve spending up to an amount of a currency (e.g. 4,000 Orange Crafters' Scrip), " +
-                          "optionally only on given items, for a while (default 24 h) — a standing approval for a job that buys repeatedly. Waits " +
-                          "for the answer (up to 2 minutes). Pass the returned id as 'approval' to buy_item: purchases then don't ask again but " +
+                          "optionally only on given items, for a while (default 24 h) — a standing approval for a job that buys repeatedly. Returns " +
+                          "within 20 seconds: approved, declined, or still waiting (the question stays up in game for 5 minutes; list_approvals " +
+                          "shows the answer later). Pass the id of an approved one as 'approval' to buy_item: purchases then don't ask again but " +
                           "never spend more than approved (each purchase's real cost is counted). The player can revoke it in /xivmcp → Jobs. " +
                           "Requires 'Market & purchases'.",
             InputSchema = """
@@ -238,9 +243,30 @@ internal static class ShopTools
                     items.Count == 0 ? "On any item" : "Only on: " + string.Join(", ", items.Select(Items.Name)),
                     $"Valid for {hours} hours; you can revoke it any time in /xivmcp → Jobs.",
                 };
-                await Consent.Require($"Approve spending {Items.Name(currency)}?", details, ConsentTimeout, ct).ConfigureAwait(false);
-                var approval = Approvals.Add(purpose, currency, max, items, TimeSpan.FromHours(hours), args.Caller?.ApprovalOwner ?? "assistant");
-                return Approvals.Describe(approval);
+                // The question stays up for minutes, longer than a client waits for a tool's answer: ask in the background, wait a
+                // little, and return either the answer or the waiting request (list_approvals shows how it was answered).
+                var validFor = TimeSpan.FromHours(hours);
+                var approval = Approvals.Add(purpose, currency, max, items, validFor, args.Caller?.ApprovalOwner ?? "assistant");
+                var request = new Consent.Request($"Approve spending {Items.Name(currency)}?", details) { Deadline = DateTime.UtcNow + ApprovalQuestionTimeout };
+                var answered = Task.Run(async () =>
+                {
+                    var decision = await Consent.Ask(request, ApprovalQuestionTimeout, CancellationToken.None).ConfigureAwait(false);
+                    Approvals.SetAnswer(approval.Id, decision != ApprovalDecision.Denied ? ApprovalAnswer.Approved
+                        : DateTime.UtcNow >= request.Deadline ? ApprovalAnswer.Unanswered : ApprovalAnswer.Declined, validFor);
+                });
+                await Task.WhenAny(answered, Task.Delay(TimeSpan.FromSeconds(20), ct)).ConfigureAwait(false);
+                var now = Approvals.Find(approval.Id) ?? approval;
+                return new
+                {
+                    approval = Approvals.Describe(now),
+                    next = now.Status switch
+                    {
+                        ApprovalStatus.Waiting => $"The player hasn't answered yet; the question stays up in game for {ApprovalQuestionTimeout.TotalMinutes:0} minutes. " +
+                                                  "Check list_approvals before buying with it.",
+                        ApprovalStatus.Active => $"Approved: pass approval=\"{now.Id}\" to buy_item.",
+                        _ => "Not approved; nothing can be bought with it.",
+                    },
+                };
             },
         };
 
