@@ -14,6 +14,8 @@ These tools are in the **Plugin management** module, which is denied by default,
 
 ## How settings are changed
 
+Every change asks you in game first, even when **Plugin management** is set to *Allow*: enabling or disabling a plugin, reloading one, and changing settings (the approval lists each change). Other plugins can run automation or commands, or protect you, so XIV MCP never changes them without you.
+
 Plugins keep their settings in memory and often save them when they shut down. So `set_plugin_config` unloads a loaded plugin, writes the change through Dalamud's own file storage, and loads the plugin again.
 
 - The previous file is backed up to `pluginConfigs/XivMcp/backups/<plugin>/` (the last 10 per file).

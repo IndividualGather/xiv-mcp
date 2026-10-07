@@ -84,8 +84,12 @@ internal static class PluginTools
             {
                 RequireEnabled();
                 var enabled = args.Bool("enabled", true);
-                var plugin = DalamudInternals.Find(args.String("plugin") ?? throw new ToolException("'plugin' is required."));
+                var plugin = DalamudInternals.Find(XivMcp.Api.PluginNames.Clean(args.String("plugin") ?? throw new ToolException("'plugin' is required.")));
                 DalamudInternals.EnsureNotSelf(plugin);
+                // Turning plugins on or off can switch off protections of their own: the player decides each time.
+                await Consent.Require($"{(enabled ? "Enable" : "Disable")} the plugin {DalamudInternals.Name(plugin)}?",
+                    [$"Asked by {args.Caller?.Name ?? "your AI assistant"}.", enabled ? "It loads now and on the next start." : "It unloads now and stays off."],
+                    TimeSpan.FromMinutes(2), default).ConfigureAwait(false);
 
                 await Gate.WaitAsync().ConfigureAwait(false);
                 try
@@ -132,8 +136,10 @@ internal static class PluginTools
             Handler = async (args, _) =>
             {
                 RequireEnabled();
-                var plugin = DalamudInternals.Find(args.String("plugin") ?? throw new ToolException("'plugin' is required."));
+                var plugin = DalamudInternals.Find(XivMcp.Api.PluginNames.Clean(args.String("plugin") ?? throw new ToolException("'plugin' is required.")));
                 DalamudInternals.EnsureNotSelf(plugin);
+                await Consent.Require($"Reload the plugin {DalamudInternals.Name(plugin)}?", [$"Asked by {args.Caller?.Name ?? "your AI assistant"}."],
+                    TimeSpan.FromMinutes(2), default).ConfigureAwait(false);
 
                 await Gate.WaitAsync().ConfigureAwait(false);
                 try
@@ -283,6 +289,12 @@ internal static class PluginTools
                                                changes, createMissing, allowTypeChange, out var _validated);
                     if (dryRun) return new { dryRun = true, file = RelativeName(file), pluginLoaded = wasLoaded, changes = applied };
 
+                    // Other plugins' settings can turn on automation or commands: the player sees each change and decides.
+                    var shown = applied.Take(12).Select(c => { var t = System.Text.Json.JsonSerializer.Serialize(c); return t.Length > 160 ? t[..157] + "..." : t; }).ToList();
+                    if (applied.Count > 12) shown.Add($"… and {applied.Count - 12} more");
+                    await Consent.Require($"Change {applied.Count} setting{(applied.Count == 1 ? "" : "s")} of {internalName} ({RelativeName(file)})?",
+                        [$"Asked by {args.Caller?.Name ?? "your AI assistant"}.", .. shown], TimeSpan.FromMinutes(2), default).ConfigureAwait(false);
+
                     var unloaded = false;
                     if (wasLoaded && reload)
                     {
@@ -418,7 +430,7 @@ internal static class PluginTools
     private static string ResolveInternalName(string? plugin)
     {
         var name = ResolveInternalNameUnchecked(plugin);
-        if (name.Equals(Svc.PluginInterface.InternalName, StringComparison.OrdinalIgnoreCase))
+        if (XivMcp.Api.PluginNames.Same(name, Svc.PluginInterface.InternalName))
             throw new ToolException("XIV MCP's own configuration (which holds the access token) is not available through these tools. Use /xivmcp in game.");
         return name;
     }
@@ -426,6 +438,8 @@ internal static class PluginTools
     private static string ResolveInternalNameUnchecked(string? plugin)
     {
         if (plugin is null) throw new ToolException("'plugin' is required.");
+        plugin = XivMcp.Api.PluginNames.Clean(plugin);
+        if (plugin.Length == 0) throw new ToolException("'plugin' is required.");
         try { return DalamudInternals.InternalName(DalamudInternals.Find(plugin)); }
         catch (ToolException)
         {
