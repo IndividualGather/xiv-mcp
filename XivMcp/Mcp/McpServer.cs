@@ -42,6 +42,9 @@ public sealed partial class McpServer : IDisposable
     public long RequestCount => Interlocked.Read(ref requestCount);
     public DateTime? LastRequestUtc { get; private set; }
     public string? LastClient { get; private set; }
+
+    /// <summary>Largest request body accepted, and most messages in one batch (requests are small; this keeps the game's memory safe).</summary>
+    private const int MaxBodyBytes = 1024 * 1024, MaxBatch = 25;
     public DateTime? StartedUtc { get; private set; }
     private long requestCount;
 
@@ -230,9 +233,26 @@ public sealed partial class McpServer : IDisposable
         if (session is not null) session.LastSeenUtc = DateTime.UtcNow;
         else lastStatelessRequestUtc = DateTime.UtcNow;
 
+        // A request is a few kilobytes; anything far larger is refused before it is read into the game's memory.
+        if (req.ContentLength64 > MaxBodyBytes)
+        {
+            await WriteJson(res, 413, Error(null, -32600, $"Request too large (over {MaxBodyBytes / 1024} KB).")).ConfigureAwait(false);
+            return;
+        }
         string body;
         using (var reader = new StreamReader(req.InputStream, Encoding.UTF8))
-            body = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
+        {
+            var buffer = new char[MaxBodyBytes + 1];
+            var read = 0;
+            int n;
+            while (read < buffer.Length && (n = await reader.ReadAsync(buffer.AsMemory(read), ct).ConfigureAwait(false)) > 0) read += n;
+            if (read > MaxBodyBytes)
+            {
+                await WriteJson(res, 413, Error(null, -32600, $"Request too large (over {MaxBodyBytes / 1024} KB).")).ConfigureAwait(false);
+                return;
+            }
+            body = new string(buffer, 0, read);
+        }
 
         JsonNode? message;
         try { message = JsonNode.Parse(body); }
@@ -245,6 +265,11 @@ public sealed partial class McpServer : IDisposable
         JsonNode? reply;
         if (message is JsonArray batch)
         {
+            if (batch.Count > MaxBatch)
+            {
+                await WriteJson(res, 400, Error(null, -32600, $"At most {MaxBatch} messages per batch.")).ConfigureAwait(false);
+                return;
+            }
             var replies = new JsonArray();
             foreach (var item in batch)
                 if (await HandleMessage(item as JsonObject, res, session, ct).ConfigureAwait(false) is { } r)
