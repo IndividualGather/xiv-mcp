@@ -228,3 +228,17 @@ public static class QuestionableMessage
     public static bool NeedsPlayer(string chat) =>
         Text(chat) is { } text && NeedsPlayerNotices.Any(n => text.StartsWith(n, StringComparison.OrdinalIgnoreCase));
 }
+
+/// <summary>Several quests at once.</summary>
+public static class QuestBatch
+{
+    /// <summary>
+    /// The quests to accept together before doing any of them (such as the day's allied society quests, several from one NPC):
+    /// those ready to accept now, when there are at least two. One quest alone is simply done.
+    /// </summary>
+    public static IReadOnlyList<QuestInfo> AcceptTogether(IReadOnlyList<QuestInfo> batch, Func<QuestInfo, bool> ready)
+    {
+        var together = batch.Where(ready).ToList();
+        return together.Count >= 2 ? together : [];
+    }
+}

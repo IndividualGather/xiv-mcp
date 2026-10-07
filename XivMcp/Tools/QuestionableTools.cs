@@ -282,15 +282,20 @@ internal static class QuestionableTools
                 }
 
                 // Only the quests this job can do: the others come in a later round, after switching.
-                var batch = await Game.Run(() =>
+                var (batch, accepting) = await Game.Run(() =>
                 {
                     var current = Gearsets.CurrentJob();
                     var mine = quests.Where(q => q.Id == first.Id || (IsAccepted(q) ? true : JobFor(q) == current)).ToList();
                     Ipc<bool>("ClearQuestPriority");
                     foreach (var q in mine) Ipc<string, bool>("AddQuestPriority", q.QuestionableId);
-                    if (!IsRunning() && !Ipc<string, bool>("StartQuest", first.QuestionableId))
-                        throw new ToolException($"Questionable did not start {first.Name}.");
-                    return mine;
+                    // Several quests ready at once (the day's allied society quests, often three from one NPC): accept them all
+                    // first, as Questionable's "Accept all quests" does, then do them, instead of walking back for each.
+                    var together = QuestBatch.AcceptTogether(mine, q => !IsAccepted(q) && Ready(q));
+                    IReadOnlyList<QuestInfo> flagged = together.Count > 0 && MarkAcceptOnly(together) ? together : [];
+                    var start = flagged.FirstOrDefault() ?? first;
+                    if (!IsRunning() && !Ipc<string, bool>("StartQuest", start.QuestionableId))
+                        throw new ToolException($"Questionable did not start {start.Name}.");
+                    return (mine, flagged);
                 }).ConfigureAwait(false);
 
                 var ids = batch.Select(q => q.QuestionableId).ToHashSet();
@@ -309,6 +314,9 @@ internal static class QuestionableTools
                         completed.Add(done.Name);
                         break;
                     }
+                    // All accepted: plan again, so Questionable gets them back as plain priority quests to do in order.
+                    if (accepting.Count > 0 && await Game.Run(() => accepting.All(IsAccepted)).ConfigureAwait(false))
+                        break;
                     // Questionable can get stuck (walking towards a spot in another zone after a teleport went wrong) while it still
                     // reports running: starting it again from its current step gets it going.
                     // A step for the player (a duty it cannot run, a solo duty, something by hand): Questionable waits for it.
@@ -420,6 +428,48 @@ internal static class QuestionableTools
     {
         var quests = TribeQuests(tribe).Select(q => new TribeQuest(q, IsAccepted(q), !IsAccepted(q) && Ready(q)));
         return TribePlan.Next(quests, Allowances());
+    }
+
+    /// <summary>
+    /// Flags quests "accept only" in Questionable's priority list, as its journal's "Accept all quests" does: Questionable then
+    /// accepts each of them before doing any. Its IPC has no call for this, so it goes through reflection into Questionable's
+    /// QuestController; false (and the quests are done one after another) when that fails, for example after a Questionable update.
+    /// </summary>
+    private static bool MarkAcceptOnly(IReadOnlyList<QuestInfo> quests)
+    {
+        const System.Reflection.BindingFlags any = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        try
+        {
+            var local = DalamudInternals.Find(PluginId);
+            // Dalamud keeps it in LocalPlugin's private "instance" field (typed object); dev plugins derive from LocalPlugin.
+            var plugin = PluginInstance(local)
+                         ?? throw new InvalidOperationException("no plugin instance");
+            var services = plugin.GetType().GetField("_serviceProvider", any)?.GetValue(plugin) as IServiceProvider
+                           ?? throw new InvalidOperationException("no service provider");
+            var controllerType = plugin.GetType().Assembly.GetType("Questionable.Controller.QuestController") ?? throw new InvalidOperationException("no QuestController");
+            var controller = services.GetService(controllerType) ?? throw new InvalidOperationException("QuestController not registered");
+            var priority = controllerType.GetProperty("PriorityManager", any)?.GetValue(controller) ?? throw new InvalidOperationException("no PriorityManager");
+            var mark = priority.GetType().GetMethods(any).FirstOrDefault(m => m.Name == "MarkAcceptOnly" && m.GetParameters().Length == 1)
+                       ?? throw new InvalidOperationException("no MarkAcceptOnly");
+            var elementId = mark.GetParameters()[0].ParameterType;
+            var fromString = elementId.GetMethod("FromString", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static, [typeof(string)])
+                             ?? throw new InvalidOperationException("no ElementId.FromString");
+            foreach (var q in quests) mark.Invoke(priority, [fromString.Invoke(null, [q.QuestionableId])]);
+            return true;
+        }
+        catch (Exception e)
+        {
+            Svc.Log.Warning($"[MCP] Questionable's accept-only flag is out of reach ({e.Message}); quests are accepted one after another.");
+            return false;
+        }
+    }
+
+    private static object? PluginInstance(object local)
+    {
+        for (var t = local.GetType(); t != null; t = t.BaseType)
+            if (t.GetField("instance", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly) is { } field)
+                return field.GetValue(local);
+        return null;
     }
 
     /// <summary>Gathering quests accepted as Fisher cannot be finished: Questionable gathers them as Miner or Botanist.</summary>

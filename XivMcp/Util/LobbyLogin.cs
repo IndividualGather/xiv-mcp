@@ -58,6 +58,10 @@ internal static class LobbyLogin
         throw new ToolException($"{target.Name} is not in game after the timeout. Last step: {lastStep ?? "none"}. Check the game window.");
     }
 
+    /// <summary>When the logout prompt was last confirmed, and how long its countdown (outside a sanctuary) may take before confirming again.</summary>
+    private static DateTime logoutConfirmedAt = DateTime.MinValue;
+    private static readonly TimeSpan LogoutCountdown = TimeSpan.FromSeconds(30);
+
     private enum TickKind { Waiting, Acted, Done }
 
     private readonly record struct TickResult(TickKind Kind, string? Text)
@@ -79,7 +83,10 @@ internal static class LobbyLogin
             if (logoutPrompt != null)
             {
                 if (throttled) return TickResult.Wait();
+                // Outside a sanctuary the prompt stays open and counts down 20 seconds after OK; confirming again restarts the count.
+                if (DateTime.UtcNow - logoutConfirmedAt < LogoutCountdown) return TickResult.Wait("Logging out (20 seconds outside a sanctuary)…");
                 Fire(logoutPrompt, 0);
+                logoutConfirmedAt = DateTime.UtcNow;
                 return TickResult.Did("Confirmed logging out.");
             }
             if (loggingOut) return TickResult.Wait("Logging out…");

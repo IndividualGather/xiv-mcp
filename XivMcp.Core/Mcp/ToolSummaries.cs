@@ -129,6 +129,7 @@ public static class ToolSummaries
         ["get_market_prices"] = "Checks current market board prices online.",
         ["repair_submersible"] = "Repairs a submersible's parts with Magitek Repair Materials.",
         ["recall_submersible"] = "Recalls a submersible from its voyage; the Ceruleum Tanks used are not refunded.",
+        ["collect_submersible"] = "Collects what returned submersibles found, and shows their new rank and sectors.",
         ["deploy_submersible"] = "Sends submersibles on a voyage, on their last route or a new one. Uses Ceruleum Tanks.",
         ["move_gil"] = "Moves gil between you and a retainer or the free company chest.",
         ["get_trade"] = "Looks at the trade window: who you trade with and what each side offers.",

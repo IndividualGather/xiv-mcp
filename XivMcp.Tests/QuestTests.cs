@@ -232,3 +232,23 @@ public class QuestionableMessageTests
         Assert.Null(QuestionableMessage.Text("You obtain 2,697 gil."));
     }
 }
+
+public class QuestBatchTests
+{
+    private static QuestInfo Q(uint id) => new(65536 + id, $"Quest {id}") { Repeatable = true, Society = 1 };
+
+    [Fact]
+    public void Quests_ready_together_are_accepted_first()
+    {
+        var batch = new[] { Q(1), Q(2), Q(3), Q(4) };
+        var ready = new HashSet<uint> { 65536 + 2, 65536 + 3, 65536 + 4 };
+        Assert.Equal([65536 + 2u, 65536 + 3, 65536 + 4], QuestBatch.AcceptTogether(batch, q => ready.Contains(q.Id)).Select(q => q.Id));
+    }
+
+    [Fact]
+    public void One_quest_alone_is_just_done()
+    {
+        Assert.Empty(QuestBatch.AcceptTogether([Q(1), Q(2)], q => q.Id == 65536 + 2));
+        Assert.Empty(QuestBatch.AcceptTogether([], _ => true));
+    }
+}

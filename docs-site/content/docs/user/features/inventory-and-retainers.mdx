@@ -38,16 +38,19 @@ At the voyage control panel in your FC workshop, your assistant can repair and s
 |---|---|
 | `repair_submersible` | Repairs a submersible's worn parts with Magitek Repair Materials (all parts below 100% by default, or below a percentage you give) |
 | `recall_submersible` | Calls a submersible back from its voyage, as the panel's *Recall submersible* does: it is back at once, without loot, and the Ceruleum Tanks used for the voyage are not refunded. Then send it out again with `deploy_submersible`. |
+| `collect_submersible` | Finishes the voyages of submersibles that are back without sending them out: collects the loot, then shows their rank-ups, the sectors they unlocked and explored, and the sectors each can visit now |
 | `deploy_submersible` | Sends a submersible on a voyage: its last route, or the points you name (up to five, on one sea). Without a name, every submersible that is back goes out on its last route. |
 
 Things to ask:
 
 > "Send all my submarines out again."
 
+> "Collect my submarines and pick the best route for leveling."
+
 > "Repair Shark Bait, then send it to the Ivory Shoals, Deep-sea Site 1 and Deep-sea Site 2."
 
 - **Getting there:** `navigate_to` with destination `workshop` takes you to the panel.
-- **Loot:** a submersible that is back is finalized first, which collects its loot.
+- **Loot first, then the route:** a submersible that is back is finalized first, which collects its loot. Only then does the game raise its rank and unlock the sectors it found, so a new route is chosen afterwards: `collect_submersible` shows what changed, and `deploy_submersible` checks the route against it too.
 - **Repairs before deploying:** parts below 20% are repaired first (you can change this, or turn it off).
 - **Fuel:** each voyage uses Ceruleum Tanks from your bags. If you have too few, nothing is sent.
 - **Routes:** points are given by name, map letter or id; they must be unlocked and within the submersible's rank.

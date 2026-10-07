@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using XivMcp.Voyages;
 
@@ -100,4 +101,34 @@ public class VesselRepairTests
 
     [Fact]
     public void Odd_fractions_are_unknown() => Assert.Null(VesselRepair.Fraction("—"));
+}
+
+public class VoyageProgressTests
+{
+    private static FleetState State(int rank, uint[] unlocked, uint[] explored) =>
+        new(new Dictionary<string, int> { ["Submersible-1"] = rank }, unlocked.ToHashSet(), explored.ToHashSet());
+
+    [Fact]
+    public void Finishing_a_voyage_shows_rank_ups_and_new_sectors()
+    {
+        var progress = VoyageProgress.Between(State(3, [1, 2, 3, 4], [1, 2]), State(5, [1, 2, 3, 4, 5, 6], [1, 2, 3]));
+        Assert.Equal([new RankUp("Submersible-1", 3, 5)], progress.RankUps);
+        Assert.Equal([5u, 6], progress.NewlyUnlocked);
+        Assert.Equal([3u], progress.NewlyExplored);
+        Assert.True(progress.Any);
+    }
+
+    [Fact]
+    public void Nothing_new_is_nothing()
+    {
+        var same = State(3, [1, 2], [1]);
+        Assert.False(VoyageProgress.Between(same, same).Any);
+    }
+
+    [Fact]
+    public void A_submersible_registered_meanwhile_is_no_rank_up()
+    {
+        var after = new FleetState(new Dictionary<string, int> { ["Submersible-1"] = 3, ["Submersible-2"] = 1 }, new HashSet<uint>(), new HashSet<uint>());
+        Assert.Empty(VoyageProgress.Between(State(3, [], []), after).RankUps);
+    }
 }

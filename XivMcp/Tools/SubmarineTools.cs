@@ -122,6 +122,61 @@ internal static class SubmarineTools
 
         yield return new McpTool
         {
+            Name = "collect_submersible",
+            Description = "Finishes the voyages of submersibles that are back, at the voyage control panel in the FC workshop, without " +
+                          "sending them out again: the loot is collected, and only then does the game raise their rank and unlock the " +
+                          "sectors they found. Returns the rank-ups, the sectors newly unlocked and explored, and per submersible its rank, " +
+                          "range and the sectors it can visit now (unexplored ones first: exploring them unlocks more). Choose the next " +
+                          "route from that, then deploy_submersible. The character must stand at the voyage control panel (navigate_to " +
+                          "destination workshop). Requires 'Items & retainers' in /xivmcp.",
+            InputSchema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "submersible": { "type": "string", "description": "The submersible's name (default: every one that is back)." }
+                  }
+                }
+                """,
+            ReadOnly = false,
+            Handler = async (args, ct) =>
+            {
+                RequireEnabled(config);
+                var name = args.String("submersible");
+                await InventoryActionTools.Gate.WaitAsync(ct).ConfigureAwait(false);
+                try
+                {
+                    await LoadVessels(ct).ConfigureAwait(false);
+                    var vessels = await Game.Run(() => name is null ? Returned() : [FindVessel(name)]).ConfigureAwait(false);
+                    if (vessels.Count == 0) throw new ToolException("No submersible is back from its voyage.");
+                    var before = await Game.Run(Fleet).ConfigureAwait(false);
+                    var log = new List<string>();
+                    foreach (var vessel in vessels)
+                    {
+                        if (vessel.OnVoyage) throw new ToolException($"{vessel.Name} is still out on a voyage until {vessel.Returns:HH:mm}.");
+                        await OpenVessel(vessel, log, ct).ConfigureAwait(false);
+                        await Leave(ct).ConfigureAwait(false);
+                        await Task.Delay(800, ct).ConfigureAwait(false);
+                    }
+                    return await Game.Run(() => new
+                    {
+                        collected = vessels.Select(v => v.Name),
+                        progress = DescribeProgress(VoyageProgress.Between(before, Fleet())),
+                        submersibles = vessels.Select(v => Options(FindVessel(v.Name))),
+                        log,
+                        next = "deploy_submersible with a route (or route \"previous\")",
+                    }).ConfigureAwait(false);
+                }
+                catch
+                {
+                    await Leave(CancellationToken.None).ConfigureAwait(false);
+                    throw;
+                }
+                finally { InventoryActionTools.Gate.Release(); }
+            },
+        };
+
+        yield return new McpTool
+        {
             Name = "deploy_submersible",
             Description = "Sends a submersible on a voyage from the voyage control panel in the FC workshop. route: \"previous\" (the default: " +
                           "the route of its last voyage) or the points to visit, in order, by name, map letter (every sea uses A, B, …: letters " +
@@ -130,7 +185,9 @@ internal static class SubmarineTools
                           "finalized (its loot is collected), and parts below 'repair_below' percent are repaired first (default 20; 0: " +
                           "never). Without 'submersible', every submersible that is back is redeployed on its previous route. Uses " +
                           "Ceruleum Tanks as fuel. The character must stand at the voyage control panel (navigate_to destination " +
-                          "workshop). Requires 'Items & retainers' in /xivmcp.",
+                          "workshop). The route is checked after the voyage is finished, against the rank and sectors it brought; the result " +
+                          "lists rank-ups and new sectors. To choose a new route with those in mind, run collect_submersible first. " +
+                          "Requires 'Items & retainers' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
@@ -159,13 +216,15 @@ internal static class SubmarineTools
                     await LoadVessels(ct).ConfigureAwait(false);
                     var vessels = await Game.Run(() => name is null ? Returned() : [FindVessel(name)]).ConfigureAwait(false);
                     if (vessels.Count == 0) throw new ToolException("No submersible is back from its voyage.");
+                    var before = await Game.Run(Fleet).ConfigureAwait(false);
                     var results = new List<object>();
                     foreach (var vessel in vessels)
                     {
                         if (vessel.OnVoyage) throw new ToolException($"{vessel.Name} is still out on a voyage until {vessel.Returns:HH:mm}.");
-                        var route = points is null ? null : await Game.Run(() => ResolveRoute(points, vessel)).ConfigureAwait(false);
                         var log = new List<string>();
                         await OpenVessel(vessel, log, ct).ConfigureAwait(false);
+                        // Finishing the voyage can raise its rank and unlock sectors: check the route against what it has now.
+                        var route = points is null ? null : await Game.Run(() => ResolveRoute(points, FindVessel(vessel.Name))).ConfigureAwait(false);
                         var repaired = repairBelow > 0 ? await RepairParts(vessel, repairBelow, log, ct).ConfigureAwait(false) : [];
                         if (route is null) await DeployPrevious(vessel, log, ct).ConfigureAwait(false);
                         else await DeployRoute(route, log, ct).ConfigureAwait(false);
@@ -180,7 +239,8 @@ internal static class SubmarineTools
                         });
                     }
                     await Leave(ct).ConfigureAwait(false);
-                    return new { deployed = results.Count, submersibles = results, ceruleumLeft = await Game.Run(() => Items.CountInBags(Ceruleum)).ConfigureAwait(false) };
+                    var progress = await Game.Run(() => DescribeProgress(VoyageProgress.Between(before, Fleet()))).ConfigureAwait(false);
+                    return new { deployed = results.Count, submersibles = results, progress, ceruleumLeft = await Game.Run(() => Items.CountInBags(Ceruleum)).ConfigureAwait(false) };
                 }
                 catch
                 {
@@ -278,13 +338,59 @@ internal static class SubmarineTools
 
     private static int[] Condition(Vessel v) => WorkshopTracker.PartConditions(v.Index);
 
+    /// <summary>The sectors submersibles can explore (the SubmarineExploration sheet), with whether the free company has unlocked each.</summary>
+    private static List<SubmarinePoint> AllPoints() => Svc.Data.GetExcelSheet<SubmarineExploration>()
+        .Where(r => r.RowId is > 0 and <= byte.MaxValue && !r.StartingPoint && r.Map.RowId != 0)
+        .Select(r => new SubmarinePoint(r.RowId, r.Map.RowId, r.Destination.ExtractText().Trim(), r.Location.ExtractText().Trim(), r.RankReq,
+                                        HousingManager.IsSubmarineExplorationUnlocked((byte)r.RowId)))
+        .ToList();
+
+    private static string? SeaName(uint map) =>
+        Svc.Data.GetExcelSheet<SubmarineExploration>().FirstOrDefault(r => r.Map.RowId == map) is { RowId: > 0 } row ? Excel.Name(row.Map) : null;
+
+    /// <summary>Every submersible's rank, and the sectors unlocked and explored. Workshop, framework thread.</summary>
+    private static FleetState Fleet()
+    {
+        var points = AllPoints();
+        return new FleetState(Vessels().ToDictionary(v => v.Name, v => v.Rank),
+                              points.Where(p => p.Unlocked).Select(p => p.Id).ToHashSet(),
+                              points.Where(p => HousingManager.IsSubmarineExplorationExplored((byte)p.Id)).Select(p => p.Id).ToHashSet());
+    }
+
+    private static object DescribeProgress(VoyageProgress progress)
+    {
+        var points = AllPoints().ToDictionary(p => p.Id);
+        object Point(uint id) => points.TryGetValue(id, out var p)
+            ? new { id, name = p.Name, letter = p.Code, sea = SeaName(p.Map), rankRequired = p.RankRequired }
+            : new { id, name = id.ToString(), letter = "", sea = (string?)null, rankRequired = 0 };
+        return new
+        {
+            rankUps = progress.RankUps.Select(r => new { submersible = r.Vessel, from = r.From, to = r.To }),
+            newlyUnlocked = progress.NewlyUnlocked.Select(Point),
+            newlyExplored = progress.NewlyExplored.Select(Point),
+            summary = progress.Any ? null : "No rank-ups and no new sectors.",
+        };
+    }
+
+    /// <summary>What a submersible can do next: its rank and the unlocked sectors within it, unexplored ones first, by sea.</summary>
+    private static object Options(Vessel vessel)
+    {
+        var open = AllPoints().Where(p => p.Unlocked && p.RankRequired <= vessel.Rank)
+                              .Select(p => (Point: p, Explored: HousingManager.IsSubmarineExplorationExplored((byte)p.Id)))
+                              .OrderBy(x => x.Explored).ThenBy(x => x.Point.Map).ThenBy(x => x.Point.Code);
+        return new
+        {
+            submersible = vessel.Name,
+            rank = vessel.Rank,
+            lastRoute = string.Join("", AllPoints().Where(p => vessel.Points.Contains(p.Id)).OrderBy(p => Array.IndexOf(vessel.Points, p.Id)).Select(p => p.Code)),
+            sectors = open.Select(x => new { id = x.Point.Id, name = x.Point.Name, letter = x.Point.Code, sea = SeaName(x.Point.Map),
+                                             rankRequired = x.Point.RankRequired, explored = x.Explored }),
+        };
+    }
+
     private static IReadOnlyList<SubmarinePoint> ResolveRoute(IReadOnlyList<string> points, Vessel vessel)
     {
-        var all = Svc.Data.GetExcelSheet<SubmarineExploration>()
-            .Where(r => r.RowId is > 0 and <= byte.MaxValue && !r.StartingPoint && r.Map.RowId != 0)
-            .Select(r => new SubmarinePoint(r.RowId, r.Map.RowId, r.Destination.ExtractText().Trim(), r.Location.ExtractText().Trim(), r.RankReq,
-                                            HousingManager.IsSubmarineExplorationUnlocked((byte)r.RowId)))
-            .ToList();
+        var all = AllPoints();
         // Letters are read on the sea of the submersible's last voyage.
         uint? sea = vessel.Points.Length > 0 ? all.FirstOrDefault(p => p.Id == vessel.Points[0])?.Map : null;
         try { return SubmarineRoutes.Resolve(points, all, vessel.Rank, sea); }
@@ -316,13 +422,15 @@ internal static class SubmarineTools
     private static async Task OpenVessel(Vessel vessel, List<string> log, CancellationToken ct)
     {
         await Game.RunLoggedIn(() => { InventoryActionTools.EnsureNotBusy(); return true; }).ConfigureAwait(false);
-        if (!await Game.Run(() => MenuHas(SubmersibleManagement)).ConfigureAwait(false))
+        // The list of submersibles may still be open (opened by hand, or by an earlier step): pick from it right away.
+        var listOpen = await Game.Run(() => RetainerUi.MenuEntries()?.Any(e => e.Contains(vessel.Name, StringComparison.Ordinal)) == true).ConfigureAwait(false);
+        if (!listOpen && !await Game.Run(() => MenuHas(SubmersibleManagement)).ConfigureAwait(false))
         {
             await Game.Run(InteractWithPanel).ConfigureAwait(false);
             if (!await GameWindows.WaitFor(() => MenuHas(SubmersibleManagement), TimeSpan.FromSeconds(8), ct).ConfigureAwait(false))
                 throw new ToolException("The voyage control panel's menu did not open.");
         }
-        await Game.Run(() => Pick(SubmersibleManagement)).ConfigureAwait(false);
+        if (!listOpen) await Game.Run(() => Pick(SubmersibleManagement)).ConfigureAwait(false);
         if (!await GameWindows.WaitFor(() => RetainerUi.MenuEntries()?.Any(e => e.Contains(vessel.Name, StringComparison.Ordinal)) == true, TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
             throw new ToolException($"{vessel.Name} is not in the panel's list of submersibles.");
         await Game.Run(() => Pick(null, vessel.Name)).ConfigureAwait(false);

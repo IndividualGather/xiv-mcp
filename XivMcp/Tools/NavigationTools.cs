@@ -161,8 +161,16 @@ internal static partial class NavigationTools
             {
                 if (await WalkTo("Summoning Bell", InteractionTools.IsSummoningBell, steps, ct) is { } here) return here;
                 var preference = config.PreferredBellLocation;
-                await TravelTo(preference, steps, ct).ConfigureAwait(false);
-                if (await WalkToWhenLoaded("Summoning Bell", InteractionTools.IsSummoningBell, steps, ct) is { } bell) return bell;
+                try
+                {
+                    await TravelTo(preference, steps, ct).ConfigureAwait(false);
+                    if (await WalkToWhenLoaded("Summoning Bell", InteractionTools.IsSummoningBell, steps, ct) is { } bell) return bell;
+                }
+                catch (ToolException e) when (preference != "inn")
+                {
+                    // This character has no such property (another character's preference): the inn has a bell for everyone.
+                    steps.Add(e.Message);
+                }
                 if (preference != "inn")
                 {
                     steps.Add("No summoning bell at that property; going to the inn instead.");
