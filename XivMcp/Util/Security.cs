@@ -45,7 +45,9 @@ internal sealed class ConsentApprovalGate : IApprovalGate
         var consent = new Consent.Request($"{request.Provider.DisplayName}: {request.Summary}", details)
         {
             Deadline = DateTime.UtcNow + Timeout,
-            Source = $"the third-party plugin {request.Provider.DisplayName}",
+            Source = request.Caller is { } caller && !caller.StartsWith("your AI assistant", StringComparison.Ordinal)
+                ? $"{caller}, using the third-party plugin {request.Provider.DisplayName}"
+                : $"the third-party plugin {request.Provider.DisplayName}",
             Risk = worst,
             OfferSession = worst != RiskLevel.Critical,
             OfferAlways = request.Capabilities.Any(c => c.Risk != RiskLevel.Critical),
@@ -69,10 +71,11 @@ internal sealed class ConsentApprovalGate : IApprovalGate
         var consent = new Consent.Request($"{who}{request.Summary}", details)
         {
             Deadline = DateTime.UtcNow + Timeout,
-            Source = "your MCP assistant",
+            Source = request.Caller ?? "your AI assistant",
             Risk = risk,
-            OfferSession = true,
-            OfferAlways = true,
+            // Critical tools ask every time; a plugin's "always" only lasts its session (the player's own setting stays).
+            OfferSession = risk != RiskLevel.Critical,
+            OfferAlways = risk != RiskLevel.Critical,
         };
         return Consent.Ask(consent, Timeout, ct);
     }

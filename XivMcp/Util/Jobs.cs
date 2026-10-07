@@ -307,7 +307,7 @@ internal sealed class JobManager : IDisposable, ICache
             {
                 if (!tools.TryGet(step.Tool, out var stepTool)) throw new ToolException($"The tool '{step.Tool}' no longer exists (its plugin was unloaded or unregistered it).");
                 if (!stepTool.IsAvailable) throw new ToolException($"'{step.Tool}' is not available right now (the plugin it needs is not loaded or not allowed).");
-                result = await gate.InvokeAsync(stepTool, new ToolArgs(args), stepCts.Token, inJob: true).ConfigureAwait(false);
+                result = await gate.InvokeAsync(stepTool, new ToolArgs(args), stepCts.Token, inJob: true, caller: CallerOf(job)).ConfigureAwait(false);
             }
             catch (OperationCanceledException) { interrupted = true; }
             catch (ToolException ex) { error = ex.Message; }
@@ -448,6 +448,21 @@ internal sealed class JobManager : IDisposable, ICache
     public object Read()
     {
         lock (sync) return jobs.Select(Describe).ToList();
+    }
+
+    /// <summary>
+    /// Who a job's steps run for: a plugin's jobs ("plugin:&lt;id&gt;") are held to that plugin's permissions as well; everything else
+    /// is the assistant's (by its client's name).
+    /// </summary>
+    internal static XivMcp.Permissions.Caller CallerOf(Job job)
+    {
+        if (job.Client is { } c && c.StartsWith("plugin:", StringComparison.Ordinal))
+        {
+            var id = c["plugin:".Length..];
+            var name = Svc.PluginInterface.InstalledPlugins.FirstOrDefault(p => p.InternalName == id)?.Name ?? id;
+            return XivMcp.Permissions.Caller.ForPlugin(new XivMcp.Mcp.ToolProvider(id, name, XivMcp.Mcp.ProviderTrust.ThirdParty));
+        }
+        return XivMcp.Permissions.Caller.Assistant(job.Client);
     }
 
     public static object Describe(Job j) => new

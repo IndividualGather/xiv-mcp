@@ -286,7 +286,7 @@ public sealed partial class McpServer : IDisposable
                 "initialize" => Initialize(@params, res),
                 "ping" => new JsonObject(),
                 "tools/list" => new JsonObject { ["tools"] = new JsonArray(tools.All.Where(t => t.IsAvailable && gate.IsListed(t)).OrderBy(t => t.Name).Select(t => (JsonNode)t.ToListEntry()).ToArray()) },
-                "tools/call" => await CallTool(@params, ct).ConfigureAwait(false),
+                "tools/call" => await CallTool(@params, session, ct).ConfigureAwait(false),
                 "resources/list" => ListResources(),
                 "resources/templates/list" => new JsonObject { ["resourceTemplates"] = new JsonArray() },
                 "resources/read" => ReadResource(@params),
@@ -348,7 +348,7 @@ public sealed partial class McpServer : IDisposable
         };
     }
 
-    private async Task<JsonNode> CallTool(JsonObject? p, CancellationToken ct)
+    private async Task<JsonNode> CallTool(JsonObject? p, Session? session, CancellationToken ct)
     {
         var name = p?["name"]?.GetValue<string>() ?? throw new RpcException(-32602, "Missing tool name");
         if (!tools.TryGet(name, out var tool)) throw new RpcException(-32602, $"Unknown tool: {name}");
@@ -373,7 +373,8 @@ public sealed partial class McpServer : IDisposable
         var activity = Activity.Begin(name, LastClient, DateTime.UtcNow);
         try
         {
-            var result = await gate.InvokeAsync(tool, new ToolArgs(p?["arguments"] as JsonObject), ct).ConfigureAwait(false);
+            var caller = XivMcp.Permissions.Caller.Assistant(session?.ClientName ?? LastClient);
+            var result = await gate.InvokeAsync(tool, new ToolArgs(p?["arguments"] as JsonObject), ct, caller: caller).ConfigureAwait(false);
             if (result is ToolResultWithImages withImages)
             {
                 images = withImages.Images;

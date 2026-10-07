@@ -32,6 +32,9 @@ public sealed record AuditEntry
     public string? Error { get; init; }
     public long DurationMs { get; init; }
     public bool InJob { get; init; }
+
+    /// <summary>Who asked for the call: "assistant", "assistant:&lt;client&gt;" or "plugin:&lt;id&gt;" (see <see cref="Caller"/>).</summary>
+    public string? Caller { get; init; }
     public IReadOnlyList<SideEffect> SideEffects { get; init; } = [];
 
     /// <summary>Something happened (or was requested) that the tool didn't declare.</summary>

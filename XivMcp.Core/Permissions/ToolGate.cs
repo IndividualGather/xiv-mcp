@@ -13,9 +13,10 @@ namespace XivMcp.Permissions;
 public enum ApprovalDecision { Denied, ApprovedOnce, ApprovedForSession, AlwaysAllow }
 
 /// <summary>A question to the player: may this plugin's tool do these things now?</summary>
-/// <remarks><see cref="Area"/> is set for XIV MCP's own tools: the permission group (e.g. "Game &amp; navigation"); <see cref="Write"/> whether the call changes something.</remarks>
+/// <remarks><see cref="Area"/> is set for XIV MCP's own tools: the permission group (e.g. "Game &amp; navigation"); <see cref="Write"/> whether the call changes something.
+/// <see cref="Caller"/> is who asks for the call (shown to the player): the assistant, or a plugin running XIV MCP's tools.</remarks>
 public sealed record ApprovalRequest(ToolProvider Provider, string Tool, IReadOnlyList<Capability> Capabilities, string Summary, string? ArgsPreview,
-                                     string? Area = null, bool Write = true);
+                                     string? Area = null, bool Write = true, string? Caller = null);
 
 /// <summary>Asks the player (an approval window in game). Unanswered requests should end as <see cref="ApprovalDecision.Denied"/>.</summary>
 public interface IApprovalGate
@@ -96,11 +97,23 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
         return !policy.Enabled || policy.Suspended || policy.AwaitingConsent ? PolicyMode.Deny : policy.ModeForTool(tool);
     }
 
-    public async Task<object?> InvokeAsync(McpTool tool, ToolArgs args, CancellationToken ct, bool inJob = false)
+    /// <param name="caller">Who asks: the assistant (default) or a plugin, whose own permissions then apply as well.</param>
+    public async Task<object?> InvokeAsync(McpTool tool, ToolArgs args, CancellationToken ct, bool inJob = false, Caller? caller = null)
     {
-        if (tool.Provider.Trust != ProviderTrust.ThirdParty) return await InvokeBuiltInAsync(tool, args, ct, inJob).ConfigureAwait(false);
+        caller ??= Caller.Assistant();
+        if (tool.Provider.Trust != ProviderTrust.ThirdParty) return await InvokeBuiltInAsync(tool, args, ct, inJob, caller).ConfigureAwait(false);
 
         var provider = tool.Provider;
+        // A plugin's job running another plugin's tool: the caller must be allowed those capabilities too.
+        if (caller.Plugin is { } callingPlugin && callingPlugin.Id != provider.Id)
+        {
+            var callerMode = PluginModeFor(callingPlugin, tool.Capabilities);
+            if (callerMode == PolicyMode.Deny)
+            {
+                audit.Add(new AuditEntry { Utc = now(), ProviderId = provider.Id, ProviderName = provider.DisplayName, Tool = tool.Name, Caller = caller.Id, InJob = inJob, Decision = "blocked", Error = $"Not allowed for {caller.Name}." });
+                throw new ToolException($"{caller.Name} may not use {tool.Name}: what it does isn't allowed for {caller.Name} in /xivmcp → Third-party plugins.");
+            }
+        }
         var policy = store.Get(provider.Id);
         var preview = Preview(args.Raw.ToJsonString());
         var caps = tool.Capabilities.Select(Capabilities.Find).OfType<Capability>().ToList();
@@ -108,7 +121,7 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
         AuditEntry Entry(string decision) => new()
         {
             Utc = now(), ProviderId = provider.Id, ProviderName = provider.DisplayName, Tool = tool.Name, ArgsPreview = preview,
-            Capabilities = capIds, Decision = decision, InJob = inJob,
+            Capabilities = capIds, Decision = decision, InJob = inJob, Caller = caller.Id,
         };
 
         if (!policy.Enabled)
@@ -144,7 +157,7 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
             else
             {
                 var asked = PluginPolicy.Sections(tool).Select(Capabilities.Find).OfType<Capability>().ToList();
-                var answer = await gate.RequestAsync(new ApprovalRequest(provider, tool.Name, asked, FirstSentence(tool.Description), preview, Write: !tool.ReadOnly), ct)
+                var answer = await gate.RequestAsync(new ApprovalRequest(provider, tool.Name, asked, FirstSentence(tool.Description), preview, Write: !tool.ReadOnly, Caller: caller.Name), ct)
                                        .ConfigureAwait(false);
                 if (answer == ApprovalDecision.Denied)
                 {
@@ -253,23 +266,44 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
     /// runs, Ask shows the approval window (session approvals and "always allow" work as for third-party tools). Calls that change
     /// something, and every call that wasn't simply allowed, are audited.
     /// </summary>
-    private async Task<object?> InvokeBuiltInAsync(McpTool tool, ToolArgs args, CancellationToken ct, bool inJob)
+    private async Task<object?> InvokeBuiltInAsync(McpTool tool, ToolArgs args, CancellationToken ct, bool inJob, Caller caller)
     {
         var group = PermissionCatalog.GroupOf(tool);
         var access = PermissionCatalog.AccessOf(tool);
         var area = group?.Title ?? "Unlisted XIV MCP tool";
         var sessionKey = $"{group?.Id ?? "unlisted"}:{access.ToString().ToLowerInvariant()}";
         var mode = CheckBuiltIn(tool);
+        // Approvals for this session are the caller's own: a plugin's never cover the assistant, or the other way round.
+        var sessionOwner = caller.Plugin?.Id ?? tool.Provider.Id;
         AuditEntry Entry(string decision) => new()
         {
             Utc = now(), ProviderId = tool.Provider.Id, ProviderName = tool.Provider.DisplayName, Tool = tool.Name,
             ArgsPreview = Preview(args.Raw.ToJsonString()), Capabilities = [sessionKey], Decision = decision, InJob = inJob, BuiltIn = true,
+            Caller = caller.Id,
         };
 
         if (!IsListed(tool))
         {
             audit.Add(Entry("blocked") with { Error = $"{area} is turned off." });
             throw new ToolException($"{area} is turned off in /xivmcp → Modules, so {tool.Name} isn't available. The player can turn it on there.");
+        }
+
+        // A plugin running XIV MCP's tools is held to its own permissions as well: the stricter of both decides.
+        if (caller.Plugin is { } plugin)
+        {
+            if (BuiltInCapabilities.NotForPlugins.Contains(tool.Name))
+            {
+                audit.Add(Entry("blocked") with { Error = "Not available to plugins." });
+                throw new ToolException($"{tool.Name} is not available to plugins (asked by {caller.Name}).");
+            }
+            var pluginMode = PluginModeFor(plugin, BuiltInCapabilities.Of(tool));
+            if (pluginMode == PolicyMode.Deny)
+            {
+                audit.Add(Entry("blocked") with { Error = $"Not allowed for {caller.Name}." });
+                throw new ToolException($"{caller.Name} may not use {tool.Name}: what it does isn't allowed for {caller.Name} in /xivmcp → Third-party plugins " +
+                                        "(or the plugin isn't enabled there).");
+            }
+            if (pluginMode > mode) mode = pluginMode;
         }
 
         if (mode == PolicyMode.Deny)
@@ -283,23 +317,29 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
         var decision = "allowed";
         if (mode == PolicyMode.Ask)
         {
-            if (Sessions.Has(tool.Provider.Id, tool.Name, sessionKey)) decision = "approved_session";
+            if (Sessions.Has(sessionOwner, tool.Name, sessionKey) && !BuiltInCapabilities.IsCritical(tool)) decision = "approved_session";
             else
             {
-                var caps = tool.Capabilities.Select(Capabilities.Find).OfType<Capability>().Where(c => c.Id != Capabilities.ReadGame).ToList();
+                var caps = BuiltInCapabilities.Of(tool).Select(Capabilities.Find).OfType<Capability>().Where(c => c.Id != Capabilities.ReadGame).ToList();
                 var answer = await gate.RequestAsync(new ApprovalRequest(tool.Provider, tool.Name, caps, ToolSummaries.For(tool.Name) ?? FirstSentence(tool.Description),
-                    Preview(args.Raw.ToJsonString()), area, access == Access.Write), ct).ConfigureAwait(false);
+                    Preview(args.Raw.ToJsonString()), area, access == Access.Write, caller.Name), ct).ConfigureAwait(false);
                 if (answer == ApprovalDecision.Denied)
                 {
                     audit.Add(Entry("denied"));
                     throw new ToolException($"The player declined {tool.Name}.");
                 }
-                if (answer == ApprovalDecision.ApprovedForSession) Sessions.Add(tool.Provider.Id, tool.Name, sessionKey);
-                if (answer == ApprovalDecision.AlwaysAllow)
+                // Critical tools ask every time. "Always" from a plugin's prompt counts for this session of that plugin only: the
+                // player's setting for their assistant is not changed by what a plugin asked.
+                if (!BuiltInCapabilities.IsCritical(tool))
                 {
-                    // Just this tool: the rest of its group keeps its setting.
-                    store.Core.SetTool(tool.Name, PolicyMode.Allow);
-                    store.Save();
+                    if (answer == ApprovalDecision.ApprovedForSession || answer == ApprovalDecision.AlwaysAllow && caller.IsPlugin)
+                        Sessions.Add(sessionOwner, tool.Name, sessionKey);
+                    else if (answer == ApprovalDecision.AlwaysAllow)
+                    {
+                        // Just this tool: the rest of its group keeps its setting.
+                        store.Core.SetTool(tool.Name, PolicyMode.Allow);
+                        store.Save();
+                    }
                 }
                 decision = Decision(answer);
             }
@@ -318,6 +358,14 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
         {
             audit.Add(Entry(decision) with { Outcome = outcome, Error = error, DurationMs = (long)(now() - started).TotalMilliseconds });
         }
+    }
+
+    /// <summary>The strictest mode a plugin has for these capabilities (reading counts as allowed); Deny when it isn't enabled.</summary>
+    private PolicyMode PluginModeFor(ToolProvider plugin, IEnumerable<string> capabilities)
+    {
+        var modes = capabilities.Where(c => c != Capabilities.ReadGame).Select(c => Check(plugin, c)).ToList();
+        if (modes.Count == 0) return Check(plugin, Capabilities.ReadGame);
+        return modes.Max();
     }
 
     /// <summary>The session key for approving a whole call (rather than one request during it).</summary>

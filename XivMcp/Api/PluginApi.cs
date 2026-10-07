@@ -453,8 +453,9 @@ internal sealed class PluginApi : IDisposable
     {
         var provider = Provider(owner);
         var policy = policies.Get(provider.Id);
-        if (!policy.Enabled || policy.Suspended)
-            throw new ToolException($"{provider.DisplayName} can't start jobs: the player has not enabled it in /xivmcp → Third-party plugins{(policy.Suspended ? " (it is suspended)" : "")}.");
+        if (!policy.Enabled || policy.Suspended || policy.AwaitingConsent)
+            throw new ToolException($"{provider.DisplayName} can't start jobs: the player has not enabled it in /xivmcp → Third-party plugins" +
+                                    (policy.Suspended ? " (it is suspended)." : policy.AwaitingConsent ? " (its registration changed and waits for the player's consent)." : "."));
         var def = JsonNode.Parse(jobJson) as JsonObject ?? throw new ToolException("The job must be a JSON object { name, steps }.");
         var name = def["name"]?.GetValue<string>() ?? throw new ToolException("The job needs a 'name'.");
         if (def["steps"] is not JsonArray array || array.Count == 0) throw new ToolException("'steps' must be a non-empty array.");
@@ -465,6 +466,10 @@ internal sealed class PluginApi : IDisposable
             Args = s["args"] as JsonObject is { } a ? (JsonObject)a.DeepClone() : [],
             Note = s["note"]?.ToString(),
         }).ToList();
+        // Refuse up front what the job could never run: XIV MCP's tools that no plugin may use. (Each step is also checked against
+        // the plugin's permissions when it runs.)
+        var forbidden = steps.Select(s => s.Tool).Where(BuiltInCapabilities.NotForPlugins.Contains).Distinct().ToList();
+        if (forbidden.Count > 0) throw new ToolException($"These tools are not available to plugins: {string.Join(", ", forbidden)}.");
         var job = Manager().Start($"{name} ({provider.DisplayName})", steps, ClientName(owner));
         return Ok(new JsonObject { ["job"] = JsonSerializer.SerializeToNode(JobManager.Describe(job), JobManager.JsonOptions) });
     }
