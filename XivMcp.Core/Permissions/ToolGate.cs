@@ -59,14 +59,14 @@ public sealed class SessionApprovals
 /// Runs tool calls through the permission system. Core and maintained tools pass straight through (their own permission switches apply
 /// inside). Third-party tools must be enabled and not suspended; each declared capability is checked against the plugin's policy
 /// (deny blocks, ask prompts the player once per call), the game is snapshotted before and after, and the call is audited. A call
-/// that did something it didn't declare is flagged; if it was short (so the change was most likely the call's own doing), the plugin
-/// is suspended until the player lifts it.
+/// that did something it didn't declare is flagged and the plugin is suspended until the player lifts it (for long calls the reason
+/// says the player may have done it meanwhile).
 /// </summary>
 public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe probe, AuditLog audit, ISecurityNotifier notifier, Func<DateTime>? clock = null)
 {
     private readonly Func<DateTime> now = clock ?? (() => DateTime.UtcNow);
 
-    /// <summary>Calls shorter than this suspend their plugin on an undeclared side effect; longer ones are only flagged (the player may have acted meanwhile).</summary>
+    /// <summary>Calls longer than this may overlap with the player's own actions: their suspension reason says so.</summary>
     public TimeSpan SuspendWindow { get; init; } = TimeSpan.FromMinutes(2);
 
     public SessionApprovals Sessions { get; } = new();
@@ -187,10 +187,13 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
             var after = probe.Capture();
             var effects = before is not null && after is not null ? SideEffectAnalyzer.Analyze(before, after, capIds) : [];
             var undeclared = effects.Where(e => e.Undeclared).ToList();
-            var suspend = undeclared.Count > 0 && duration < SuspendWindow;
+            // Short or long: a plugin must not escape the check by running long. A long call may overlap with what the player did
+            // meanwhile, so its reason says so (the player lifts the suspension in one click if it was them).
+            var suspend = undeclared.Count > 0;
             if (suspend)
             {
-                policy.Suspend($"{tool.Name}: {string.Join(" ", undeclared.Select(e => e.Detail))} (not declared)", now());
+                var maybePlayer = duration >= SuspendWindow ? " (the call ran a while: if you did this yourself meanwhile, lift the suspension)" : "";
+                policy.Suspend($"{tool.Name}: {string.Join(" ", undeclared.Select(e => e.Detail))} (not declared){maybePlayer}", now());
                 Sessions.Clear(provider.Id);
                 store.Save();
             }

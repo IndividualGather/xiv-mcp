@@ -268,7 +268,7 @@ public class ToolGateTests
     }
 
     [Fact]
-    public async Task Undeclared_side_effect_of_a_long_call_is_flagged_but_not_suspended()
+    public async Task Undeclared_side_effect_of_a_long_call_also_suspends_but_says_it_may_have_been_the_player()
     {
         Enable();
         var tool = Tool([], async () =>
@@ -280,9 +280,12 @@ public class ToolGateTests
         }, readOnly: true);
         await Gate().InvokeAsync(tool, Args(), default);
 
-        Assert.False(store.Get(Third.Id).Suspended);
+        // A plugin must not escape the check by running long: it is suspended too, and the reason says the player may have done it.
+        var policy = store.Get(Third.Id);
+        Assert.True(policy.Suspended);
+        Assert.Contains("you", policy.SuspendReason);
         Assert.True(audit.Recent()[0].Flagged);
-        Assert.False(Assert.Single(notifier.Flags).Suspended);
+        Assert.True(Assert.Single(notifier.Flags).Suspended);
     }
 
     [Fact]
