@@ -380,7 +380,7 @@ public sealed partial class McpServer : IDisposable
                 images = withImages.Images;
                 result = withImages.Data;
             }
-            text = result as string ?? JsonSerializer.Serialize(result, JsonOptions);
+            text = UntrustedText.Result(tool.Provider, result as string ?? JsonSerializer.Serialize(result, JsonOptions));
         }
         catch (ToolException ex)
         {

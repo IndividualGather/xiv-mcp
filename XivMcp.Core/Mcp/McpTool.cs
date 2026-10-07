@@ -68,7 +68,7 @@ public sealed class McpTool
     public JsonObject ToListEntry() => new()
     {
         ["name"] = Name,
-        ["description"] = Description,
+        ["description"] = UntrustedText.Description(Provider, Description),
         ["inputSchema"] = ParsedSchema(),
         ["annotations"] = new JsonObject
         {
