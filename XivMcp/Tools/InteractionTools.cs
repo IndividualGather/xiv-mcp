@@ -136,6 +136,24 @@ internal static class InteractionTools
 
         yield return new McpTool
         {
+            Name = "recover_game_state",
+            Description = "Gets the character free again when a conversation, menu, turn-in or shop window was left open, or the game still " +
+                          "holds the character in a conversation whose window vanished (interacting then fails with \"did not react\"). Clicks " +
+                          "through dialogue, answers No, leaves menus, closes those windows (only shown ones: acting on a hidden delivery window " +
+                          "crashed the game) and, as a last resort, presses Escape a few times. Never acts in combat, cutscenes or while loading. Job steps that fail or are stopped run this " +
+                          "on their own. Returns what it did and whether the character is free. Requires 'Game & navigation' in /xivmcp.",
+            ReadOnly = false,
+            Handler = async (_, ct) =>
+            {
+                RequireEnabled();
+                await Game.RunLoggedIn(() => true).ConfigureAwait(false);
+                var result = await Recovery.Run(ct).ConfigureAwait(false);
+                return new { free = result.Recovered, actions = result.Actions, problem = result.Problem };
+            },
+        };
+
+        yield return new McpTool
+        {
             Name = "interact_with_object",
             Description = "Targets and interacts with a nearby object, exactly like clicking it: summoning bell, company chest, voyage control panel, " +
                           "NPCs, aetherytes, ... Choose by name (nearest match) or gameObjectId from get_nearby_objects. The character does not move: " +

@@ -313,8 +313,13 @@ internal sealed class JobManager : IDisposable, ICache
             catch (ToolException ex) { error = ex.Message; }
             catch (Exception ex) { error = $"{ex.GetType().Name}: {ex.Message}"; Svc.Log.Error(ex, $"[MCP] Job step {step.Tool} failed"); }
 
+            // A step that failed or was stopped can leave the character in a conversation or window that blocks everything after it.
+            var recovery = (error is not null || interrupted) && !runningPassive && !shutdown.IsCancellationRequested ? await Recover().ConfigureAwait(false) : null;
+
             lock (sync)
             {
+                if (recovery is { Actions.Count: > 0 } || recovery?.Problem is not null)
+                    AddLog(job, $"{step.Id}: recovery: {string.Join(" ", recovery.Actions)}{(recovery.Problem is { } p ? $" Not free: {p}" : " The character is free.")}");
                 runningJobId = null;
                 runningPassive = false;
                 step.FinishedUtc = DateTime.UtcNow;
@@ -340,6 +345,17 @@ internal sealed class JobManager : IDisposable, ICache
                 Changed();
             }
             wake.Release();
+        }
+    }
+
+    private async Task<Recovery.Result?> Recover()
+    {
+        try { return await Recovery.Run(shutdown.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException) { return null; }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"[MCP] Recovery after a job step failed: {ex.Message}");
+            return new Recovery.Result(false, [], ex.Message);
         }
     }
 

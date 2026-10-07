@@ -60,7 +60,7 @@ Your settings in `/xivmcp` apply the same way to both.
 
 - **Each step needs its own permission.** A step set to *Ask* waits for you. A step whose module is denied fails.
 - **One acting step at a time.** While a step runs, other tool calls that change something are refused, so they cannot collide with the job. Tools that only read are not blocked by a running step, and neither are waiting steps such as routes. They still follow their own settings.
-- **Failures wait for a fix.** When a step fails or is stopped, the job becomes **pending** and waits for your assistant to retry, skip or change it.
+- **Failures wait for a fix.** When a step fails or is stopped, XIV MCP first gets your character out of any conversation or window the step left open (see `recover_game_state`), then the job becomes **pending** and waits for your assistant to retry, skip or change it.
 - **Jobs survive reloads.** After a plugin reload, jobs come back paused.
 
 ## Passing results along

@@ -37,7 +37,9 @@ internal static class CustomDeliveryTools
             Description = "Delivers one client's request with Satisfier and waits until it is done. 'kind' craft: buys the ingredient from " +
                           "the client's vendor, crafts with Artisan and turns in; gather: gathers with Questionable and turns in; fish: turns " +
                           "in the fish you carry (catch them first: do_custom_deliveries does both, or catch_fish). Without 'kind': gathering " +
-                          "(Miner or Botanist), else crafting; fishing only when the player asks for it. Requires 'Custom Deliveries' in /xivmcp.",
+                          "(Miner or Botanist), else crafting; fishing only when the player asks for it. Delivers only as many as fit under " +
+                          "the reward scrips' cap (get_custom_deliveries shows fitUnderScripCap), and refuses when none fit: spend the scrips " +
+                          "first. Requires 'Custom Deliveries' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
@@ -153,6 +155,7 @@ internal static class CustomDeliveryTools
         {
             deliveriesLeftThisWeek = SatisfierBridge.Allowances(),
             automatic = KindNames.Where((_, i) => possible.Contains((DeliveryKind)i)),
+            turnInAgent = SatisfierBridge.TurnInAgent(),
             clients = SatisfierBridge.Clients().Select(c => new
             {
                 client = c.Name,
@@ -168,6 +171,10 @@ internal static class CustomDeliveryTools
                         bonus = c.Bonus[i],
                         stillTakes = c.Remaining[i],
                         inBags = Items.CountInBags(c.Items[i]),
+                        // Deliveries past this would take a scrip over its cap (the game asks first; nothing answers).
+                        fitUnderScripCap = ScripCap.DeliveriesThatFit(SatisfierBridge.Rewards(c, (DeliveryKind)i), c.Remaining[i]),
+                        cappedBy = ScripCap.Limiting(SatisfierBridge.Rewards(c, (DeliveryKind)i), c.Remaining[i]) is { } cap
+                            ? $"{cap.Currency} {cap.Have:N0}/{cap.Max:N0}, up to {cap.PerDelivery} per delivery" : null,
                         note = i == 2 && c.SpearFish ? "spearfishing" : null,
                     })
                     : null,
@@ -199,11 +206,28 @@ internal static class CustomDeliveryTools
         var item = Items.Name(c.Items[(int)chosen]);
         var planned = c.Remaining[(int)chosen];
         var statuses = new List<string>();
+
+        // A turn-in that would take a scrip over its cap makes the game ask first, and nobody answers that question: deliver only
+        // what fits, and say why.
+        var rewards = await Game.Run(() => SatisfierBridge.Rewards(c, chosen)).ConfigureAwait(false);
+        if (ScripCap.Limiting(rewards, planned) is { } cap)
+        {
+            var fits = ScripCap.DeliveriesThatFit(rewards, planned);
+            var why = $"{cap.Currency} is at {cap.Have:N0}/{cap.Max:N0} and one delivery of {item} gives up to {cap.PerDelivery}";
+            if (fits == 0)
+                throw new ToolException($"Delivering {item} to {c.Name} would take {cap.Currency} over its cap: {why}. Spend some {cap.Currency} first.");
+            statuses.Add($"Only {fits} of {planned} deliveries fit under the cap: {why}.");
+            planned = fits;
+        }
         var rankedUp = false;
         var lastLeft = c.DeliveriesLeft;
         var progressAt = DateTime.UtcNow;
+        var turnIn = new TurnInWatch(TimeSpan.FromSeconds(45));
         DateTime? supplyOpenSince = null;
+        DateTime? questionSince = null;
         var window = await Game.Run(SatisfierBridge.KeepWindowOpen).ConfigureAwait(false);
+        // Satisfier and Questionable turn in themselves; YesAlready's own turn-in races them (see PluginCompat.PauseYesAlready).
+        using var yesAlready = PluginCompat.PauseYesAlready("custom deliveries");
         try
         {
             if (chosen == DeliveryKind.Gather)
@@ -236,43 +260,46 @@ internal static class CustomDeliveryTools
                 var now = await Game.Run(() => Find(c.Name)).ConfigureAwait(false);
                 if (now.DeliveriesLeft != lastLeft) { lastLeft = now.DeliveriesLeft; progressAt = DateTime.UtcNow; }
 
-                // The turn-in window can get in the way: Questionable opens it before gathering and leaves it open, and the game
-                // then counts the player as busy. Close it unless Satisfier is turning in; when turning in stalls, it is stuck.
-                // Closing it returns to the client's menu, which keeps the conversation open: leave with the menu's last entry.
-                var supplyOpen = await Game.Run(() => RetainerUi.Ready("SatisfactionSupply") || RetainerUi.Ready("SelectString")).ConfigureAwait(false);
-                supplyOpenSince = supplyOpen ? supplyOpenSince ?? DateTime.UtcNow : null;
-                var turningIn = status.StartsWith("Turning in", StringComparison.OrdinalIgnoreCase);
+                // The turn-in conversation can get in the way: Questionable opens the turn-in window before gathering and leaves it
+                // open, and the game then counts the player as busy; a turn-in window can also load hidden, or vanish while the game
+                // still holds the conversation. Get free unless someone is turning in: Satisfier ("Turning in"), or Questionable,
+                // which turns in what it gathered itself once all of it is gathered. When turning in stalls, it is stuck.
+                var stillNeeded = planned - (c.DeliveriesLeft - now.DeliveriesLeft);
+                var (inConversation, questionableTurningIn) = await Game.Run(() =>
+                    (RetainerUi.Ready("SatisfactionSupply") || RetainerUi.Ready("SelectString") || Recovery.OrphanedEvent,
+                     TurnInWatch.QuestionableTurningIn(QuestionableTools.Running, Items.CountInBags(c.Items[(int)chosen]), stillNeeded))).ConfigureAwait(false);
+                supplyOpenSince = inConversation ? supplyOpenSince ?? DateTime.UtcNow : null;
+                var turningIn = status.StartsWith("Turning in", StringComparison.OrdinalIgnoreCase) || questionableTurningIn;
+                var asking = turningIn && await Game.Run(() => RetainerUi.Ready("SelectYesno")).ConfigureAwait(false);
+                questionSince = asking ? questionSince ?? DateTime.UtcNow : null;
                 if (supplyOpenSince is { } openSince && !turningIn && DateTime.UtcNow - openSince > TimeSpan.FromSeconds(5))
                 {
-                    var left = await Game.Run(() =>
-                    {
-                        if (RetainerUi.Ready("SatisfactionSupply")) { CloseWindow("SatisfactionSupply"); return "the turn-in window"; }
-                        if (RetainerUi.MenuEntries() is { Count: > 0 } entries) { RetainerUi.SelectMenuIndex(entries.Count - 1); return $"the menu ({entries[^1]})"; }
-                        return null;
-                    }).ConfigureAwait(false);
-                    if (left is not null) statuses.Add($"Left {left}, which was in the way.");
+                    var freed = await Recovery.Run(ct).ConfigureAwait(false);
+                    if (freed.Actions.Count > 0) statuses.Add($"The turn-in conversation was in the way: {string.Join(" ", freed.Actions)}");
+                    if (freed.Problem is { } problem) throw new ToolException($"The turn-in conversation with {c.Name} is stuck: {problem}");
                     supplyOpenSince = null;
                 }
-                else if (turningIn && DateTime.UtcNow - progressAt > TimeSpan.FromSeconds(45))
+                else if (questionSince is { } asked && DateTime.UtcNow - asked > TimeSpan.FromSeconds(3))
                 {
-                    await Game.Run(() =>
-                    {
-                        SatisfierBridge.Stop();
-                        if (RetainerUi.Ready("SatisfactionSupply")) CloseWindow("SatisfactionSupply");
-                        return true;
-                    }).ConfigureAwait(false);
-                    statuses.Add("Turning in stalled for 45 seconds: stopped Satisfier and closed the turn-in window.");
+                    // Neither Satisfier nor Questionable answers a question during the turn-in (the game asks e.g. before a turn-in
+                    // that would overcap a currency): stop and say what it asked, rather than waiting for the stall.
+                    await Game.Run(() => { SatisfierBridge.Stop(); return true; }).ConfigureAwait(false);
+                    var freed = await Recovery.Run(ct).ConfigureAwait(false);
+                    statuses.Add($"The game asked a question during the turn-in, which nothing answers: stopped Satisfier. {string.Join(" ", freed.Actions)}".TrimEnd());
+                    break;
+                }
+                else if (turnIn.Stalled(turningIn, progressAt, DateTime.UtcNow))
+                {
+                    await Game.Run(() => { SatisfierBridge.Stop(); return true; }).ConfigureAwait(false);
+                    var freed = await Recovery.Run(ct).ConfigureAwait(false);
+                    statuses.Add($"Turning in stalled for 45 seconds: stopped Satisfier. {string.Join(" ", freed.Actions)}".TrimEnd());
                     break;
                 }
                 rankedUp = now.Rank != c.Rank;
                 if (c.DeliveriesLeft - now.DeliveriesLeft >= planned || rankedUp)
                 {
-                    await Game.Run(() =>
-                    {
-                        SatisfierBridge.Stop();
-                        if (RetainerUi.Ready("SatisfactionSupply")) CloseWindow("SatisfactionSupply");
-                        return true;
-                    }).ConfigureAwait(false);
+                    await Game.Run(() => { SatisfierBridge.Stop(); return true; }).ConfigureAwait(false);
+                    await Recovery.Run(ct).ConfigureAwait(false);
                     if (rankedUp) statuses.Add($"{c.Name} ranked up: new requests.");
                     break;
                 }
@@ -307,12 +334,6 @@ internal static class CustomDeliveryTools
             deliveriesLeftThisWeek = await Game.Run(SatisfierBridge.Allowances).ConfigureAwait(false),
             steps = statuses,
         };
-    }
-
-    private static unsafe void CloseWindow(string name)
-    {
-        var addon = (FFXIVClientStructs.FFXIV.Component.GUI.AtkUnitBase*)RetainerUi.Ptr(name).Address;
-        if (addon != null) addon->Close(true);
     }
 
     /// <summary>Presses Accept on the rank-up rewards window (SatisfactionSupplyResult) when it is open.</summary>

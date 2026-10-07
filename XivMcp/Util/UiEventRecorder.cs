@@ -27,8 +27,11 @@ internal static unsafe class UiEventRecorder
 
     public static bool Recording { get; private set; }
 
-    /// <summary>Starts recording the named windows (all when empty). Framework thread.</summary>
-    public static void Start(IReadOnlyCollection<string> addons)
+    /// <summary>Counts recordings, so a timer for an old one doesn't stop a newer one.</summary>
+    public static int Generation { get; private set; }
+
+    /// <summary>Starts recording the named windows (all when empty); returns its <see cref="Generation"/>. Framework thread.</summary>
+    public static int Start(IReadOnlyCollection<string> addons)
     {
         Stop();
         lock (Sync)
@@ -41,6 +44,7 @@ internal static unsafe class UiEventRecorder
         hook.Enable();
         Svc.AddonLifecycle.RegisterListener(AddonEvent.PreReceiveEvent, OnReceiveEvent);
         Recording = true;
+        return ++Generation;
     }
 
     /// <summary>Stops recording and returns what was recorded. Framework thread.</summary>

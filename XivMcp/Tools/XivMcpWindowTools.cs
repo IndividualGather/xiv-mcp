@@ -128,26 +128,49 @@ internal static class XivMcpWindowTools
         {
             Available = () => devEnabled?.Invoke() ?? false,
             Name = "capture_ui_events",
-            Description = "Development builds only: records, for seconds, what game windows send while the player clicks: callbacks with their " +
-                          "values and component events, optionally only for some windows (addon names, e.g. [\"ColorantColoring\", \"ContextMenu\", " +
-                          "\"SelectYesno\"]). Ask the player to do the action by hand while it records; the result shows how to reproduce it in a tool.",
+            Description = "Development builds only: records what game windows send — callbacks with their values and component events, from " +
+                          "the player or any plugin — optionally only for some windows (addon names, e.g. [\"ColorantColoring\", \"ContextMenu\", " +
+                          "\"SelectYesno\"]). mode 'timed' (default) records for 'seconds' and returns it: ask the player to do the action by hand " +
+                          "meanwhile. mode 'start' starts recording and returns at once, 'stop' ends it and returns everything since (for watching " +
+                          "a job: start, run the job, stop; a recording left running stops itself after 10 minutes).",
             InputSchema = """
                 {
                   "type": "object",
                   "properties": {
+                    "mode": { "type": "string", "enum": ["timed", "start", "stop"], "description": "Default timed." },
                     "addons": { "type": "array", "items": { "type": "string" }, "description": "Window (addon) names to record; all when left out." },
-                    "seconds": { "type": "integer", "minimum": 5, "maximum": 180, "description": "How long to record (default 60)." }
+                    "seconds": { "type": "integer", "minimum": 5, "maximum": 55, "description": "mode timed: how long to record (default 45; MCP clients stop waiting for an answer after about a minute)." }
                   }
                 }
                 """,
-            ReadOnly = false,
+            // Only watches (a hook that records and passes everything on), so it may run while a job step drives the game.
+            ReadOnly = true,
             Handler = async (args, ct) =>
             {
                 var addons = args.Node("addons")?.AsArray().Select(n => n?.ToString() ?? "").Where(s => s.Length > 0).ToList() ?? [];
-                var seconds = args.Int("seconds", 60, 5, 180);
+                switch (args.String("mode") ?? "timed")
+                {
+                    case "start":
+                        var generation = await Svc.Framework.RunOnFrameworkThread(() => UiEventRecorder.Start(addons)).ConfigureAwait(false);
+                        _ = Task.Delay(TimeSpan.FromMinutes(10)).ContinueWith(_ =>
+                            Svc.Framework.RunOnFrameworkThread(() => { if (UiEventRecorder.Generation == generation) UiEventRecorder.Stop(); }));
+                        return new { recording = true, stopsBy = DateTime.UtcNow.AddMinutes(10) };
+                    case "stop":
+                        var recorded = await Svc.Framework.RunOnFrameworkThread(UiEventRecorder.Stop).ConfigureAwait(false);
+                        return new { count = recorded.Count, events = recorded };
+                    case "timed":
+                        break;
+                    default:
+                        throw new ToolException("mode must be timed, start or stop.");
+                }
+                var seconds = args.Int("seconds", 45, 5, 55);
                 await Svc.Framework.RunOnFrameworkThread(() => UiEventRecorder.Start(addons)).ConfigureAwait(false);
                 try { await Task.Delay(TimeSpan.FromSeconds(seconds), ct).ConfigureAwait(false); }
-                finally { }
+                finally
+                {
+                    // Also when the call is cancelled (a client that gave up waiting): the hook must not keep recording.
+                    await Svc.Framework.RunOnFrameworkThread(() => UiEventRecorder.Stop()).ConfigureAwait(false);
+                }
                 var entries = await Svc.Framework.RunOnFrameworkThread(UiEventRecorder.Stop).ConfigureAwait(false);
                 return new { seconds, count = entries.Count, events = entries };
             },

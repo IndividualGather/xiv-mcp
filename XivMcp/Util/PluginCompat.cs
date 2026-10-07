@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
 using XivMcp.Mcp;
@@ -32,7 +33,42 @@ internal sealed class PluginCompat : IDisposable
     {
         Svc.Framework.Update -= OnUpdate;
         ReleaseBell("plugin unloading");
+        lock (YesAlreadyHolders)
+            foreach (var holder in YesAlreadyHolders.ToList()) SetYesAlreadyStop(holder, false);
         foreach (var tag in StopRequestTags) Svc.PluginInterface.RelinquishData(tag);
+    }
+
+    private const string YesAlreadyStopRequests = "YesAlready.StopRequests";
+    private static readonly HashSet<string> YesAlreadyHolders = [];
+
+    /// <summary>
+    /// Pauses YesAlready alone (TextAdvance keeps clicking through dialogue, which Questionable relies on) until disposed. YesAlready's
+    /// "Custom Deliveries" option turns in the moment a delivery window is loaded, even while it is still hidden behind a client's
+    /// dialogue; the conversation then runs ahead without the window, Satisfier waits for a window that never shows, and acting on
+    /// the hidden window crashes the game.
+    /// </summary>
+    public static IDisposable PauseYesAlready(string purpose)
+    {
+        var holder = $"{Svc.PluginInterface.InternalName}:{purpose}";
+        lock (YesAlreadyHolders) SetYesAlreadyStop(holder, true);
+        return new Releaser(() => { lock (YesAlreadyHolders) SetYesAlreadyStop(holder, false); });
+    }
+
+    /// <summary>Whether YesAlready is installed and currently paused by anyone (XIV MCP or another plugin).</summary>
+    public static bool YesAlreadyPaused =>
+        Svc.PluginInterface.TryGetData<HashSet<string>>(YesAlreadyStopRequests, out var set) && set.Count > 0;
+
+    private static void SetYesAlreadyStop(string holder, bool stop)
+    {
+        if (stop) YesAlreadyHolders.Add(holder); else YesAlreadyHolders.Remove(holder);
+        if (!Svc.PluginInterface.TryGetData<HashSet<string>>(YesAlreadyStopRequests, out var set)) return;
+        lock (set) { if (stop) set.Add(holder); else set.Remove(holder); }
+    }
+
+    private sealed class Releaser(Action release) : IDisposable
+    {
+        private Action? release = release;
+        public void Dispose() => Interlocked.Exchange(ref release, null)?.Invoke();
     }
 
     public static bool IsLoaded(string internalName) =>

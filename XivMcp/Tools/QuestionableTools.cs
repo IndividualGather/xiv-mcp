@@ -691,6 +691,16 @@ internal static class QuestionableTools
 
     private static bool IsRunning() => Ipc<bool>("IsRunning");
 
+    /// <summary>Whether Questionable is loaded and running something (a quest, or gathering for another plugin). Framework thread.</summary>
+    internal static bool Running
+    {
+        get
+        {
+            try { return Loaded && IsRunning(); }
+            catch (Exception) { return false; } // IPC not registered yet (Questionable still loading)
+        }
+    }
+
     private static T Ipc<T>(string name) => Svc.PluginInterface.GetIpcSubscriber<T>($"Questionable.{name}").InvokeFunc();
 
     private static TResult Ipc<TArg, TResult>(string name, TArg arg) =>

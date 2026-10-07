@@ -22,7 +22,7 @@ internal static class SatisfierBridge
     /// <summary>One client as Satisfier sees it, with its own object for starting a task.</summary>
     public sealed record Client(object Info, int Index, string Name, bool Unlocked, int Rank, int Satisfaction, int SatisfactionMax,
                                 int DeliveriesLeft, uint[] Items, bool[] Bonus, int[] Remaining, bool HasCraft, bool HasGather, bool HasFish,
-                                bool SpearFish, uint FishSpot)
+                                bool SpearFish, uint FishSpot, uint[] Rewards)
     {
         public DeliveryNpc ForPlan => new(Name, Unlocked, Remaining, Enumerable.Range(0, 3).Where(i => Bonus[i]).Select(i => (DeliveryKind)i).ToHashSet());
     }
@@ -48,7 +48,8 @@ internal static class SatisfierBridge
                 (uint[])(Plugin.Get(npc, "TurnInItems") ?? new uint[3]), (bool[])(Plugin.Get(npc, "IsBonusEffective") ?? new bool[3]), remaining,
                 Plugin.Get(npc, "CraftData") is not null, Plugin.Get(npc, "GatherData") is not null, fish is not null,
                 fish is not null && Plugin.Get(fish, "IsSpearFish") is true,
-                fish is null ? 0 : Convert.ToUInt32(Plugin.Get(fish, "FishSpotId"))));
+                fish is null ? 0 : Convert.ToUInt32(Plugin.Get(fish, "FishSpotId")),
+                (uint[])(Plugin.Get(npc, "Rewards") ?? new uint[3])));
         }
         return clients;
     }
@@ -62,6 +63,53 @@ internal static class SatisfierBridge
     private static bool IsUnlocked(int index) =>
         Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.SatisfactionNpc>().GetRowOrDefault((uint)index + 1) is { } row
         && QuestManager.IsQuestComplete(row.QuestRequired.RowId);
+
+    /// <summary>
+    /// The game's custom delivery agent as Satisfier judges it ("is the turn-in window open?"): whether it is active, for which
+    /// client, and which focused window its addon id points at. Satisfier calls the turn-in window open when that window is visible,
+    /// without checking that it is the turn-in window. Framework thread.
+    /// </summary>
+    public static unsafe object TurnInAgent()
+    {
+        var agent = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentSatisfactionSupply.Instance();
+        if (agent == null) return new { available = false };
+        FFXIVClientStructs.FFXIV.Component.GUI.AtkUnitBase* focused = null;
+        ref var list = ref FFXIVClientStructs.FFXIV.Component.GUI.AtkStage.Instance()->RaptureAtkUnitManager->AtkUnitManager.FocusedUnitsList;
+        for (var i = 0; i < Math.Min((int)list.Count, list.Entries.Length); i++)
+            if (list.Entries[i].Value is var unit && unit != null && unit->Id == agent->AddonId) { focused = unit; break; }
+        return new
+        {
+            active = agent->IsAgentActive(),
+            clientIndex = agent->NpcInfo.Id - 1,
+            valid = agent->NpcInfo.Valid,
+            initialized = agent->NpcInfo.Initialized,
+            addonId = agent->AddonId,
+            focusedWindow = focused == null ? null : focused->NameString,
+            focusedWindowVisible = focused != null && focused->IsVisible,
+        };
+    }
+
+    /// <summary>
+    /// The capped currencies one delivery of a request pays (scrips), at the highest collectability tier, with what the player has.
+    /// The reward row is the one Satisfier resolved (the bonus row when the bonus applies). Framework thread.
+    /// </summary>
+    public static unsafe List<CustomDeliveries.CappedReward> Rewards(Client client, DeliveryKind kind)
+    {
+        var rewards = new List<CustomDeliveries.CappedReward>();
+        if (Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.SatisfactionSupplyReward>().GetRowOrDefault(client.Rewards[(int)kind]) is not { } row) return rewards;
+        var cm = CurrencyManager.Instance();
+        var level = Svc.Objects.LocalPlayer?.Level ?? 0;
+        for (var i = 0; i < row.SatisfactionSupplyRewardData.Count; i++)
+        {
+            var data = row.SatisfactionSupplyRewardData[i];
+            if (data.RewardCurrency == 0 || (i == 1 && level < row.MinLevelForSecondReward)) continue;
+            var itemId = cm->GetItemIdBySpecialId((byte)data.RewardCurrency);
+            if (itemId == 0) continue;
+            rewards.Add(new CustomDeliveries.CappedReward(Util.Items.Name(itemId), cm->GetItemCount(itemId), cm->GetItemMaxCount(itemId),
+                data.QuantityHigh * row.BonusMultiplier / 100));
+        }
+        return rewards;
+    }
 
     /// <summary>Deliveries left this week for all clients together.</summary>
     public static unsafe int Allowances() => SatisfactionSupplyManager.Instance()->GetRemainingAllowances();

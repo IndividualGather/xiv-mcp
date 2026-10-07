@@ -55,6 +55,7 @@ public static class ToolSummaries
         ["list_characters"] = "Lists the characters XIV MCP has seen on your worlds and accounts.",
         ["open_window"] = "Opens a game window, such as your armoury or currencies.",
         ["close_window"] = "Closes an open game window.",
+        ["recover_game_state"] = "Frees your character from a stuck conversation or window, pressing Escape if needed.",
         ["list_triad_npcs"] = "Lists Triple Triad opponents with where they stand, their rules and which of their cards you have.",
         ["list_triad_cards"] = "Lists Triple Triad cards you have or are missing, and who gives them.",
         ["get_triad_decks"] = "Looks at your saved Triple Triad decks.",

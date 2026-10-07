@@ -35,6 +35,14 @@ Without `kind`, the gathering request comes first (Miner or Botanist, whichever 
 
 While a delivery runs, Satisfier's window stays open: Satisfier keeps its client data up to date while it is shown.
 
+While a delivery runs, **YesAlready** is paused (TextAdvance is not). Its "Custom Deliveries" option turns items in the moment a delivery window loads, even while the window is still hidden behind a client's dialogue, as with Tiisol Ja. The conversation then runs ahead without the window, Satisfier waits for a window that never shows, and anything that touches the hidden window can crash the game. YesAlready resumes as soon as the delivery is done.
+
+## Scrip caps
+
+Deliveries pay scrips, and each scrip has a cap (4,000). When a turn-in would take a scrip over its cap, the game asks first, and neither Satisfier nor Questionable answers that question. So XIV MCP delivers only as many as fit under the cap, counting the most a delivery can pay. When none fit, it doesn't start and says which scrip is in the way: spend some first, for example on materia. `get_custom_deliveries` shows per request how many fit (`fitUnderScripCap`) and which scrip limits it, and `get_currencies` lists every scrip with its cap.
+
+If the game asks a question during a turn-in anyway, the delivery stops right away, answers No and reports what it asked.
+
 ## Plugins
 
 | Plugin | What it adds |

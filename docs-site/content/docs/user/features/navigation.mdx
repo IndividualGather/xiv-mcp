@@ -13,6 +13,7 @@ These tools act in the game, so they need **Game & navigation** changes to be al
 | `list_windows` / `open_window` / `close_window` | Opens main menu windows (Achievements, Saddlebag, Currency and more); `close_window` closes any open window by name |
 | `interact_with_object` | Targets and interacts with a nearby object or NPC, like clicking it: a summoning bell, the company chest, the voyage panel. When furniture blocks the view, it tries again without the line-of-sight check, then from right next to the object. |
 | `get_menu` / `select_menu_option` | The choice menu the game shows after an interaction; picks an entry or advances dialogue |
+| `recover_game_state` | Gets your character out of a conversation, menu, turn-in or shop window that was left open, or out of a conversation the game still holds after its window vanished: clicks through dialogue, answers No, leaves menus, closes the windows that are shown (never hidden ones) and, as a last resort, presses Escape a few times. Never acts in combat, cutscenes or while loading. |
 | `load_game_data` | Asks the game to send your achievements or titles without opening their window |
 
 Windows that act instead of opening something (Log Out, Exit Game, Return, Ready Check, Countdown, Stance) cannot be triggered through `open_window`.

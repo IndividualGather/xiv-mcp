@@ -214,7 +214,8 @@ internal static class InventoryTools
         {
             Name = "get_currencies",
             Description = "All currencies of the logged-in character: gil, MGP, Wolf Marks, Allied Seals, Grand Company seals (with cap), " +
-                          "every allagan tomestone type, the weekly tomestone cap progress, retainer gil, plus the raw contents of the currency container (scrips, etc.).",
+                          "every allagan tomestone type, the weekly tomestone cap progress, retainer gil, scrips and other special currencies " +
+                          "(with their cap), plus the raw contents of the currency container.",
             Handler = (_, _) => Game.RunLoggedIn<object?>(() =>
             {
                 unsafe
@@ -233,6 +234,18 @@ internal static class InventoryTools
                         .Where(t => !string.IsNullOrEmpty(t.name))
                         .ToList();
 
+                    // Scrips and other special currencies don't sit in the currency container; the currency manager holds them
+                    // by a small "special id", with their cap.
+                    var cm = CurrencyManager.Instance();
+                    var special = new List<object>();
+                    for (byte specialId = 1; specialId < 64; specialId++)
+                    {
+                        var itemId = cm->GetItemIdBySpecialId(specialId);
+                        if (itemId == 0 || ItemName(itemId) is not { Length: > 0 } specialName) continue;
+                        var max = cm->GetItemMaxCount(itemId);
+                        special.Add(new { itemId, name = specialName, count = cm->GetItemCount(itemId), max = max > 0 ? max : (uint?)null });
+                    }
+
                     var container = Svc.Inventory.GetInventoryItems(GameInventoryType.Currency).ToArray()
                         .Where(i => !i.IsEmpty)
                         .Select(i => new { itemId = i.BaseItemId, name = ItemName(i.BaseItemId), quantity = i.Quantity })
@@ -248,6 +261,7 @@ internal static class InventoryTools
                         grandCompanySeals = gcSeals,
                         tomestones,
                         weeklyTomestones = new { acquired = im->GetWeeklyAcquiredTomestoneCount(), limit = InventoryManager.GetLimitedTomestoneWeeklyLimit() },
+                        scripsAndSpecial = special,
                         currencyContainer = container,
                     };
                 }
