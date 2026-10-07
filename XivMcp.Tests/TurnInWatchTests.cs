@@ -16,6 +16,15 @@ public class TurnInWatchTests
     }
 
     [Fact]
+    public void Gathered_items_are_turned_in_by_questionable_not_satisfier()
+    {
+        // Satisfier's own turn-in (straight to the game's agent) fails for some clients (Tiisol Ja); Questionable's works.
+        Assert.True(TurnInWatch.TurnInWithQuestionable(isGather: true, inBags: 1, toDeliver: 1));
+        Assert.False(TurnInWatch.TurnInWithQuestionable(isGather: true, inBags: 0, toDeliver: 3)); // Satisfier has Questionable gather
+        Assert.False(TurnInWatch.TurnInWithQuestionable(isGather: false, inBags: 3, toDeliver: 3));
+    }
+
+    [Fact]
     public void Gathering_never_counts_as_a_stalled_turn_in()
     {
         var watch = new TurnInWatch(TimeSpan.FromSeconds(45));

@@ -691,6 +691,20 @@ internal static class QuestionableTools
 
     private static bool IsRunning() => Ipc<bool>("IsRunning");
 
+    /// <summary>
+    /// Has Questionable gather a custom delivery request and turn it in (what Satisfier's gathering uses); with the items already in
+    /// the bags it only turns them in. Framework thread.
+    /// </summary>
+    internal static bool StartDeliveryGathering(uint turnInId, uint itemId, byte classJob, int quantity, ushort collectability) =>
+        Svc.PluginInterface.GetIpcSubscriber<uint, uint, byte, int, ushort, bool>("Questionable.StartGatheringComplex")
+            .InvokeFunc(turnInId, itemId, classJob, quantity, collectability);
+
+    /// <summary>Stops Questionable if it runs (any run, ours or another plugin's). Framework thread.</summary>
+    internal static void StopIfRunning()
+    {
+        if (Running) Ipc<string, bool>("Stop", "XIV MCP");
+    }
+
     /// <summary>Whether Questionable is loaded and running something (a quest, or gathering for another plugin). Framework thread.</summary>
     internal static bool Running
     {

@@ -17,6 +17,13 @@ public sealed class TurnInWatch(TimeSpan limit)
     public static bool QuestionableTurningIn(bool questionableRunning, int inBags, int needed) =>
         questionableRunning && needed > 0 && inBags >= needed;
 
+    /// <summary>
+    /// A gathering request whose items are all in the bags is turned in by Questionable directly. Satisfier would turn it in
+    /// itself, straight through the game's agent, and that fails for some clients (Tiisol Ja); when items are still missing,
+    /// Satisfier has Questionable gather them, and Questionable turns them in through the window, which works.
+    /// </summary>
+    public static bool TurnInWithQuestionable(bool isGather, int inBags, int toDeliver) => isGather && toDeliver > 0 && inBags >= toDeliver;
+
     /// <summary>One look per poll: whether turning in has gone on for longer than the limit without a delivery going in.</summary>
     public bool Stalled(bool turningIn, DateTime lastProgress, DateTime now)
     {

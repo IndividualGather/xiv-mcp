@@ -127,6 +127,17 @@ internal static class SatisfierBridge
 
     public static bool Running => Plugin.Get(Automation, "Running") is true;
 
+    /// <summary>
+    /// What Questionable needs to gather and turn in a client's gathering request (Questionable.StartGatheringComplex), as Satisfier
+    /// passes it: the client's turn-in id, the item, the gathering class and the collectability to reach.
+    /// </summary>
+    public static (uint TurnInId, uint ItemId, byte ClassJob, ushort Collectability) GatherRequest(Client client)
+    {
+        var gather = Plugin.Get(client.Info, "GatherData") ?? throw Plugin.Unsupported("NPCInfo.GatherData");
+        return (Convert.ToUInt32(Plugin.Get(client.Info, "TurninId")), Convert.ToUInt32(Plugin.Get(gather, "GatherItemId")),
+                Convert.ToByte(Plugin.Get(gather, "ClassJobId")), Convert.ToUInt16(Plugin.Get(gather, "CollectabilityHigh")));
+    }
+
     public static string Status => Plugin.Get(Automation, "Status") as string ?? "";
 
     public static void Stop() => Plugin.Call(Automation, "Stop");

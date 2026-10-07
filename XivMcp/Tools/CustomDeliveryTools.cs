@@ -228,6 +228,16 @@ internal static class CustomDeliveryTools
         var window = await Game.Run(SatisfierBridge.KeepWindowOpen).ConfigureAwait(false);
         // Satisfier and Questionable turn in themselves; YesAlready's own turn-in races them (see PluginCompat.PauseYesAlready).
         using var yesAlready = PluginCompat.PauseYesAlready("custom deliveries");
+        var inBags = await Game.Run(() => Items.CountInBags(c.Items[(int)chosen])).ConfigureAwait(false);
+        var viaQuestionable = TurnInWatch.TurnInWithQuestionable(chosen == DeliveryKind.Gather, inBags, planned);
+        // Who drives the delivery: Satisfier (which may run Questionable to gather), or Questionable alone turning in.
+        bool Busy() => viaQuestionable ? QuestionableTools.Running : SatisfierBridge.Running;
+        bool StopAll()
+        {
+            SatisfierBridge.Stop();
+            if (viaQuestionable) QuestionableTools.StopIfRunning();
+            return true;
+        }
         try
         {
             if (chosen == DeliveryKind.Gather)
@@ -241,12 +251,24 @@ internal static class CustomDeliveryTools
                 }).ConfigureAwait(false);
                 await Task.Delay(500, ct).ConfigureAwait(false);
             }
-            await Game.Run(() => { SatisfierBridge.Start(c, chosen); return true; }).ConfigureAwait(false);
+            if (viaQuestionable)
+            {
+                await Game.Run(() =>
+                {
+                    var request = SatisfierBridge.GatherRequest(c);
+                    if (!QuestionableTools.StartDeliveryGathering(request.TurnInId, request.ItemId, request.ClassJob, planned, request.Collectability))
+                        throw new ToolException($"Questionable didn't take the turn-in of {item} for {c.Name}.");
+                    return true;
+                }).ConfigureAwait(false);
+                statuses.Add($"Turning in {planned}x {item} with Questionable (Satisfier's own turn-in fails for some clients).");
+            }
+            else
+                await Game.Run(() => { SatisfierBridge.Start(c, chosen); return true; }).ConfigureAwait(false);
             await Task.Delay(1000, ct).ConfigureAwait(false);
             var deadline = DateTime.UtcNow.AddHours(2);
-            while (await Game.Run(() => SatisfierBridge.Running).ConfigureAwait(false))
+            while (await Game.Run(Busy).ConfigureAwait(false))
             {
-                if (DateTime.UtcNow > deadline) throw new ToolException($"Satisfier is still busy after two hours ({statuses.LastOrDefault()}).");
+                if (DateTime.UtcNow > deadline) throw new ToolException($"The delivery is still running after two hours ({statuses.LastOrDefault()}).");
                 // A rank-up shows its rewards in a window that waits for Accept; Satisfier doesn't press it.
                 if (await Game.Run(AcceptRankUp).ConfigureAwait(false)) statuses.Add("Accepted the rank-up rewards.");
                 var status = await Game.Run(() => SatisfierBridge.Status).ConfigureAwait(false);
@@ -283,22 +305,22 @@ internal static class CustomDeliveryTools
                 {
                     // Neither Satisfier nor Questionable answers a question during the turn-in (the game asks e.g. before a turn-in
                     // that would overcap a currency): stop and say what it asked, rather than waiting for the stall.
-                    await Game.Run(() => { SatisfierBridge.Stop(); return true; }).ConfigureAwait(false);
+                    await Game.Run(StopAll).ConfigureAwait(false);
                     var freed = await Recovery.Run(ct).ConfigureAwait(false);
-                    statuses.Add($"The game asked a question during the turn-in, which nothing answers: stopped Satisfier. {string.Join(" ", freed.Actions)}".TrimEnd());
+                    statuses.Add($"The game asked a question during the turn-in, which nothing answers: stopped it. {string.Join(" ", freed.Actions)}".TrimEnd());
                     break;
                 }
                 else if (turnIn.Stalled(turningIn, progressAt, DateTime.UtcNow))
                 {
-                    await Game.Run(() => { SatisfierBridge.Stop(); return true; }).ConfigureAwait(false);
+                    await Game.Run(StopAll).ConfigureAwait(false);
                     var freed = await Recovery.Run(ct).ConfigureAwait(false);
-                    statuses.Add($"Turning in stalled for 45 seconds: stopped Satisfier. {string.Join(" ", freed.Actions)}".TrimEnd());
+                    statuses.Add($"Turning in stalled for 45 seconds: stopped it. {string.Join(" ", freed.Actions)}".TrimEnd());
                     break;
                 }
                 rankedUp = now.Rank != c.Rank;
                 if (c.DeliveriesLeft - now.DeliveriesLeft >= planned || rankedUp)
                 {
-                    await Game.Run(() => { SatisfierBridge.Stop(); return true; }).ConfigureAwait(false);
+                    await Game.Run(StopAll).ConfigureAwait(false);
                     await Recovery.Run(ct).ConfigureAwait(false);
                     if (rankedUp) statuses.Add($"{c.Name} ranked up: new requests.");
                     break;
@@ -308,7 +330,7 @@ internal static class CustomDeliveryTools
         }
         catch (OperationCanceledException)
         {
-            await Game.Run(() => { SatisfierBridge.Stop(); return true; }).ConfigureAwait(false);
+            await Game.Run(StopAll).ConfigureAwait(false);
             throw;
         }
         finally
