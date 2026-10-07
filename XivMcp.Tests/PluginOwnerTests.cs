@@ -27,3 +27,27 @@ public class PluginOwnerTests
     public void Unknown_plugins_are_rejected() =>
         Assert.Contains("NoSuchPlugin", Assert.Throws<ToolException>(() => PluginOwners.Validate("NoSuchPlugin", Installed)).Message);
 }
+
+public class PluginIdentityTests
+{
+    private static readonly string[] Installed = ["HelloMcp", "OtherPlugin"];
+
+    [Fact]
+    public void A_call_from_the_named_plugin_is_accepted()
+    {
+        Assert.Equal("HelloMcp", PluginOwners.Validate("hellomcp", Installed, actualCaller: "HelloMcp"));
+    }
+
+    [Fact]
+    public void A_plugin_naming_another_plugin_as_owner_is_refused()
+    {
+        var ex = Assert.Throws<ToolException>(() => PluginOwners.Validate("HelloMcp", Installed, actualCaller: "OtherPlugin"));
+        Assert.Contains("OtherPlugin", ex.Message);
+    }
+
+    [Fact]
+    public void A_call_whose_plugin_cannot_be_told_is_refused()
+    {
+        Assert.Throws<ToolException>(() => PluginOwners.Validate("HelloMcp", Installed, actualCaller: null, requireCaller: true));
+    }
+}

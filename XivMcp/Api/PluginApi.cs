@@ -217,7 +217,8 @@ internal sealed class PluginApi : IDisposable
 
     private static ToolProvider Provider(string owner)
     {
-        var id = PluginOwners.Validate(owner, Svc.PluginInterface.InstalledPlugins.Select(p => p.InternalName));
+        // The owner must be the plugin whose code makes the call: no plugin can act as another one.
+        var id = PluginOwners.Validate(owner, Svc.PluginInterface.InstalledPlugins.Select(p => p.InternalName), IpcCaller.Find(), requireCaller: true);
         return new ToolProvider(id, DisplayName(id), ProviderTrust.ThirdParty);
     }
 
