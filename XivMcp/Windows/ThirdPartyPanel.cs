@@ -513,7 +513,8 @@ internal sealed class ThirdPartyPanel(IThirdPartyHost host)
             ImGui.TextColored(e.Flagged ? (e.SuspendedPlugin ? Red : Amber) : Muted, result.Length > 60 ? result[..57] + "..." : result);
             Tooltip(string.Join("\n", new[]
             {
-                e.Summary, e.ArgsPreview is { Length: > 2 } a ? $"Arguments: {a}" : null, $"Declared: {string.Join(", ", e.Capabilities)}",
+                e.Summary, e.Caller is { } who ? $"Asked by: {(who.StartsWith("plugin:") ? "the plugin " + who[7..] : who.StartsWith("assistant:") ? "your AI assistant (" + who[10..] + ")" : "your AI assistant")}" : null,
+                e.ArgsPreview is { Length: > 2 } a ? $"Arguments: {a}" : null, $"Declared: {string.Join(", ", e.Capabilities)}",
                 e.DurationMs > 0 ? $"Took {TimeSpan.FromMilliseconds(e.DurationMs):g}" : null, e.InJob ? "Run as a job step." : null,
                 e.SideEffects.Count > 0 ? "Observed: " + string.Join(" ", e.SideEffects.Select(s => s.Detail + (s.Undeclared ? " (undeclared)" : ""))) : null,
                 e.SuspendedPlugin ? "This call suspended the plugin." : null,

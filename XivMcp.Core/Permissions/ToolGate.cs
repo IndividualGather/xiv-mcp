@@ -349,8 +349,10 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
             }
         }
 
-        // Plain allowed reads are the bulk of all calls; they aren't audited.
-        if (decision == "allowed" && access == Access.Read) return await tool.Handler(args, ct).ConfigureAwait(false);
+        // Plain allowed reads are the bulk of all calls; they aren't audited, except reads of sensitive things: other plugins'
+        // settings (which can hold secrets) and screenshots.
+        if (decision == "allowed" && access == Access.Read && group?.Id is not ("plugin_management" or "screen"))
+            return await tool.Handler(args, ct).ConfigureAwait(false);
 
         var started = now();
         var outcome = "ok";

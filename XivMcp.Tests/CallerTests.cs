@@ -164,3 +164,22 @@ public class DestructiveToolTests
         Assert.Contains(Capabilities.DiscardItems, XivMcp.Integrations.IntegrationCatalog.For(tool)!.Tools[tool]);
     }
 }
+
+public class SensitiveReadAuditTests
+{
+    private sealed class Yes : IApprovalGate { public Task<ApprovalDecision> RequestAsync(ApprovalRequest r, CancellationToken ct) => Task.FromResult(ApprovalDecision.ApprovedOnce); }
+    private sealed class NoProbe : IGameProbe { public GameSnapshot? Capture() => null; }
+    private sealed class NoNotifier : ISecurityNotifier { public void Flagged(ToolProvider p, string t, IReadOnlyList<SideEffect> e, bool s) { } }
+
+    [Fact]
+    public async Task Reading_other_plugins_settings_is_audited_even_when_allowed()
+    {
+        var store = new InMemoryPolicyStore();
+        store.Core.Set("plugin_management", Access.Read, PolicyMode.Allow);
+        var audit = new AuditLog(10);
+        var gate = new ToolGate(store, new Yes(), new NoProbe(), audit, new NoNotifier());
+        var tool = new McpTool { Name = "get_plugin_config", Description = "d", ReadOnly = true, Handler = (_, _) => Task.FromResult<object?>("{}") };
+        await gate.InvokeAsync(tool, new ToolArgs(new System.Text.Json.Nodes.JsonObject()), default);
+        Assert.Equal("get_plugin_config", Assert.Single(audit.Recent()).Tool);
+    }
+}
