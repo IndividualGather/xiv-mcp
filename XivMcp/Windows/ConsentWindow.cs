@@ -13,6 +13,9 @@ namespace XivMcp.Windows;
 /// <summary>The in-game approval popup for <see cref="Consent"/> requests. Opens itself when a request arrives.</summary>
 internal sealed class ConsentWindow : Window
 {
+    /// <summary>How long after a request appears its approve buttons start working.</summary>
+    private static readonly TimeSpan ArmDelay = TimeSpan.FromSeconds(1.2);
+
     private static readonly Vector4 Accent = ConfigWindow.Accent;
     private static readonly Vector4 Muted = new(0.62f, 0.64f, 0.70f, 1);
     private static readonly Vector4 Amber = new(0.91f, 0.70f, 0.29f, 1);
@@ -51,17 +54,23 @@ internal sealed class ConsentWindow : Window
             ImGui.TextColored(Muted, $"Requested by {request.Source}. Declines automatically in {Math.Max(0, left.TotalSeconds):0} s.");
             ImGui.Spacing();
             var w = new Vector2(150 * Ui.Scale, 0);
-            if (ImGui.Button("Approve once", w)) Consent.Answer(request, ApprovalDecision.ApprovedOnce);
-            if (request.OfferSession)
+            // The approve buttons wake up a moment after the request appears (a click meant for the game can't approve it); Decline
+            // always works.
+            var armed = DateTime.UtcNow - request.AskedUtc >= ArmDelay;
+            using (ImRaii.Disabled(!armed))
             {
-                ImGui.SameLine();
-                if (ImGui.Button("Approve for this session", w)) Consent.Answer(request, ApprovalDecision.ApprovedForSession);
-            }
-            if (request.OfferAlways)
-            {
-                ImGui.SameLine();
-                if (ImGui.Button("Always allow", w)) Consent.Answer(request, ApprovalDecision.AlwaysAllow);
-                if (ImGui.IsItemHovered()) ImGui.SetTooltip("Sets these capabilities to Allow for this plugin (change it in /xivmcp → Third-party plugins). Destroying items is never always allowed.");
+                if (ImGui.Button("Approve once", w) && armed) Consent.Answer(request, ApprovalDecision.ApprovedOnce);
+                if (request.OfferSession)
+                {
+                    ImGui.SameLine();
+                    if (ImGui.Button("Approve for this session", w) && armed) Consent.Answer(request, ApprovalDecision.ApprovedForSession);
+                }
+                if (request.OfferAlways)
+                {
+                    ImGui.SameLine();
+                    if (ImGui.Button("Always allow", w) && armed) Consent.Answer(request, ApprovalDecision.AlwaysAllow);
+                    if (ImGui.IsItemHovered()) ImGui.SetTooltip("Sets these capabilities to Allow for this plugin (change it in /xivmcp → Third-party plugins). Destroying items is never always allowed.");
+                }
             }
             ImGui.SameLine();
             if (ImGui.Button("Decline", w)) Consent.Answer(request, ApprovalDecision.Denied);

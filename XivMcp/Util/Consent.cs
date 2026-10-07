@@ -18,13 +18,16 @@ internal static class Consent
     public sealed class Request(string title, IReadOnlyList<string> details)
     {
         public Guid Id { get; } = Guid.NewGuid();
+
+        /// <summary>When it was asked: the approve buttons only work after a moment, so a click meant for the game can't approve it.</summary>
+        public DateTime AskedUtc { get; } = DateTime.UtcNow;
         public string Title { get; } = title;
         public IReadOnlyList<string> Details { get; } = details;
         public DateTime Asked { get; } = DateTime.UtcNow;
         public DateTime Deadline { get; init; }
 
-        /// <summary>Who asks: "your MCP assistant", or a third-party plugin by name.</summary>
-        public string Source { get; init; } = "your MCP assistant";
+        /// <summary>Who asks: "your AI assistant (client)", or a plugin by name.</summary>
+        public string Source { get; init; } = "your AI assistant";
 
         /// <summary>Shown highlighted, e.g. "Can't be undone."</summary>
         public string? Warning { get; init; }
