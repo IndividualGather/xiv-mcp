@@ -30,8 +30,8 @@ They are listed with their purpose in the [tools reference](/docs/user/tools), a
 
 ## Permissions and control
 
-- **Every step is checked** against the player's settings, so a step set to *Ask* waits for the player.
-- **Control:** `GetJob(id)`, `ListJobs()`, `PauseJob`, `ResumeJob` and `CancelJob`.
+- **Every step is checked** against the player's settings **and** your plugin's permissions for what the step does: a step set to *Ask* waits for the player, and one your plugin isn't allowed is refused. Some of XIV MCP's tools are never available to plugins. See [Security model](/docs/developer/plugin-api/security).
+- **Control:** `GetJob(id)`, `ListJobs()`, `PauseJob`, `ResumeJob` and `CancelJob`, for the jobs your plugin started.
 - Your jobs show in `/xivmcp` → **Jobs** with your plugin's name.
 - **Nobody watches your jobs.** When a step fails, the job waits as *pending*. Check `GetJob(id)`, and cancel it or tell the player, who can retry or skip the step in `/xivmcp` → **Jobs** (or ask their assistant to). The client cannot retry or skip a step itself.
 

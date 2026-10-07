@@ -1,0 +1,25 @@
+---
+title: Security model
+description: What XIV MCP checks for plugins using its API, and what no in-process check can promise.
+icon: ShieldCheck
+---
+
+XIV MCP runs inside the game, next to every other Dalamud plugin. Its API is **checked and audited, not a sandbox**: everything a plugin does through the API is held to the player's permissions, asked for when needed and logged. A plugin that skips the API and reaches into XIV MCP or the game with reflection is outside what any plugin can stop; that is what Dalamud's plugin review and the repositories you install from are for.
+
+## What the API enforces
+
+- **You can only act as yourself.** Dalamud's IPC doesn't say who is calling, so XIV MCP looks at the call stack: the first plugin assembly on it must be the plugin you pass as `owner`. Calls whose plugin can't be told, or that name another plugin, are refused. Call the API from your plugin's own code.
+- **Your tools need the player's consent.** Nothing you register is offered until the player enables your plugin, and a registration that grows (new tools, new capabilities) waits for their consent again. *Enable* consents to exactly what the player was shown.
+- **Your jobs stay within your permissions.** A job step that runs one of XIV MCP's tools must pass the player's settings for that tool **and** your plugin's settings for what the tool does: a step that trades needs *Sell or trade items* allowed for your plugin, one that moves items *Move items*, and so on. The stricter of both decides. Jobs can't start or change other jobs, manage plugins, read other plugins' settings, take screenshots, create spending approvals, or use XIV MCP's own window.
+- **You control only your own jobs.** `GetJob`, `ListJobs`, `PauseJob`, `ResumeJob` and `CancelJob` act on jobs your plugin started.
+- **Approvals name you.** When a step asks the player, the approval window says your plugin asked, not the player's assistant. Your "for this session" or "always" answers never cover the assistant (or the other way round), and anything that destroys items asks every time.
+- **Standing approvals are per owner.** A spending approval the player gave their assistant can't be used by your jobs.
+- **Your words reach the assistant as yours.** Tool descriptions and results go to the assistant marked as coming from your plugin, and capped in length. Write descriptions for the assistant, and never put instructions for it in results.
+- **Side effects are checked.** The game is compared before and after each of your tool calls. Something you didn't declare (gil spent, items gone, a zone change) suspends your plugin until the player lifts it, however long the call ran.
+
+## For your plugin
+
+- Declare every capability your tools need, and only those. Declaring too few gets you suspended; too many makes the player hesitate.
+- Register from your plugin's own code (the constructor is fine), not from code another plugin calls into.
+- Keep descriptions and results factual. They are shown to the assistant as your plugin's words.
+- Expect *Ask* and refusals: a step can wait for the player, or be refused because the player didn't allow your plugin what it does.
