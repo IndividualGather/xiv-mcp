@@ -140,3 +140,14 @@ public class BuiltInCapabilityTests
     public void Every_core_tool_has_capabilities() =>
         Assert.All(PermissionCatalog.CoreTools.Keys, t => Assert.NotEmpty(BuiltInCapabilities.Of(Core(t))));
 }
+
+public class DestructiveToolTests
+{
+    [Theory]
+    [InlineData("present_fashion_report")]
+    [InlineData("complete_fashion_report")]
+    public void Tools_that_can_throw_items_away_say_so(string tool)
+    {
+        Assert.Contains(Capabilities.DiscardItems, XivMcp.Integrations.IntegrationCatalog.For(tool)!.Tools[tool]);
+    }
+}

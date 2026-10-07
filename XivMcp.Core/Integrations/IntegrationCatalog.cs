@@ -107,8 +107,8 @@ public static class IntegrationCatalog
             ["play_mini_cactpot"] = [MoveCharacter, GameUi, SpendCurrency, EditSettings],
             ["play_jumbo_cactpot"] = [MoveCharacter, GameUi, SpendCurrency, EditSettings],
             ["stop_saucy"] = [GameUi],
-            ["present_fashion_report"] = [MoveCharacter, MoveItems, GameUi],
-            ["complete_fashion_report"] = [MoveCharacter, MoveItems, GameUi, SpendGil, Network],
+            ["present_fashion_report"] = [MoveCharacter, MoveItems, GameUi, DiscardItems],
+            ["complete_fashion_report"] = [MoveCharacter, MoveItems, GameUi, SpendGil, Network, DiscardItems],
         })
         {
             // The Fashion Report needs no plugin: it belongs here because it happens at the Gold Saucer.

@@ -131,15 +131,14 @@ internal static class FashionTools
                           "reset): puts on the given 'items' first (from the bags or armoury chest), goes to the Masked Rose, chooses to be " +
                           "judged and confirms, and returns the score. Right before talking to her it uses a Gold Saucer VIP Card (more MGP) unless " +
                           "its bonus is already active, if the setting in /xivmcp says so (on by default) or 'use_vip_card' is true. " +
-                          "Pieces listed in 'discard' (bought for the report) are thrown away after judging when cheap enough, if the setting says so. The look counts as worn, including glamours and dyes. Each week has 4 " +
+                          "Pieces complete_fashion_report bought for the report are thrown away after judging when cheap enough, if the setting says so and the player approves in game. The look counts as worn, including glamours and dyes. Each week has 4 " +
                           "attempts; the best one counts.",
             InputSchema = """
                 {
                   "type": "object",
                   "properties": {
                     "items": { "type": "array", "items": { "type": ["string", "integer"] }, "description": "Gear to put on first (names or ids)." },
-                    "use_vip_card": { "type": "boolean", "description": "Use a Gold Saucer VIP Card right before presenting (default: the setting in /xivmcp, on unless turned off)." },
-                    "discard": { "type": "array", "items": { "type": "integer" }, "description": "Item ids bought for the report: after judging, the gearset goes back on and those worth at most the limit in /xivmcp (5,000 gil by default) are thrown away, if that setting is on." }
+                    "use_vip_card": { "type": "boolean", "description": "Use a Gold Saucer VIP Card right before presenting (default: the setting in /xivmcp, on unless turned off)." }
                   }
                 }
                 """,
@@ -154,9 +153,8 @@ internal static class FashionTools
                     await Equip(item, ct).ConfigureAwait(false);
                     steps.Add($"Put on {item}.");
                 }
-                var discard = config.FashionReportDiscard
-                    ? args.Array("discard")?.Select(n => n?.GetValue<uint>() ?? 0).Where(i => i != 0).Distinct().ToList() ?? []
-                    : [];
+                // Only what complete_fashion_report bought for the report, never items a caller names.
+                var discard = config.FashionReportDiscard ? BoughtForReport.Keys.ToList() : [];
                 return await Present(steps, vipCard, discard, config.FashionReportDiscardMaxValue, config.AllowOnlineData, ct).ConfigureAwait(false);
             },
         };
@@ -295,12 +293,14 @@ internal static class FashionTools
         foreach (var p in pieces.Where(p => p.Piece.Dye is not null && !p.AlreadyDyed))
             Add("dye_item", new JsonObject { ["item"] = p.ItemId, ["dye"] = p.Piece.Dye }, $"Dyes {p.Name} {p.Piece.Dye}");
 
+        foreach (var p in pieces.Where(p => p.Source is ItemSource.Vendor or ItemSource.Market)) BoughtForReport[p.ItemId] = 0;
+
         var judging = FashionSchedule.IsJudgingOpen(DateTime.UtcNow);
         if (judging)
             Add("present_fashion_report", new JsonObject
             {
                 ["items"] = new JsonArray(pieces.Select(p => (JsonNode)p.ItemId).ToArray()),
-                ["discard"] = new JsonArray(pieces.Where(p => p.Source is ItemSource.Vendor or ItemSource.Market).Select(p => (JsonNode)p.ItemId).ToArray()),
+
             }, "Puts on the outfit, presents it to the Masked Rose, and throws away cheap pieces it bought");
         if (steps.Count == 0) throw new ToolException("Nothing to do: judging is closed (Friday to the Tuesday reset) and you have everything already.");
 
@@ -521,6 +521,12 @@ internal static class FashionTools
 
     // ---------------------------------------------------------------- presenting
 
+/// <summary>
+    /// The pieces complete_fashion_report planned to buy (from a vendor or the market board): the only items present_fashion_report may
+    /// throw away afterwards. Kept by XIV MCP, so no caller can name other items.
+    /// </summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, byte> BoughtForReport = new();
+
     private static async Task<object> Present(List<string> steps, bool vipCard, List<uint> discard, int maxValue, bool online, CancellationToken ct)
     {
         var state = await Game.Run(ReportState).ConfigureAwait(false);
@@ -580,9 +586,25 @@ internal static class FashionTools
         List<object>? discarded = null;
         if (discard.Count > 0)
         {
+            // Destroying items can't be undone: the player approves in game, seeing what goes.
+            try
+            {
+                var names = await Game.Run(() => discard.Select(Items.Name).ToList()).ConfigureAwait(false);
+                await Consent.Require($"Throw away {names.Count} piece{(names.Count == 1 ? "" : "s")} bought for the Fashion Report?",
+                    [.. names, $"Only pieces worth up to {maxValue:N0} gil are thrown away; the others stay.", "This can't be undone."],
+                    TimeSpan.FromMinutes(2), ct).ConfigureAwait(false);
+            }
+            catch (ToolException ex)
+            {
+                return new { score, highScore = after?.HighScore, attemptsLeft = after?.Remaining, vipCard = vip, discarded = (object)$"Kept: {ex.Message}", steps };
+            }
             await PutGearsetBackOn(steps, ct).ConfigureAwait(false);
             discarded = [];
-            foreach (var id in discard) discarded.Add(await DiscardBought(id, maxValue, online, steps, ct).ConfigureAwait(false));
+            foreach (var id in discard)
+            {
+                discarded.Add(await DiscardBought(id, maxValue, online, steps, ct).ConfigureAwait(false));
+                BoughtForReport.TryRemove(id, out _);
+            }
         }
         return new { score, highScore = after?.HighScore, attemptsLeft = after?.Remaining, vipCard = vip, discarded, steps };
     }
