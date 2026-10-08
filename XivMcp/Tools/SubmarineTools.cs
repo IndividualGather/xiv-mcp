@@ -674,13 +674,20 @@ internal static class SubmarineTools
     }
 
     /// <summary>Backs out of the panel's menus: "Quit" from a vessel, "Nothing." from the list, "Cancel" from the panel.</summary>
+    /// <summary>
+    /// Leaves the voyage control panel. The next menu shows a moment after a pick (the submersible list's "Quit" leads back to the
+    /// panel's top menu), so a moment without a menu is checked again before giving up; whatever is still open after that goes to
+    /// recovery. A panel left open holds the character: the job after it can't change gear or move.
+    /// </summary>
     private static async Task Leave(CancellationToken ct)
     {
-        for (var i = 0; i < 6; i++)
+        var misses = 0;
+        for (var i = 0; i < 8 && misses < 2; i++)
         {
             var picked = await Game.Run(() => Pick(QuitVessel) || Pick(Nothing) || Pick(Cancel)).ConfigureAwait(false);
-            if (!picked) return;
+            misses = picked ? 0 : misses + 1;
             await Task.Delay(600, ct).ConfigureAwait(false);
         }
+        await Recovery.Run(ct, TimeSpan.FromSeconds(10)).ConfigureAwait(false);
     }
 }
