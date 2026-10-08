@@ -44,6 +44,24 @@ public static class JobTimeline
         : t.TotalDays < 1 ? $"{(int)t.TotalHours}h {t.Minutes:00}m"
         : $"{(int)t.TotalDays}d {t.Hours}h";
 
+    /// <summary>
+    /// When a waiting call or step ends: the wait tool's "seconds" after it started, or its "until" time. Null for other tools, or
+    /// arguments that don't say.
+    /// </summary>
+    public static DateTime? WaitEnds(string tool, System.Text.Json.Nodes.JsonObject? args, DateTime started)
+    {
+        if (tool != "wait" || args is null) return null;
+        if (args["until"]?.ToString() is { } until)
+            return DateTime.TryParse(until, System.Globalization.CultureInfo.InvariantCulture,
+                       System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out var when)
+                ? when : null;
+        return args["seconds"] is { } s && double.TryParse(s.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var seconds)
+            ? started.AddSeconds(seconds) : null;
+    }
+
+    /// <summary>"3m 12s left" until <paramref name="ends"/>, "done" after it.</summary>
+    public static string Left(DateTime ends, DateTime now) => ends > now ? $"{Compact(ends - now)} left" : "done";
+
     /// <summary>A log line "HH:mm:ss text" as its time and its text (time empty when the line has none).</summary>
     public static (string Time, string Text) SplitLog(string line) =>
         line.Length > 9 && line[2] == ':' && line[5] == ':' && line[8] == ' ' ? (line[..8], line[9..]) : ("", line);

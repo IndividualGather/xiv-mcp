@@ -79,6 +79,7 @@ public static class ToolSummaries
         ["dye_item"] = "Dyes a piece of your gear in a color, using a dye from your bags.",
         ["capture_ui_events"] = "Records what game windows send while you click, for developing new tools.",
         ["take_screenshot"] = "Looks at your screen: takes a screenshot of the game or of the XIV MCP window.",
+        ["run_autoretainer"] = "Opens a summoning bell and lets AutoRetainer handle your retainers.",
         ["interact_with_object"] = "Talks to an NPC or uses an object near you, such as a summoning bell.",
         ["select_menu_option"] = "Clicks a choice in an open menu or dialogue. It can confirm purchases or discards.",
         ["load_game_data"] = "Has the game send your achievements or your titles, without opening their windows.",

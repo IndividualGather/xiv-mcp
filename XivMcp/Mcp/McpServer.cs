@@ -395,7 +395,8 @@ public sealed partial class McpServer : IDisposable
         string text;
         var isError = false;
         IReadOnlyList<ToolImage> images = [];
-        var activity = Activity.Begin(name, LastClient, DateTime.UtcNow);
+        var started = DateTime.UtcNow;
+        var activity = Activity.Begin(name, LastClient, started, XivMcp.Jobs.JobTimeline.WaitEnds(name, p?["arguments"] as JsonObject, started));
         try
         {
             var caller = XivMcp.Permissions.Caller.Assistant(session?.ClientName ?? LastClient);

@@ -105,3 +105,38 @@ public class StepWindowTests
         Assert.Equal((start, end), XivMcp.Jobs.JobTimeline.StepWindow(count, current, size));
     }
 }
+
+public class WaitTimeTests
+{
+    private static readonly DateTime T0 = new(2026, 10, 4, 12, 0, 0, DateTimeKind.Utc);
+
+    [Fact]
+    public void A_wait_for_seconds_ends_that_long_after_it_started()
+    {
+        var args = new System.Text.Json.Nodes.JsonObject { ["seconds"] = 90 };
+        Assert.Equal(T0.AddSeconds(90), JobTimeline.WaitEnds("wait", args, T0));
+    }
+
+    [Fact]
+    public void A_wait_until_a_time_ends_then()
+    {
+        var args = new System.Text.Json.Nodes.JsonObject { ["until"] = "2026-10-04T12:30:00Z" };
+        Assert.Equal(T0.AddMinutes(30), JobTimeline.WaitEnds("wait", args, T0));
+    }
+
+    [Fact]
+    public void Other_tools_and_unreadable_waits_have_no_end()
+    {
+        Assert.Null(JobTimeline.WaitEnds("gather_until", new System.Text.Json.Nodes.JsonObject { ["seconds"] = 90 }, T0));
+        Assert.Null(JobTimeline.WaitEnds("wait", new System.Text.Json.Nodes.JsonObject { ["until"] = "soon" }, T0));
+        Assert.Null(JobTimeline.WaitEnds("wait", null, T0));
+    }
+
+    [Fact]
+    public void Time_left_counts_down_to_the_end()
+    {
+        Assert.Equal("12m 30s left", JobTimeline.Left(T0.AddMinutes(12).AddSeconds(30), T0));
+        Assert.Equal("1h 05m left", JobTimeline.Left(T0.AddMinutes(65), T0));
+        Assert.Equal("done", JobTimeline.Left(T0, T0.AddSeconds(1)));
+    }
+}

@@ -65,7 +65,7 @@ public static class PermissionCatalog
         ["game_navigation"] =
         [
             "list_windows", "get_menu", "get_automation_status", "get_navigation_status", "list_characters",
-            "open_window", "close_window", "recover_game_state", "interact_with_object", "select_menu_option", "load_game_data", "navigate_to", "stop_navigation",
+            "open_window", "close_window", "recover_game_state", "interact_with_object", "run_autoretainer", "select_menu_option", "load_game_data", "navigate_to", "stop_navigation",
             "switch_character", "refresh_character_list", "switch_gearset", "leave_duty", "abandon_quest", "place_waymark_preset",
             "set_map_flag", "clear_map_flag", "start_route", "visit_world", "show_xivmcp_window", "press_xivmcp_control", "capture_ui_events",
         ],

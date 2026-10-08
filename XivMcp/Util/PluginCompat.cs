@@ -162,6 +162,18 @@ internal sealed class PluginCompat : IDisposable
         ResumeClickers();
     }
 
+    public bool AutoRetainerBusy => AutoRetainerLoaded && Ipc<bool>("AutoRetainer.PluginState.IsBusy") == true;
+    public bool AutoRetainerMultiMode => AutoRetainerLoaded && Ipc<bool>("AutoRetainer.GetMultiModeEnabled") == true;
+
+    /// <summary>
+    /// Lets AutoRetainer have the next bell session: XIV MCP stops holding the bell and AutoRetainer back (if it does), so opening a
+    /// bell starts AutoRetainer's processing like a player's click.
+    /// </summary>
+    public void HandBellToAutoRetainer()
+    {
+        if (holdingBell || suppressedAutoRetainer) ReleaseBell("handed to AutoRetainer");
+    }
+
     /// <summary>Releases the bell once the player has left it for a few seconds (the bell session is over).</summary>
     private void OnUpdate(IFramework framework)
     {

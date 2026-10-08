@@ -277,7 +277,7 @@ internal sealed class OverlayWindow : Window
             IconText(StepIcon(step.State), step.State == StepState.Running ? color with { W = 0.55f + 0.45f * Pulse() } : color);
             ImGui.SameLine();
             var label = string.IsNullOrWhiteSpace(step.Note) ? step.Tool : step.Note!;
-            var time = step.StartedUtc is { } began ? JobTimeline.Compact((step.FinishedUtc ?? now) - began) : "";
+            var time = StepTime(step, now);
             var space = width - (ImGui.GetCursorPosX() - start) - ImGui.CalcTextSize(time).X - 12 * Ui.Scale;
             ImGui.TextColored(isCurrent ? Bright : step.State is StepState.Done or StepState.Skipped ? Muted : Bright with { W = 0.75f }, Fit(label, space));
             if (ImGui.IsItemHovered() && label != step.Tool) Tooltip(step.Tool);
@@ -340,6 +340,11 @@ internal sealed class OverlayWindow : Window
             {
                 ImGui.SameLine();
                 using (Ui.MonoFont()) ImGui.TextColored(StepColor(cur.State), cur.Tool);
+                if (cur is { State: StepState.Running, StartedUtc: { } began } && JobTimeline.WaitEnds(cur.Tool, cur.Args, began) is { } ends)
+                {
+                    ImGui.SameLine();
+                    ImGui.TextColored(Accent, JobTimeline.Left(ends, DateTime.UtcNow));
+                }
             }
             ImGui.SameLine();
             ImGui.TextColored(Muted, JobTimeline.Clock(JobTimeline.Elapsed(job.CreatedUtc, null, DateTime.UtcNow)));
@@ -427,8 +432,17 @@ internal sealed class OverlayWindow : Window
         ImGui.TextColored(Muted, CallTime(call));
     }
 
+    /// <summary>How long a call has run; for a waiting call, how long it still waits.</summary>
     private static string CallTime(CallActivity call) =>
-        JobTimeline.Clock((call.Finished ?? DateTime.UtcNow) - call.Started);
+        call is { Running: true, Ends: { } ends }
+            ? JobTimeline.Left(ends, DateTime.UtcNow)
+            : JobTimeline.Clock((call.Finished ?? DateTime.UtcNow) - call.Started);
+
+    /// <summary>How long a step has run; for a running wait step, how long it still waits.</summary>
+    internal static string StepTime(JobManager.Step step, DateTime now) =>
+        step is { State: StepState.Running, StartedUtc: { } began } && JobTimeline.WaitEnds(step.Tool, step.Args, began) is { } ends
+            ? JobTimeline.Left(ends, now)
+            : step.StartedUtc is { } start ? JobTimeline.Compact((step.FinishedUtc ?? now) - start) : "";
 
     // ---------------------------------------------------------------- helpers
 

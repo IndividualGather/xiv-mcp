@@ -239,6 +239,59 @@ internal static class InteractionTools
 
         yield return new McpTool
         {
+            Name = "run_autoretainer",
+            Description = "Lets AutoRetainer handle the retainers: opens the summoning bell next to the character the way a player does, without " +
+                          "holding AutoRetainer back, so AutoRetainer collects and resends ventures (and does whatever else it is set up to do) " +
+                          "with its own settings. XIV MCP doesn't touch the retainers itself. Waits up to 'wait_seconds' for AutoRetainer to " +
+                          "finish and reports whether it is done (get_automation_status shows it later). Get to a bell first (navigate_to " +
+                          "summoning_bell). Refused while AutoRetainer is busy or in multi mode. Requires 'Game & navigation' in /xivmcp.",
+            InputSchema = """
+                { "type": "object", "properties": { "wait_seconds": { "type": "integer", "minimum": 5, "maximum": 1800, "description": "How long to wait for AutoRetainer to finish (default 45; in a job, longer)." } } }
+                """,
+            ReadOnly = false,
+            Handler = async (args, ct) =>
+            {
+                RequireEnabled();
+                var wait = TimeSpan.FromSeconds(args.Int("wait_seconds", 45, 5, 1800));
+                var bell = await Game.RunLoggedIn(() =>
+                {
+                    if (!compat.AutoRetainerLoaded) throw new ToolException("AutoRetainer isn't installed or loaded.");
+                    if (compat.AutoRetainerMultiMode) throw new ToolException("AutoRetainer is in multi mode and handles the retainers itself.");
+                    if (compat.AutoRetainerBusy) throw new ToolException("AutoRetainer is already busy with the retainers.");
+                    if (Svc.Condition[ConditionFlag.OccupiedSummoningBell])
+                        throw new ToolException("The summoning bell is already open: close it first (close_retainer with close_list=true), then try again.");
+                    var self = Svc.Objects.LocalPlayer!;
+                    var obj = Svc.Objects.Where(o => o.IsTargetable && IsSummoningBell(o))
+                                  .OrderBy(o => System.Numerics.Vector3.Distance(o.Position, self.Position)).FirstOrDefault()
+                              ?? throw new ToolException("No summoning bell nearby: navigate_to summoning_bell first.");
+                    var distance = Game.DistanceToPlayer(obj.Position) ?? float.MaxValue;
+                    if (distance > MaxInteractDistance) throw new ToolException($"The nearest summoning bell is {distance:0.#} yalms away; navigate_to summoning_bell first.");
+                    compat.HandBellToAutoRetainer();
+                    Interact(obj.Address, lineOfSight: false);
+                    return obj.Name.TextValue;
+                }).ConfigureAwait(false);
+
+                // AutoRetainer starts as the bell opens; then wait until it is done and the bell is closed again.
+                var started = await WaitFor(() => compat.AutoRetainerBusy, TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+                if (!started)
+                {
+                    var open = await Game.Run(() => Svc.Condition[ConditionFlag.OccupiedSummoningBell]).ConfigureAwait(false);
+                    throw new ToolException(open
+                        ? "The bell opened, but AutoRetainer didn't start: it may have nothing to do (no ventures back) or be set not to act when a bell opens. Close the bell with close_retainer close_list=true."
+                        : "The bell didn't open. Move closer to it and try again.");
+                }
+                var done = await WaitFor(() => !compat.AutoRetainerBusy && !Svc.Condition[ConditionFlag.OccupiedSummoningBell], wait, ct).ConfigureAwait(false);
+                return new
+                {
+                    bell,
+                    autoRetainer = done ? "done" : "still working",
+                    next = done ? "get_retainers shows the ventures AutoRetainer sent." : "Check get_automation_status until AutoRetainer isn't busy, then get_retainers.",
+                };
+            },
+        };
+
+        yield return new McpTool
+        {
             Name = "get_menu",
             Description = "Shows the choice menu the game currently displays after an interaction (e.g. the voyage control panel's " +
                           "\"Submersible management\" / \"Airship management\", or an NPC's options), and whether a dialogue text box is waiting for a click.",

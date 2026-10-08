@@ -4,8 +4,8 @@ using System.Linq;
 
 namespace XivMcp.Ui;
 
-/// <summary>A tool call the server is running (or ran a moment ago), for the overlay.</summary>
-public sealed record CallActivity(long Id, string Tool, string? Client, DateTime Started, DateTime? Finished, bool Failed)
+/// <summary>A tool call the server is running (or ran a moment ago), for the overlay. <see cref="Ends"/>: when a waiting call is due to end.</summary>
+public sealed record CallActivity(long Id, string Tool, string? Client, DateTime Started, DateTime? Finished, bool Failed, DateTime? Ends = null)
 {
     public bool Running => Finished is null;
 }
@@ -26,12 +26,12 @@ public sealed class ActivityTracker
         get { lock (sync) return calls.Any(c => c.Running); }
     }
 
-    public long Begin(string tool, string? client, DateTime now)
+    public long Begin(string tool, string? client, DateTime now, DateTime? ends = null)
     {
         lock (sync)
         {
             var id = ++nextId;
-            calls.Add(new CallActivity(id, tool, client, now, null, false));
+            calls.Add(new CallActivity(id, tool, client, now, null, false, ends));
             return id;
         }
     }

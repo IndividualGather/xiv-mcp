@@ -387,6 +387,11 @@ internal sealed partial class ConfigWindow
             Figure(cur.State == StepState.Running ? FontAwesomeIcon.Play : FontAwesomeIcon.MapMarkerAlt, $"Step {index}:", "Where the job is now.");
             ImGui.SameLine(0, 4 * scale);
             using (Ui.MonoFont()) ImGui.TextColored(StepColor(cur.State), cur.Tool);
+            if (cur is { State: StepState.Running, StartedUtc: { } began } && JobTimeline.WaitEnds(cur.Tool, cur.Args, began) is { } ends)
+            {
+                ImGui.SameLine(0, 6 * scale);
+                ImGui.TextColored(Accent, JobTimeline.Left(ends, DateTime.UtcNow));
+            }
         }
 
         static void Figure(FontAwesomeIcon icon, string text, string tip)
@@ -613,6 +618,7 @@ internal sealed partial class ConfigWindow
     /// <summary>How long a step took ("took 3m 12s"), or how long it has been running ("1:23").</summary>
     private static string? StepDuration(JobManager.Step step, DateTime now) => step switch
     {
+        { State: StepState.Running, StartedUtc: { } s } when JobTimeline.WaitEnds(step.Tool, step.Args, s) is { } ends => JobTimeline.Left(ends, now),
         { State: StepState.Running, StartedUtc: { } s } => JobTimeline.Clock(now - s),
         { State: StepState.Done or StepState.Failed or StepState.Interrupted, StartedUtc: { } s, FinishedUtc: { } f } when f >= s => f - s < TimeSpan.FromSeconds(1) ? "<1s" : JobTimeline.Compact(f - s),
         _ => null,

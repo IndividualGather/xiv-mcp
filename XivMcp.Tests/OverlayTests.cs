@@ -20,6 +20,14 @@ public class ActivityTrackerTests
     }
 
     [Fact]
+    public void A_waiting_call_keeps_when_it_ends_for_the_countdown()
+    {
+        var t = new ActivityTracker();
+        t.Begin("wait", null, T0, ends: T0.AddMinutes(5));
+        Assert.Equal(T0.AddMinutes(5), Assert.Single(t.Visible(T0.AddSeconds(1), ShowAfter, Linger)).Ends);
+    }
+
+    [Fact]
     public void Quick_calls_never_show()
     {
         var t = new ActivityTracker();
