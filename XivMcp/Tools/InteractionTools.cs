@@ -267,14 +267,27 @@ internal static class InteractionTools
                     var distance = Game.DistanceToPlayer(obj.Position) ?? float.MaxValue;
                     if (distance > MaxInteractDistance) throw new ToolException($"The nearest summoning bell is {distance:0.#} yalms away; navigate_to summoning_bell first.");
                     compat.HandBellToAutoRetainer();
-                    Interact(obj.Address, lineOfSight: false);
-                    return obj.Name.TextValue;
+                    Interact(obj.Address, lineOfSight: true);
+                    return (Name: obj.Name.TextValue, obj.Address);
                 }).ConfigureAwait(false);
+                // Like interact_with_object: furniture can fail the line-of-sight check although the bell is in reach.
+                bool BellAnswered() => Svc.Condition[ConditionFlag.OccupiedSummoningBell] || RetainerUi.Ready("Talk") || compat.AutoRetainerBusy;
+                if (!await WaitFor(BellAnswered, TimeSpan.FromSeconds(3), ct).ConfigureAwait(false))
+                    await Game.Run(() => Interact(bell.Address, lineOfSight: false)).ConfigureAwait(false);
 
                 // AutoRetainer starts as the bell opens; then wait until it is done and the bell is closed again.
-                var started = await WaitFor(() => compat.AutoRetainerBusy, TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+                // The bell can answer with a message instead of the retainer list ("You have not yet hired a retainer."), which a
+                // dialogue plugin may click away at once: catch it while waiting for AutoRetainer to start.
+                string? said = null;
+                var started = await WaitFor(() => compat.AutoRetainerBusy || (said ??= TalkText()) is not null, TimeSpan.FromSeconds(10), ct).ConfigureAwait(false)
+                              && said is null;
                 if (!started)
                 {
+                    if (said is not null)
+                    {
+                        await Recovery.Run(ct).ConfigureAwait(false);
+                        throw new ToolException($"The bell answered \"{said}\"; AutoRetainer has nothing to do here.");
+                    }
                     var open = await Game.Run(() => Svc.Condition[ConditionFlag.OccupiedSummoningBell]).ConfigureAwait(false);
                     throw new ToolException(open
                         ? "The bell opened, but AutoRetainer didn't start: it may have nothing to do (no ventures back) or be set not to act when a bell opens. Close the bell with close_retainer close_list=true."
@@ -283,7 +296,7 @@ internal static class InteractionTools
                 var done = await WaitFor(() => !compat.AutoRetainerBusy && !Svc.Condition[ConditionFlag.OccupiedSummoningBell], wait, ct).ConfigureAwait(false);
                 return new
                 {
-                    bell,
+                    bell = bell.Name,
                     autoRetainer = done ? "done" : "still working",
                     next = done ? "get_retainers shows the ventures AutoRetainer sent." : "Check get_automation_status until AutoRetainer isn't busy, then get_retainers.",
                 };
@@ -447,6 +460,10 @@ internal static class InteractionTools
         }
         return match;
     }
+
+    /// <summary>The text of the dialogue box that is shown, or null. Framework thread.</summary>
+    private static unsafe string? TalkText() =>
+        RetainerUi.Ready("Talk") ? GameWindows.AllTexts(GameWindows.Addon("Talk")).OrderByDescending(t => t.Length).FirstOrDefault() : null;
 
     private static unsafe void CloseAddon(string name) =>
         Svc.GameGui.GetAddonByName<FFXIVClientStructs.FFXIV.Component.GUI.AtkUnitBase>(name, 1)->Close(true);
