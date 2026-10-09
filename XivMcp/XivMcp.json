@@ -2,7 +2,11 @@
   "Author": "IndividualGather",
   "Name": "XIV MCP",
   "Punchline": "Uplink AI assistants to Final Fantasy XIV through the Model Context Protocol.",
-  "Description": "XIV MCP runs a local MCP server (only reachable from your own PC, protected by an access token) so any AI assistant that supports the Model Context Protocol can see your game and help with it.\n\nRead your character live: stats and jobs, gear, inventory, currencies, quests, achievements and unlocks, party, targets, nearby objects, FATEs and the game's data sheets.\n\nRetainers and submersibles are remembered between visits, each with its age and a hint on how to refresh it.\n\nOptional features, each behind its own switch in /xivmcp:\n- Game interaction: open game windows and use objects such as the summoning bell, company chest or voyage control panel.\n- Inventory actions: sort with the game's own sorting, move items between bags, armory, saddlebag and retainers.\n- Plugin management: enable, disable or reload plugins and edit their settings, with backups.",
+  "Description": "XIV MCP runs a local MCP server (only reachable from your own PC, protected by an access token) so any AI assistant that supports the Model Context Protocol (Claude, ChatGPT, Codex, LM Studio and others) can see your game and help with it.\n\nRead your character live: stats and jobs, gear, inventory, currencies, quests, achievements and unlocks, party, targets, nearby objects, FATEs and the game's data sheets. Retainers and submersibles are remembered between visits.\n\nOptional modules, each behind its own switch in /xivmcp: game interaction and navigation, inventory and retainers, market and purchases (every non-gil purchase asks you in game), crafting and gathering with Artisan and GatherBuddy Reborn, quests with Questionable, custom deliveries, fishing, submersibles, plugin management, and background jobs that run for hours on their own.\n\nDocumentation: https://individualgather.github.io/xiv-mcp/",
   "ApplicableVersion": "any",
-  "Tags": ["mcp", "ai", "assistant", "data", "retainers", "submersibles", "inventory"]
+  "RepoUrl": "https://github.com/IndividualGather/xiv-mcp",
+  "IconUrl": "https://raw.githubusercontent.com/IndividualGather/xiv-mcp/master/XivMcp/images/icon.png",
+  "AcceptsFeedback": true,
+  "Tags": ["mcp", "ai", "assistant", "automation", "data", "retainers", "submersibles", "inventory"],
+  "CategoryTags": ["utility"]
 }

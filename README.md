@@ -10,7 +10,7 @@ A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV th
 
 ## Documentation
 
-**[individualgather.github.io/xiv-mcp](https://individualgather.github.io/xiv-mcp/)**, published once the repository is public. Until then, the pages are in [`docs-site/content/docs`](docs-site/content/docs).
+**[individualgather.github.io/xiv-mcp](https://individualgather.github.io/xiv-mcp/)** (sources in [`docs-site/content/docs`](docs-site/content/docs)).
 
 | For | Start here |
 |---|---|
@@ -20,7 +20,13 @@ A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV th
 
 ## Quick start
 
-XIV MCP is not in a plugin repository yet, so build it and load it as a dev plugin. You need the .NET 10 SDK, and XIVLauncher with Dalamud.
+In the game, add this custom plugin repository under `/xlsettings` → **Experimental**, then install **XIV MCP** in `/xlplugins` and open `/xivmcp` → **Connect** to set up your AI app with one click:
+
+```
+https://raw.githubusercontent.com/IndividualGather/xiv-mcp/master/repo.json
+```
+
+To build it yourself instead (the .NET 10 SDK, and XIVLauncher with Dalamud):
 
 ```sh
 git clone https://github.com/IndividualGather/xiv-mcp.git
@@ -28,7 +34,9 @@ cd xiv-mcp
 dotnet build XivMcp.slnx
 ```
 
-In the game, add the full path to `XivMcp/bin/Debug/XivMcp.dll` under `/xlsettings` → **Experimental** → **Dev Plugin Locations**, enable it in `/xlplugins` → **Dev Tools**, then open `/xivmcp` → **Connect** and set up your AI app with one click.
+Then add the full path to `XivMcp/bin/Debug/XivMcp.dll` under `/xlsettings` → **Experimental** → **Dev Plugin Locations** and enable it in `/xlplugins` → **Dev Tools**.
+
+Releases: push a tag like `v0.3.0.0` (or run the **Release** workflow); it builds, tests, publishes `latest.zip` and updates `repo.json`.
 
 Tests: `dotnet test --project XivMcp.Tests/XivMcp.Tests.csproj`. Docs site: `cd docs-site && npm install && npm run dev`.
 

@@ -8,11 +8,7 @@ XIV MCP is a Dalamud plugin, so you need [XIVLauncher](https://goatcorp.github.i
 
 ## From the plugin repository
 
-<Callout type="info" title="Coming soon">
-  XIV MCP will be installable from its own plugin repository: you add one URL in Dalamud's settings and install it like any other plugin. Until the repository is published, install it as a dev plugin (below).
-</Callout>
-
-Once the repository is available:
+XIV MCP has its own plugin repository. You add it once, and Dalamud installs XIV MCP and keeps it up to date like any other plugin.
 
 <Steps>
 <Step>
@@ -22,7 +18,11 @@ In the game, type `/xlsettings` and open the **Experimental** tab.
 </Step>
 <Step>
 
-Under **Custom Plugin Repositories**, paste the repository URL, tick **Enabled** and click **Save and Close**.
+Under **Custom Plugin Repositories**, paste this URL, tick **Enabled** and click **Save and Close**:
+
+```
+https://raw.githubusercontent.com/IndividualGather/xiv-mcp/master/repo.json
+```
 
 </Step>
 <Step>
@@ -37,9 +37,11 @@ Type `/xivmcp` to open its window, and [connect your AI app](/docs/user/connect)
 </Step>
 </Steps>
 
+Each release is listed on [GitHub](https://github.com/IndividualGather/xiv-mcp/releases), with what changed.
+
 ## As a dev plugin
 
-Until then, you build XIV MCP yourself and load it from your PC. You need the [.NET 10 SDK](https://dotnet.microsoft.com/download), [Git](https://git-scm.com/downloads), and XIVLauncher with Dalamud installed. Start the game once with Dalamud before you build, because the build uses Dalamud's files.
+To try changes that aren't released yet, or to work on XIV MCP, build it yourself and load it from your PC. Turn off the installed XIV MCP first, so only one copy runs. You need the [.NET 10 SDK](https://dotnet.microsoft.com/download), [Git](https://git-scm.com/downloads), and XIVLauncher with Dalamud installed. Start the game once with Dalamud before you build, because the build uses Dalamud's files.
 
 <Steps>
 <Step>

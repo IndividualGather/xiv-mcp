@@ -1,0 +1,102 @@
+name: Release
+
+# Builds the plugin for a version tag (v0.3.0.0, or by hand with a version), publishes it as a GitHub release and updates
+# repo.json, the Dalamud custom plugin repository users add in /xlsettings → Experimental:
+#   https://raw.githubusercontent.com/IndividualGather/xiv-mcp/master/repo.json
+on:
+  push:
+    tags: ['v*.*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release (four parts, e.g. 0.3.0.0); the tag v<version> is created on master
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $v = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.version }}' } else { '${{ github.ref_name }}'.TrimStart('v') }
+          if ($v -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw "'$v' is not a four-part version like 0.3.0.0" }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          "tag=v$v" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'master' || github.ref }}
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Download Dalamud
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile dalamud.zip
+          Expand-Archive -Force dalamud.zip -DestinationPath "$env:AppData\XIVLauncher\addon\Hooks\dev"
+
+      - name: Test
+        run: dotnet test XivMcp.Tests -c Release
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $v = '${{ steps.version.outputs.version }}'
+          dotnet build -c Release XivMcp/XivMcp.csproj `
+            -p:Version=$v -p:AssemblyVersion=$v -p:FileVersion=$v -p:InformationalVersion=$v --output build
+          if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+          if (-not (Test-Path build/XivMcp/latest.zip)) { throw "DalamudPackager made no build/XivMcp/latest.zip" }
+
+      - name: Publish release
+        shell: pwsh
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag build/XivMcp/latest.zip --clobber
+          } else {
+            # A tag pushed by hand already exists; a manual run creates it on master.
+            gh release create $tag build/XivMcp/latest.zip --title "XIV MCP ${{ steps.version.outputs.version }}" --generate-notes --target master
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Release failed" }
+
+      - name: Update repo.json
+        shell: pwsh
+        run: |
+          $v = '${{ steps.version.outputs.version }}'
+          $tag = '${{ steps.version.outputs.tag }}'
+          $m = Get-Content build/XivMcp/XivMcp.json -Raw | ConvertFrom-Json
+          $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/latest.zip"
+          $m | Add-Member -Force DownloadLinkInstall $url
+          $m | Add-Member -Force DownloadLinkUpdate $url
+          $m | Add-Member -Force DownloadLinkTesting $url
+          $m | Add-Member -Force LastUpdate ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+          $m | Add-Member -Force IsHide $false
+          $m | Add-Member -Force IsTestingExclusive $false
+          # The release notes, as the changelog Dalamud shows for the update.
+          $notes = gh release view $tag --json body --jq .body
+          if ($notes) { $m | Add-Member -Force Changelog ($notes -join "`n") }
+          git fetch origin master
+          git checkout -B master origin/master
+          ConvertTo-Json -InputObject @($m) -Depth 5 | Set-Content repo.json -Encoding utf8NoBOM
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add repo.json
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) { "repo.json unchanged"; exit 0 }
+          git commit -m "Release $v"
+          git push origin master
