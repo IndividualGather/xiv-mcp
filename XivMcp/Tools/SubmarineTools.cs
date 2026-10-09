@@ -570,11 +570,15 @@ internal static class SubmarineTools
     private static async Task DeployRoute(IReadOnlyList<SubmarinePoint> route, List<string> log, CancellationToken ct)
     {
         await Game.Run(() => Pick(DeployNew)).ConfigureAwait(false);
-        if (!await GameWindows.WaitFor(() => GameWindows.Ready("SubmarineExplorationMapSelect"), TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
-            throw new ToolException("The sea selection did not open.");
-        await Game.Run(() => Fire("SubmarineExplorationMapSelect", 2, null, route[0].Map)).ConfigureAwait(false);
-        if (!await GameWindows.WaitFor(() => GameWindows.Ready("AirShipExploration"), TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
-            throw new ToolException("The voyage map did not open.");
+        // With more than one sea unlocked the game asks which sea first; with only one it opens that sea's map right away.
+        if (!await GameWindows.WaitFor(() => GameWindows.Ready("SubmarineExplorationMapSelect") || GameWindows.Ready("AirShipExploration"), TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
+            throw new ToolException("Neither the sea selection nor the voyage map opened.");
+        if (await Game.Run(() => GameWindows.Ready("SubmarineExplorationMapSelect")).ConfigureAwait(false))
+        {
+            await Game.Run(() => Fire("SubmarineExplorationMapSelect", 2, null, route[0].Map)).ConfigureAwait(false);
+            if (!await GameWindows.WaitFor(() => GameWindows.Ready("AirShipExploration"), TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
+                throw new ToolException("The voyage map did not open.");
+        }
         await Task.Delay(500, ct).ConfigureAwait(false);
         foreach (var point in route)
         {
