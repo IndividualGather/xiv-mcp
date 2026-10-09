@@ -31,4 +31,5 @@ internal sealed class Svc
     [PluginService] public static ITextureProvider Textures { get; private set; } = null!;
     [PluginService] public static IGameInteropProvider GameInterop { get; private set; } = null!;
     [PluginService] public static IAddonLifecycle AddonLifecycle { get; private set; } = null!;
+    [PluginService] public static ISigScanner SigScanner { get; private set; } = null!;
 }

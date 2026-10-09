@@ -229,7 +229,7 @@ internal static class MarketTools
                                 ?? throw new ToolException($"No {plan.ItemName} in your bags or {plan.Retainer}'s inventory.");
                     var quantity = Math.Clamp(args.Int("quantity", stack.Quantity, 1, 9999), 1, stack.Quantity);
                     await SelectAndWait(stack.FromBags ? AddonSellFromBags : AddonSellFromRetainer, "RetainerSellList", ct).ConfigureAwait(false);
-                    await Game.Run(() => { unsafe { AgentRetainer.Instance()->OpenRetainerSell(stack.Container, (ushort)stack.Slot); } return true; }).ConfigureAwait(false);
+                    await Game.Run(() => { unsafe { OpenRetainerSell(stack.Container, (ushort)stack.Slot); } return true; }).ConfigureAwait(false);
                     await WaitFor("RetainerSell", ct).ConfigureAwait(false);
                     steps.Add($"Selling {quantity}x {plan.ItemName}{(stack.Hq ? " (HQ)" : "")} from {(stack.FromBags ? "your bags" : "the retainer")}.");
 
@@ -544,10 +544,29 @@ internal static class MarketTools
         return found.Where(s => hq is null || s.Hq == hq).OrderByDescending(s => s.FromBags).ThenByDescending(s => hq is null && s.Hq).ThenByDescending(s => s.Quantity).FirstOrDefault();
     }
 
+    /// <summary>
+    /// The game's "put up for sale / adjust price" for an inventory slot (AgentRetainer.OpenRetainerSell). Called through its
+    /// signature: ClientStructs only has it on Dalamud's staging track, and a plugin built against that breaks on the release track.
+    /// </summary>
+    private static unsafe delegate* unmanaged<AgentRetainer*, InventoryType, ushort, void> openRetainerSell;
+
+    private const string OpenRetainerSellSignature = "E8 ?? ?? ?? ?? EB ?? 48 83 BF ?? ?? ?? ?? ?? 74 ?? 8B CE";
+
+    private static unsafe void OpenRetainerSell(InventoryType container, ushort slot)
+    {
+        if (openRetainerSell == null)
+        {
+            if (!Svc.SigScanner.TryScanText(OpenRetainerSellSignature, out var address))
+                throw new ToolException("This game version's retainer sell function wasn't found; XIV MCP needs an update for it.");
+            openRetainerSell = (delegate* unmanaged<AgentRetainer*, InventoryType, ushort, void>)address;
+        }
+        openRetainerSell(AgentRetainer.Instance(), container, slot);
+    }
+
     /// <summary>Opens the price adjustment for a listing (slot in the retainer's market list).</summary>
     private static async Task<bool> OpenAdjust(int slot, CancellationToken ct)
     {
-        await Game.Run(() => { unsafe { AgentRetainer.Instance()->OpenRetainerSell(InventoryType.RetainerMarket, (ushort)slot); } return true; }).ConfigureAwait(false);
+        await Game.Run(() => { unsafe { OpenRetainerSell(InventoryType.RetainerMarket, (ushort)slot); } return true; }).ConfigureAwait(false);
         return await WaitFor("RetainerSell", ct, throwOnTimeout: false).ConfigureAwait(false);
     }
 
