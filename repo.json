@@ -1,0 +1,39 @@
+[
+  {
+    "Author": "IndividualGather",
+    "Name": "XIV MCP",
+    "InternalName": "XivMcp",
+    "AssemblyVersion": "0.3.0.0",
+    "Description": "XIV MCP runs a local MCP server (only reachable from your own PC, protected by an access token) so any AI assistant that supports the Model Context Protocol (Claude, ChatGPT, Codex, LM Studio and others) can see your game and help with it.\n\nRead your character live: stats and jobs, gear, inventory, currencies, quests, achievements and unlocks, party, targets, nearby objects, FATEs and the game's data sheets. Retainers and submersibles are remembered between visits.\n\nOptional modules, each behind its own switch in /xivmcp: game interaction and navigation, inventory and retainers, market and purchases (every non-gil purchase asks you in game), crafting and gathering with Artisan and GatherBuddy Reborn, quests with Questionable, custom deliveries, fishing, submersibles, plugin management, and background jobs that run for hours on their own.\n\nDocumentation: https://individualgather.github.io/xiv-mcp/",
+    "ApplicableVersion": "any",
+    "RepoUrl": "https://github.com/IndividualGather/xiv-mcp",
+    "Tags": [
+      "mcp",
+      "ai",
+      "assistant",
+      "automation",
+      "data",
+      "retainers",
+      "submersibles",
+      "inventory"
+    ],
+    "CategoryTags": [
+      "utility"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "IconUrl": "https://raw.githubusercontent.com/IndividualGather/xiv-mcp/master/XivMcp/images/icon.png",
+    "Punchline": "Uplink AI assistants to Final Fantasy XIV through the Model Context Protocol.",
+    "AcceptsFeedback": true,
+    "DownloadLinkInstall": "https://github.com/IndividualGather/xiv-mcp/releases/download/v0.3.0.0/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/IndividualGather/xiv-mcp/releases/download/v0.3.0.0/latest.zip",
+    "DownloadLinkTesting": "https://github.com/IndividualGather/xiv-mcp/releases/download/v0.3.0.0/latest.zip",
+    "LastUpdate": 1791505083,
+    "IsHide": false,
+    "IsTestingExclusive": false,
+    "Changelog": "**Full Changelog**: https://github.com/IndividualGather/xiv-mcp/commits/v0.3.0.0"
+  }
+]
