@@ -3,12 +3,10 @@ import {
   BookOpen,
   Boxes,
   Coins,
-  Hammer,
   ListChecks,
   Map,
   Plug,
   ShieldCheck,
-  Swords,
   UserRound,
 } from 'lucide-react';
 import { repoUrl, tagline, withBase } from '@/lib/shared';
@@ -31,18 +29,6 @@ const features = [
     title: 'Market and vendors',
     text: 'Check prices, find vendors, buy and sell, and undercut cheaper listings within limits you set.',
     chips: ['market board', 'approvals'],
-  },
-  {
-    icon: Hammer,
-    title: 'Crafting and gathering',
-    text: 'Plan a project from the recipe tree, gather what is missing and craft the list in the right order.',
-    chips: ['plans', 'lists'],
-  },
-  {
-    icon: Swords,
-    title: 'Dungeons',
-    text: 'Run and loop duties until you have the drop or the tomestones you are after.',
-    chips: ['loops', 'targets'],
   },
   {
     icon: Map,
@@ -90,7 +76,7 @@ export default function HomePage() {
         </nav>
       </section>
 
-      <section className="mt-16 grid w-full max-w-5xl gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="mt-16 grid w-full max-w-5xl gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {features.map(({ icon: Icon, title, text, chips }) => (
           <div key={title} className="xiv-card flex flex-col gap-2 p-4">
             <span className="flex size-9 items-center justify-center rounded-lg bg-fd-accent text-fd-primary">
