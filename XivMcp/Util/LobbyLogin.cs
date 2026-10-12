@@ -10,6 +10,7 @@ using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Excel.Sheets;
 using XivMcp.Mcp;
+using XivMcp.Ui;
 
 namespace XivMcp.Util;
 
@@ -40,6 +41,7 @@ internal static class LobbyLogin
         var confirmed = false;
         var selectedAt = DateTime.MinValue;
         string? lastStep = null;
+        returnedToTitleAt = DateTime.MinValue;
         void Step(string s) { if (s != lastStep) { step(s); lastStep = s; } }
 
         while (DateTime.UtcNow < deadline)
@@ -61,6 +63,12 @@ internal static class LobbyLogin
     /// <summary>When the logout prompt was last confirmed, and how long its countdown (outside a sanctuary) may take before confirming again.</summary>
     private static DateTime logoutConfirmedAt = DateTime.MinValue;
     private static readonly TimeSpan LogoutCountdown = TimeSpan.FromSeconds(30);
+
+    /// <summary>When this login left another data center's character list for the title screen.</summary>
+    private static DateTime returnedToTitleAt = DateTime.MinValue;
+
+    private static string DataCenterName(uint id) =>
+        Svc.Data.GetExcelSheet<WorldDCGroupType>().GetRowOrDefault(id)?.Name.ExtractText() is { Length: > 0 } name ? name : $"data center {id}";
 
     private enum TickKind { Waiting, Acted, Done }
 
@@ -136,13 +144,30 @@ internal static class LobbyLogin
         if (list != null && list->IsVisible && (worldSelected || !hasWorldList))
         {
             // With a world list the character list shows one world; without it, every character of the data center.
-            var index = ListIndex(target, perWorld: hasWorldList);
-            if (index is null) return TickResult.Wait("Waiting for the character list…");
-            if (index < 0) throw new ToolException($"{target.Name} is not in this account's character list on {target.LobbyWorld} " +
-                                                   (target.ServiceAccount is { } sa ? $"(service account {sa + 1})." : "."));
+            var (index, dataCenters) = ListIndex(target, perWorld: hasWorldList);
+            switch (LobbyList.Judge(index >= 0, target.DataCenterId, dataCenters))
+            {
+                case LobbyListVerdict.Loading:
+                    return TickResult.Wait("Waiting for the character list…");
+                case LobbyListVerdict.OtherDataCenter:
+                {
+                    // The lobby opened at another data center's list: back to the title screen, which picks the right one.
+                    if (DateTime.UtcNow - returnedToTitleAt < TimeSpan.FromSeconds(20)) return TickResult.Wait("Returning to the title screen…");
+                    if (returnedToTitleAt != DateTime.MinValue)
+                        throw new ToolException($"The lobby still shows another data center's characters; {target.Name} is on {DataCenterName(target.DataCenterId)}.");
+                    var back = Addon("_CharaSelectReturn");
+                    if (back == null || !back->IsVisible || !back->IsReady || throttled) return TickResult.Wait();
+                    Fire(back, 0);
+                    returnedToTitleAt = DateTime.UtcNow;
+                    return TickResult.Did($"The lobby shows another data center; returning to the title screen to choose {DataCenterName(target.DataCenterId)}.");
+                }
+                case LobbyListVerdict.Missing:
+                    throw new ToolException($"{target.Name} is not in this account's character list on {target.LobbyWorld} " +
+                                            (target.ServiceAccount is { } sa ? $"(service account {sa + 1})." : "."));
+            }
             // Select once; only retry if no confirmation appeared for a while.
             if (throttled || DateTime.UtcNow - selectedAt < TimeSpan.FromSeconds(8)) return TickResult.Wait();
-            Fire(list, 29, 0, index.Value);
+            Fire(list, 29, 0, index);
             selectedAt = DateTime.UtcNow;
             return TickResult.Did($"Selected {target.Name}.");
         }
@@ -168,7 +193,7 @@ internal static class LobbyLogin
             Fire(dcMap, 17, (int)target.DataCenterId);
             dcSelectedAt = DateTime.UtcNow;
             dcMap->Close(true);
-            return TickResult.Did($"Selected data center {Svc.Data.GetExcelSheet<WorldDCGroupType>().GetRowOrDefault(target.DataCenterId)?.Name.ExtractText()}.");
+            return TickResult.Did($"Selected data center {DataCenterName(target.DataCenterId)}.");
         }
 
         // Service account choice.
@@ -202,21 +227,27 @@ internal static class LobbyLogin
         return TickResult.Wait();
     }
 
-    /// <summary>Position of the target in the lobby list of its world: null while the list loads, -1 if it isn't there.</summary>
-    private static unsafe int? ListIndex(Target target, bool perWorld)
+    /// <summary>
+    /// Position of the target in the lobby list of its world (-1 if it isn't there), and the data centers of the listed characters'
+    /// current worlds (empty while the list loads).
+    /// </summary>
+    private static unsafe (int Index, List<uint> DataCenters) ListIndex(Target target, bool perWorld)
     {
         var agent = AgentLobby.Instance();
         var entries = agent->LobbyData.CharaSelectEntries;
-        if (entries.Count == 0) return null;
+        var worlds = Svc.Data.GetExcelSheet<World>();
+        var dataCenters = new List<uint>();
         var onWorld = new List<(ulong Id, string Name, byte Index)>();
         foreach (var ptr in entries)
         {
             var e = ptr.Value;
-            if (e != null && e->ContentId != 0 && (!perWorld || e->CurrentWorldId == target.LobbyWorldId)) onWorld.Add((e->ContentId, e->NameString, e->Index));
+            if (e == null || e->ContentId == 0) continue;
+            dataCenters.Add(worlds.GetRowOrDefault(e->CurrentWorldId)?.DataCenter.RowId ?? 0);
+            if (!perWorld || e->CurrentWorldId == target.LobbyWorldId) onWorld.Add((e->ContentId, e->NameString, e->Index));
         }
         var ordered = onWorld.OrderBy(e => e.Index).ToList();
         var i = ordered.FindIndex(e => (target.ContentId != 0 && e.Id == target.ContentId) || e.Name.Equals(target.Name, StringComparison.OrdinalIgnoreCase));
-        return i;
+        return (i, dataCenters);
     }
 
     /// <summary>Position of a world in the lobby's world list (string array 1): null while it loads, -1 if missing.</summary>

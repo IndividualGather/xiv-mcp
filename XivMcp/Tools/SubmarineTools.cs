@@ -147,7 +147,7 @@ internal static class SubmarineTools
                 {
                     await LoadVessels(ct).ConfigureAwait(false);
                     var vessels = await Game.Run(() => name is null ? Returned() : [FindVessel(name)]).ConfigureAwait(false);
-                    if (vessels.Count == 0) throw new ToolException("No submersible is back from its voyage.");
+                    if (vessels.Count == 0) throw await Game.Run(NoneReturned).ConfigureAwait(false);
                     var before = await Game.Run(Fleet).ConfigureAwait(false);
                     var log = new List<string>();
                     foreach (var vessel in vessels)
@@ -215,7 +215,7 @@ internal static class SubmarineTools
                 {
                     await LoadVessels(ct).ConfigureAwait(false);
                     var vessels = await Game.Run(() => name is null ? Returned() : [FindVessel(name)]).ConfigureAwait(false);
-                    if (vessels.Count == 0) throw new ToolException("No submersible is back from its voyage.");
+                    if (vessels.Count == 0) throw await Game.Run(NoneReturned).ConfigureAwait(false);
                     var before = await Game.Run(Fleet).ConfigureAwait(false);
                     var results = new List<object>();
                     foreach (var vessel in vessels)
@@ -335,6 +335,14 @@ internal static class SubmarineTools
 
     /// <summary>The submersibles that are back and have been out (a new one without a previous route is left alone).</summary>
     private static List<Vessel> Returned() => Vessels().Where(v => !v.OnVoyage && v.Returns != DateTime.MinValue).ToList();
+
+    /// <summary>Thrown when no submersible is back; names the idle ones (voyage finished already, or never sent), which only go out by name.</summary>
+    private static ToolException NoneReturned()
+    {
+        var idle = Vessels().Where(v => v.Returns == DateTime.MinValue).Select(v => v.Name).ToList();
+        return new ToolException("No submersible is back from its voyage." +
+                                 (idle.Count > 0 ? $" Not on a voyage: {string.Join(", ", idle)}; name one with 'submersible' to send it." : ""));
+    }
 
     private static int[] Condition(Vessel v) => WorkshopTracker.PartConditions(v.Index);
 
@@ -532,7 +540,8 @@ internal static class SubmarineTools
         var slots = VesselRepair.SlotsToRepair(before, belowPercent);
         if (slots.Count == 0) return [];
         if (await Game.Run(() => Items.CountInBags(RepairMaterials)).ConfigureAwait(false) == 0)
-            throw new ToolException($"{vessel.Name} needs repairs ({string.Join(", ", slots.Select(s => $"{Parts[s]} {before[s]}%"))}), but you have no Magitek Repair Materials.");
+            throw new ToolException($"{vessel.Name} needs repairs ({string.Join(", ", slots.Select(s => $"{Parts[s]} {before[s]}%"))}), but you have no Magitek Repair Materials. " +
+                                    $"Its voyage is finished and its loot collected; to send it without repairs, name it with repair_below 0.");
 
         await Game.Run(() => Pick(Repair)).ConfigureAwait(false);
         if (!await GameWindows.WaitFor(() => GameWindows.Ready("CompanyCraftSupply"), TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
