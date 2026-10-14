@@ -93,7 +93,8 @@ internal static class LobbyLogin
                 if (throttled) return TickResult.Wait();
                 // Outside a sanctuary the prompt stays open and counts down 20 seconds after OK; confirming again restarts the count.
                 if (DateTime.UtcNow - logoutConfirmedAt < LogoutCountdown) return TickResult.Wait("Logging out (20 seconds outside a sanctuary)…");
-                Fire(logoutPrompt, 0);
+                // A click, not a callback: outside a sanctuary the callback leaves the prompt open without starting the countdown.
+                if (!ClickYes(logoutPrompt)) return TickResult.Wait("Waiting for the logout prompt's OK button…");
                 logoutConfirmedAt = DateTime.UtcNow;
                 return TickResult.Did("Confirmed logging out.");
             }
@@ -286,6 +287,19 @@ internal static class LobbyLogin
     {
         var a = Addon("SelectYesno");
         return a != null && a->IsVisible && a->IsReady ? a : null;
+    }
+
+    /// <summary>Clicks a SelectYesno's Yes/OK button the way the mouse does (through the button's own click event).</summary>
+    private static unsafe bool ClickYes(AtkUnitBase* addon)
+    {
+        var button = ((AddonSelectYesno*)addon)->YesButton;
+        if (button == null || !button->IsEnabled || button->AtkComponentBase.OwnerNode == null) return false;
+        var evt = button->AtkComponentBase.OwnerNode->AtkResNode.AtkEventManager.Event;
+        if (evt == null) return false;
+        var data = stackalloc AtkEventData[1];
+        data[0] = default;
+        addon->ReceiveEvent(evt->State.EventType, (int)evt->Param, evt, data);
+        return true;
     }
 
     private static unsafe string YesNoText(AtkUnitBase* addon)
