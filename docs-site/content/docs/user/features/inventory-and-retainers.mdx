@@ -51,7 +51,7 @@ Things to ask:
 
 - **Getting there:** `navigate_to` with destination `workshop` takes you to the panel.
 - **Loot first, then the route:** a submersible that is back is finalized first, which collects its loot. Only then does the game raise its rank and unlock the sectors it found, so a new route is chosen afterwards: `collect_submersible` shows what changed, and `deploy_submersible` checks the route against it too.
-- **Repairs before deploying:** parts below 20% are repaired first (you can change this, or turn it off).
+- **Repairs before deploying:** parts below 20% are repaired first (you can change this, or turn it off). A submersible with a part at 0% can't sail until it is repaired; XIV MCP reports one the game didn't send.
 - **Fuel:** each voyage uses Ceruleum Tanks from your bags. If you have too few, nothing is sent.
 - **Routes:** points are given by name, map letter or id; they must be unlocked and within the submersible's rank.
 
@@ -75,4 +75,4 @@ The game's sorting only stores a display order. So `get_inventory` lists items a
 
 If you use AutoRetainer, XIV MCP holds it back while it uses the bell, and leaves the bell alone while AutoRetainer is busy. See [Compatibility](/docs/user/compatibility).
 
-To have AutoRetainer handle your retainers instead (collect and resend ventures with its own settings), your assistant uses `run_autoretainer` next to a bell: it opens the bell like you would, without holding AutoRetainer back, and reports when AutoRetainer is done.
+To have AutoRetainer handle your retainers instead (collect and resend ventures with its own settings), your assistant uses `run_autoretainer` next to a bell: it opens the bell like you would, without holding AutoRetainer back, and reports when AutoRetainer is done. If AutoRetainer leaves the retainer list open, XIV MCP closes it.

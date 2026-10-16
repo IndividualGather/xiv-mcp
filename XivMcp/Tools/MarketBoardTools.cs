@@ -51,7 +51,7 @@ internal static class MarketBoardTools
         };
     }
 
-    private sealed record Listing(ulong ListingId, uint UnitPrice, uint Quantity, uint Tax, bool Hq, int Index);
+    private sealed record Listing(ulong ListingId, uint UnitPrice, uint Quantity, uint Tax, bool Hq);
 
     private static async Task<object?> Buy(Configuration config, ToolArgs args, CancellationToken ct)
     {
@@ -144,7 +144,8 @@ internal static class MarketBoardTools
             }
             return true;
         }).ConfigureAwait(false);
-        var deadline = DateTime.UtcNow.AddSeconds(8);
+        // A busy server takes more than 10 seconds to open it.
+        var deadline = DateTime.UtcNow.AddSeconds(25);
         while (DateTime.UtcNow < deadline)
         {
             if (await Game.Run(() => RetainerUi.Ready("ItemSearch")).ConfigureAwait(false)) { steps.Add("Opened the market board."); return; }
@@ -153,42 +154,52 @@ internal static class MarketBoardTools
         throw new ToolException("The market board did not open.");
     }
 
-    /// <summary>Asks the server for the item's listings (as the result window does) and waits until they are in.</summary>
+    /// <summary>
+    /// Asks the server for the item's listings (as the result window does) and collects them from Dalamud's market board event as
+    /// they come in (in batches); done once no batch has come for a moment.
+    /// </summary>
     private static async Task<List<Listing>> RequestListings(uint itemId, CancellationToken ct)
     {
-        await Game.Run(() =>
+        var listings = new Dictionary<ulong, Listing>();
+        var batches = 0;
+        var lastBatch = DateTime.MinValue;
+        var sync = new object();
+        void OnOfferings(IMarketBoardCurrentOfferings offerings)
         {
-            unsafe
+            lock (sync)
             {
-                var proxy = InfoProxyItemSearch.Instance();
-                if (proxy == null) throw new ToolException("The market board's listings are not available.");
-                proxy->SearchItemId = itemId;
-                proxy->VirtualTable->RequestData(proxy);
+                var mine = offerings.ItemListings.Where(l => l.ItemId == itemId).ToList();
+                if (mine.Count == 0 && offerings.ItemListings.Count > 0) return; // another item's listings
+                foreach (var l in mine) listings[l.ListingId] = new Listing(l.ListingId, l.PricePerUnit, l.ItemQuantity, l.TotalTax, l.IsHq);
+                batches++;
+                lastBatch = DateTime.UtcNow;
             }
-            return true;
-        }).ConfigureAwait(false);
-        await Task.Delay(500, ct).ConfigureAwait(false);
-        var deadline = DateTime.UtcNow.AddSeconds(15);
-        while (DateTime.UtcNow < deadline)
+        }
+        Svc.MarketBoard.OfferingsReceived += OnOfferings;
+        try
         {
-            var listings = await Game.Run(() =>
+            await Game.Run(() =>
             {
                 unsafe
                 {
                     var proxy = InfoProxyItemSearch.Instance();
-                    if (proxy->WaitingForListings || proxy->SearchItemId != itemId) return null;
-                    var result = new List<Listing>();
-                    for (var i = 0; i < proxy->ListingCount && i < proxy->Listings.Length; i++)
-                    {
-                        var l = proxy->Listings[i];
-                        if (l.ItemId == itemId) result.Add(new Listing(l.ListingId, l.UnitPrice, l.Quantity, l.TotalTax, l.IsHqItem, i));
-                    }
-                    return result;
+                    if (proxy == null) throw new ToolException("The market board's listings are not available.");
+                    proxy->SearchItemId = itemId;
+                    proxy->VirtualTable->RequestData(proxy);
                 }
+                return true;
             }).ConfigureAwait(false);
-            if (listings is not null) return listings;
-            await Task.Delay(300, ct).ConfigureAwait(false);
+            // The server can take a while when it is busy.
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            while (DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(300, ct).ConfigureAwait(false);
+                lock (sync)
+                    if (batches > 0 && DateTime.UtcNow - lastBatch > TimeSpan.FromSeconds(1.5))
+                        return listings.Values.ToList();
+            }
         }
+        finally { Svc.MarketBoard.OfferingsReceived -= OnOfferings; }
         throw new ToolException("The market board did not send the listings (it may be busy; try again in a moment).");
     }
 
@@ -208,10 +219,13 @@ internal static class MarketBoardTools
                 unsafe
                 {
                     var proxy = InfoProxyItemSearch.Instance();
-                    if (listing.Index >= proxy->ListingCount) return false;
-                    var entry = (MarketBoardListing*)System.Runtime.CompilerServices.Unsafe.AsPointer(ref proxy->Listings[listing.Index]);
-                    if (entry->ListingId != listing.ListingId) return false; // the list changed under us
-                    return proxy->SetLastPurchasedItem(entry) && proxy->SendPurchaseRequestPacket();
+                    // The listing must still be on the board (the list can change under us).
+                    for (var i = 0; i < proxy->ListingCount && i < proxy->Listings.Length; i++)
+                    {
+                        var entry = (MarketBoardListing*)System.Runtime.CompilerServices.Unsafe.AsPointer(ref proxy->Listings[i]);
+                        if (entry->ListingId == listing.ListingId) return proxy->SetLastPurchasedItem(entry) && proxy->SendPurchaseRequestPacket();
+                    }
+                    return false;
                 }
             }).ConfigureAwait(false);
             if (!sent) return false;

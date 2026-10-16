@@ -218,6 +218,8 @@ internal static class SubmarineTools
                     if (vessels.Count == 0) throw await Game.Run(NoneReturned).ConfigureAwait(false);
                     var before = await Game.Run(Fleet).ConfigureAwait(false);
                     var results = new List<object>();
+                    var deployed = 0;
+                    string? lastError = null;
                     foreach (var vessel in vessels)
                     {
                         if (vessel.OnVoyage) throw new ToolException($"{vessel.Name} is still out on a voyage until {vessel.Returns:HH:mm}.");
@@ -229,18 +231,30 @@ internal static class SubmarineTools
                         if (route is null) await DeployPrevious(vessel, log, ct).ConfigureAwait(false);
                         else await DeployRoute(route, log, ct).ConfigureAwait(false);
                         var after = await Game.Run(() => FindVessel(vessel.Name)).ConfigureAwait(false);
+                        // The game can refuse without a message (parts at 0%): only a voyage that started counts.
+                        string? error = null;
+                        if (!after.OnVoyage)
+                        {
+                            var worn = await Game.Run(() => Condition(after)).ConfigureAwait(false);
+                            error = $"{vessel.Name} did not leave: the game did not start the voyage" +
+                                    (worn.Any(c => c == 0) ? " (parts at 0% must be repaired first)." : ".");
+                        }
+                        else deployed++;
+                        lastError = error ?? lastError;
                         results.Add(new
                         {
                             submersible = vessel.Name,
                             route = route is null ? "previous" : string.Join(" → ", route.Select(p => p.Name)),
                             repaired,
                             returns = after.OnVoyage ? after.Returns.ToString("yyyy-MM-dd HH:mm") : null,
+                            error,
                             log,
                         });
                     }
                     await Leave(ct).ConfigureAwait(false);
+                    if (deployed == 0 && lastError is not null) throw new ToolException(lastError);
                     var progress = await Game.Run(() => DescribeProgress(VoyageProgress.Between(before, Fleet()))).ConfigureAwait(false);
-                    return new { deployed = results.Count, submersibles = results, progress, ceruleumLeft = await Game.Run(() => Items.CountInBags(Ceruleum)).ConfigureAwait(false) };
+                    return new { deployed, submersibles = results, progress, ceruleumLeft = await Game.Run(() => Items.CountInBags(Ceruleum)).ConfigureAwait(false) };
                 }
                 catch
                 {

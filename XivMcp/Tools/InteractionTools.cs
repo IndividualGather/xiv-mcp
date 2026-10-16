@@ -293,7 +293,17 @@ internal static class InteractionTools
                         ? "The bell opened, but AutoRetainer didn't start: it may have nothing to do (no ventures back) or be set not to act when a bell opens. Close the bell with close_retainer close_list=true."
                         : "The bell didn't open. Move closer to it and try again.");
                 }
-                var done = await WaitFor(() => !compat.AutoRetainerBusy && !Svc.Condition[ConditionFlag.OccupiedSummoningBell], wait, ct).ConfigureAwait(false);
+                // Done once AutoRetainer has stayed idle for a few seconds (it is briefly idle between retainers). It can leave the
+                // retainer list open, which holds the character: close it then.
+                var idleSince = DateTime.MaxValue;
+                var done = await WaitFor(() =>
+                {
+                    if (compat.AutoRetainerBusy) { idleSince = DateTime.MaxValue; return false; }
+                    if (idleSince == DateTime.MaxValue) idleSince = DateTime.UtcNow;
+                    return !Svc.Condition[ConditionFlag.OccupiedSummoningBell] || DateTime.UtcNow - idleSince > TimeSpan.FromSeconds(4);
+                }, wait, ct).ConfigureAwait(false);
+                if (done && await Game.Run(() => Svc.Condition[ConditionFlag.OccupiedSummoningBell]).ConfigureAwait(false))
+                    await Recovery.Run(ct).ConfigureAwait(false);
                 return new
                 {
                     bell = bell.Name,
