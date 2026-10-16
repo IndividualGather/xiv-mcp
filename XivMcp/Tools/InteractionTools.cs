@@ -508,7 +508,7 @@ internal static class InteractionTools
     });
 
     /// <summary>Targets an object and interacts with it like a click. Returns the game's result (0: refused). Framework thread.</summary>
-    private static unsafe ulong Interact(nint address, bool lineOfSight)
+    internal static unsafe ulong Interact(nint address, bool lineOfSight)
     {
         var native = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)address;
         TargetSystem.Instance()->SetHardTarget(native, false, false, 0);

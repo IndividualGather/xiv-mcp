@@ -17,6 +17,7 @@ internal static class Universalis
 {
     private const string Api = "https://universalis.app/api/v2";
     private static readonly SemaphoreSlim Gate = new(1, 1);
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
 
     public sealed record Listing(long PricePerUnit, int Quantity, bool Hq, string? Retainer, string? World, DateTime? Reviewed);
 
@@ -34,16 +35,23 @@ internal static class Universalis
             var url = $"{Api}/{Uri.EscapeDataString(scope)}/{string.Join(',', chunk)}?listings={listings}&entries={entries}";
             JsonNode? json;
             await Gate.WaitAsync(ct).ConfigureAwait(false);
+            // The shared client waits minutes (for Teamcraft's big download); Universalis answers in seconds or is down.
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(RequestTimeout);
             try
             {
-                using var response = await Teamcraft.Http.GetAsync(url, ct).ConfigureAwait(false);
+                using var response = await Teamcraft.Http.GetAsync(url, timeout.Token).ConfigureAwait(false);
                 if ((int)response.StatusCode == 404) continue; // untradeable / unknown items
                 response.EnsureSuccessStatusCode();
-                json = JsonNode.Parse(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+                json = JsonNode.Parse(await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false));
             }
             catch (HttpRequestException ex)
             {
                 throw new ToolException($"Universalis did not answer: {ex.Message}");
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                throw new ToolException($"Universalis did not answer within {RequestTimeout.TotalSeconds:0} seconds.");
             }
             finally
             {

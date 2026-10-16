@@ -196,7 +196,8 @@ internal static class MarketTools
                     "hq": { "type": "boolean", "description": "Sell the HQ stack (default: HQ if you have one)." },
                     "quantity": { "type": "integer", "description": "How many from the stack (default the whole stack)." },
                     "price": { "type": "integer", "description": "Price per unit; omit to undercut the live market." },
-                    "allow_low_price": { "type": "boolean", "description": "Allow a price under half the recent Universalis average (default false)." }
+                    "allow_low_price": { "type": "boolean", "description": "Allow a price under half the recent Universalis average (default false)." },
+                    "min_price": { "type": "integer", "description": "Lowest price per unit to accept when undercutting: below it, nothing is listed." }
                   },
                   "required": ["retainer", "item"]
                 }
@@ -234,7 +235,7 @@ internal static class MarketTools
                     steps.Add($"Selling {quantity}x {plan.ItemName}{(stack.Hq ? " (HQ)" : "")} from {(stack.FromBags ? "your bags" : "the retainer")}.");
 
                     var outcome = await PriceAndConfirm(plan.Item, stack.Hq, quantity, args.Node("price") is null ? null : args.Int("price", 0, 1, 999_999_999),
-                                                        currentPrice: null, args.Bool("allow_low_price", false), maxDropPercent: null, dryRun: false, config, steps, ct).ConfigureAwait(false);
+                                                        currentPrice: null, args.Bool("allow_low_price", false), maxDropPercent: null, MinPrice(args), dryRun: false, config, steps, ct).ConfigureAwait(false);
                     await Game.Run(() => { CloseAddon("RetainerSellList"); return true; }).ConfigureAwait(false);
                     await RetainerUi.Close(ct).ConfigureAwait(false);
                     return new { retainer = plan.Retainer, item = plan.ItemName, quantity, outcome, steps };
@@ -266,7 +267,8 @@ internal static class MarketTools
                     "mode": { "type": "string", "enum": ["undercut", "set"], "description": "Default undercut." },
                     "price": { "type": "integer", "description": "For mode=set: the new price per unit." },
                     "max_drop_percent": { "type": "integer", "description": "Skip cuts larger than this (default 30)." },
-                    "dry_run": { "type": "boolean", "description": "Only report what would change (default false)." }
+                    "dry_run": { "type": "boolean", "description": "Only report what would change (default false)." },
+                    "min_price": { "type": "integer", "description": "Never undercut below this price per unit: such cuts are skipped and reported." }
                   }
                 }
                 """,
@@ -312,7 +314,7 @@ internal static class MarketTools
                                 continue;
                             }
                             var outcome = await PriceAndConfirm(listing.ItemId, listing.Hq, null, mode == "set" ? setPrice : null, listing.Price,
-                                                                allowLow: mode == "set", maxDropPercent: mode == "set" ? null : maxDrop, dryRun, config, steps, ct).ConfigureAwait(false);
+                                                                allowLow: mode == "set", maxDropPercent: mode == "set" ? null : maxDrop, mode == "set" ? null : MinPrice(args), dryRun, config, steps, ct).ConfigureAwait(false);
                             results.Add(new { retainer, item = itemName, hq = listing.Hq ? true : (bool?)null, quantity = listing.Quantity, outcome });
                             await Game.Run(() => { CloseAddon("RetainerSell"); return true; }).ConfigureAwait(false);
                             await Task.Delay(400, ct).ConfigureAwait(false);
@@ -332,6 +334,9 @@ internal static class MarketTools
     }
 
     // ------------------------------------------------------------------ pricing
+
+    private static long? MinPrice(ToolArgs args) =>
+        args.Node("min_price") is null ? null : args.Int("min_price", 1, 1, 999_999_999);
 
     /// <summary>Undercut rules: Penny Pincher's settings when installed, else 1 gil below, own retainers excluded.</summary>
     private sealed record UndercutRules(int Delta, int Min, int Mod, int Multiple, bool UndercutSelf, bool HqOnlyForHq, string Source)
@@ -366,7 +371,7 @@ internal static class MarketTools
     /// With the RetainerSell window open: decide the price (given, or undercut from a live "Compare prices"), check it against the
     /// guards, set price/quantity and confirm. Returns a description of what happened.
     /// </summary>
-    private static async Task<object> PriceAndConfirm(uint itemId, bool hq, int? quantity, int? price, long? currentPrice, bool allowLow, int? maxDropPercent,
+    private static async Task<object> PriceAndConfirm(uint itemId, bool hq, int? quantity, int? price, long? currentPrice, bool allowLow, int? maxDropPercent, long? minPrice,
                                                       bool dryRun, Configuration config, List<string> steps, CancellationToken ct)
     {
         var rules = await Game.Run(Rules).ConfigureAwait(false);
@@ -403,15 +408,28 @@ internal static class MarketTools
         }
 
         // Guards against dumping.
+        if (price is null && minPrice is { } floor && newPrice < floor)
+            return new { action = "skipped", price = currentPrice, wouldBe = newPrice, cheapest, cheapestRetainer, reason = $"below min_price {floor:N0}" };
         if (maxDropPercent is { } drop && currentPrice is { } before && newPrice < before * (100 - drop) / 100)
             return new { action = "skipped", price = before, wouldBe = newPrice, cheapest, cheapestRetainer,
                          reason = $"cut of {100 - newPrice * 100 / before}% exceeds max_drop_percent {drop}; rerun with a higher limit or mode=set if intended" };
         if (!allowLow && price is null && config.AllowOnlineData)
         {
             var world = await Game.Run(() => Universalis.HomeScopes().World).ConfigureAwait(false);
-            var market = await Universalis.Get([itemId], world, 0, 10, ct).ConfigureAwait(false);
-            if (market.TryGetValue(itemId, out var m) && (hq ? m.AveragePriceHq : m.AveragePriceNq) is { } avg && newPrice < avg / 2)
-                return new { action = "skipped", wouldBe = newPrice, recentAverage = avg, reason = "below half the recent average sale price; set allow_low_price or give 'price'" };
+            try
+            {
+                var market = await Universalis.Get([itemId], world, 0, 10, ct).ConfigureAwait(false);
+                if (market.TryGetValue(itemId, out var m) && (hq ? m.AveragePriceHq : m.AveragePriceNq) is { } avg && newPrice < avg / 2)
+                    return new { action = "skipped", wouldBe = newPrice, recentAverage = avg, reason = "below half the recent average sale price; set allow_low_price or give 'price'" };
+            }
+            catch (ToolException ex)
+            {
+                // Without recent sales to compare, only a floor the caller set keeps a dumped listing from setting the price.
+                if (minPrice is null)
+                    return new { action = "skipped", wouldBe = newPrice, cheapest, cheapestRetainer,
+                                 reason = $"{ex.Message} The price can't be checked against recent sales: give min_price, 'price' or allow_low_price." };
+                steps.Add($"{ex.Message} Going by min_price instead.");
+            }
         }
 
         if (dryRun) return new { action = "would set", from = currentPrice, to = newPrice, cheapest, cheapestRetainer };

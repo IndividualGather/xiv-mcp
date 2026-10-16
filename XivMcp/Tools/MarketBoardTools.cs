@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Network.Structures;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
@@ -134,16 +135,21 @@ internal static class MarketBoardTools
         var ids = await Task.Run(() => MarketBoardIds.Value, ct).ConfigureAwait(false);
         if (await NavigationTools.WalkTo("Market Board", o => ids.Contains(o.BaseId), steps, ct).ConfigureAwait(false) is null)
             throw new ToolException("No market board in this zone: go to a city with one (Limsa Lominsa, Gridania, Ul'dah or a later hub).");
-        await Game.Run(() =>
+        var board = await Game.Run(() =>
         {
-            var board = Svc.Objects.Where(o => ids.Contains(o.BaseId)).OrderBy(o => Game.DistanceToPlayer(o.Position) ?? float.MaxValue).First();
-            unsafe
-            {
-                var native = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)board.Address;
-                TargetSystem.Instance()->InteractWithObject(native, true);
-            }
-            return true;
+            var obj = Svc.Objects.Where(o => ids.Contains(o.BaseId)).OrderBy(o => Game.DistanceToPlayer(o.Position) ?? float.MaxValue).First();
+            InteractionTools.Interact(obj.Address, lineOfSight: true);
+            return obj.Address;
         }).ConfigureAwait(false);
+        // Arches and stalls can fail the line-of-sight check although the board is in reach: then without it, as a click does.
+        bool Answered() => Svc.Condition[ConditionFlag.OccupiedInEvent] || RetainerUi.Ready("ItemSearch");
+        var answered = false;
+        for (var i = 0; i < 12 && !answered; i++)
+        {
+            await Task.Delay(250, ct).ConfigureAwait(false);
+            answered = await Game.Run(Answered).ConfigureAwait(false);
+        }
+        if (!answered) await Game.Run(() => InteractionTools.Interact(board, lineOfSight: false)).ConfigureAwait(false);
         // A busy server takes more than 10 seconds to open it.
         var deadline = DateTime.UtcNow.AddSeconds(25);
         while (DateTime.UtcNow < deadline)
