@@ -9,6 +9,32 @@ namespace XivMcp.CustomDeliveries;
 public sealed class TurnInWatch(TimeSpan limit)
 {
     private DateTime? since;
+    private DateTime? blockedSince;
+
+    /// <summary>How long a cutscene, a fight or a zone change may keep the character from getting out of a turn-in conversation.</summary>
+    public static readonly TimeSpan BlockedLimit = TimeSpan.FromMinutes(3);
+
+    /// <summary>
+    /// Satisfier's step while it turns in: "Turning in", then "Wait for CS" while the client's cutscene after the turn-in plays (a
+    /// rank-up, the last delivery of the week).
+    /// </summary>
+    public static bool SatisfierTurningIn(string status) =>
+        status.StartsWith("Turning in", StringComparison.OrdinalIgnoreCase) || status.StartsWith("Wait for CS", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// One look per poll while a conversation is in the way: whether something recovery doesn't interrupt (a cutscene, a fight, a zone
+    /// change) has kept the character in it for longer than <see cref="BlockedLimit"/>. Cutscenes end on their own; only a long one is stuck.
+    /// </summary>
+    public bool BlockedTooLong(bool blocked, DateTime now)
+    {
+        if (!blocked)
+        {
+            blockedSince = null;
+            return false;
+        }
+        blockedSince ??= now;
+        return now - blockedSince.Value > BlockedLimit;
+    }
 
     /// <summary>
     /// Questionable turns in what it gathered itself, once all of it is gathered. Before that, items in the bags only mean it is

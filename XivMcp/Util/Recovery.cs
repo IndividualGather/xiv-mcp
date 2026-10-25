@@ -19,7 +19,8 @@ namespace XivMcp.Util;
 /// </summary>
 internal static class Recovery
 {
-    public sealed record Result(bool Recovered, List<string> Actions, string? Problem);
+    /// <summary>What recovery did. <paramref name="Blocked"/>: it stopped for something it doesn't interrupt (a cutscene, a fight, a zone change), which passes.</summary>
+    public sealed record Result(bool Recovered, List<string> Actions, string? Problem, bool Blocked = false);
 
     /// <summary>Windows of conversations, menus, turn-ins and shops, innermost first.</summary>
     private static readonly string[] EventWindows =
@@ -74,6 +75,7 @@ internal static class Recovery
                 case RecoveryStep.Done:
                     return new Result(true, actions, null);
                 case RecoveryStep.Blocked:
+                    return new Result(false, actions, action.Reason, Blocked: true);
                 case RecoveryStep.GiveUp:
                     return new Result(false, actions, action.Reason);
             }

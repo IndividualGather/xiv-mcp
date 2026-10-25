@@ -24,7 +24,16 @@ internal static class SatisfierBridge
                                 int DeliveriesLeft, uint[] Items, bool[] Bonus, int[] Remaining, bool HasCraft, bool HasGather, bool HasFish,
                                 bool SpearFish, uint FishSpot, uint[] Rewards)
     {
-        public DeliveryNpc ForPlan => new(Name, Unlocked, Remaining, Enumerable.Range(0, 3).Where(i => Bonus[i]).Select(i => (DeliveryKind)i).ToHashSet());
+        /// <summary>
+        /// The client for <see cref="DeliveryPlan"/>: its deliveries left this week, whether it still ranks up (the game shows a
+        /// satisfaction bar only below the top rank) and the capped scrips each request pays. Framework thread (reads the currencies).
+        /// </summary>
+        public DeliveryNpc ForPlan() => new(Name, Unlocked, Remaining, Enumerable.Range(0, 3).Where(i => Bonus[i]).Select(i => (DeliveryKind)i).ToHashSet())
+        {
+            Left = DeliveriesLeft,
+            GainsRank = SatisfactionMax > 0,
+            Rewards = [.. Enumerable.Range(0, 3).Select(i => (IReadOnlyList<CappedReward>)SatisfierBridge.Rewards(this, (DeliveryKind)i))],
+        };
     }
 
     private static object Window => Plugin.Get(Plugin.Self, "_wndMain") ?? throw Plugin.Unsupported("Plugin._wndMain");

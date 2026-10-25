@@ -58,7 +58,8 @@ internal static class CustomDeliveryTools
         {
             Name = "do_custom_deliveries",
             Description = "Starts a background job for this week's custom deliveries: plans every client's remaining deliveries within the " +
-                          "weekly allowance (gathering with Miner or Botanist, else crafting; never fishing unless asked for; only kinds a plugin can do), then " +
+                          "weekly allowance (clients below their top rank first; gathering with Miner or Botanist as far as the scrip cap " +
+                          "allows, crafting for the rest; never fishing unless asked for; only kinds a plugin can do), then " +
                           "delivers them one client after another with deliver_custom_delivery. Fishing requests are caught first with " +
                           "AutoHook (switch to Fisher, bait, the spot, fish_until), only with kind 'fish'. Optional 'kind' for everyone and 'clients' to limit it. " +
                           "Follow it with get_job. Requires 'Custom Deliveries' in /xivmcp; each step follows its own module.",
@@ -75,8 +76,12 @@ internal static class CustomDeliveryTools
             Handler = async (args, ct) =>
             {
                 var only = args.Array("clients")?.Select(n => n?.ToString() ?? "").Where(n => n.Length > 0).ToList();
-                var (clients, allowances) = await Game.Run(() => (SatisfierBridge.Clients(), SatisfierBridge.Allowances())).ConfigureAwait(false);
-                var plan = DeliveryPlan.Choose(clients.Select(c => c.ForPlan), Possible(), allowances, Kind(args), only);
+                var (clients, npcs, allowances) = await Game.Run(() =>
+                {
+                    var all = SatisfierBridge.Clients();
+                    return (all, all.Select(c => c.ForPlan()).ToList(), SatisfierBridge.Allowances());
+                }).ConfigureAwait(false);
+                var plan = DeliveryPlan.Choose(npcs, Possible(), allowances, Kind(args), only);
                 if (plan.Count == 0)
                     throw new ToolException(allowances == 0 ? "No custom deliveries left this week." : "Nothing to deliver: no unlocked client has a request a plugin can do.");
 
@@ -188,7 +193,8 @@ internal static class CustomDeliveryTools
         if (!c.Unlocked) throw new ToolException($"{c.Name} is not unlocked yet.");
         if (c.DeliveriesLeft == 0) throw new ToolException($"{c.Name} takes no more deliveries this week.");
         if (await Game.Run(SatisfierBridge.Allowances).ConfigureAwait(false) == 0) throw new ToolException("No custom deliveries left this week.");
-        var chosen = kind ?? DeliveryPlan.Choose([c.ForPlan], Possible(), 99).FirstOrDefault()?.Kind
+        var forPlan = await Game.Run(c.ForPlan).ConfigureAwait(false);
+        var chosen = kind ?? DeliveryPlan.Choose([forPlan], Possible(), 99).FirstOrDefault()?.Kind
                      ?? throw new ToolException($"None of {c.Name}'s requests can be delivered automatically now (crafting needs Artisan, gathering Questionable).");
         switch (chosen)
         {
@@ -232,10 +238,12 @@ internal static class CustomDeliveryTools
         var viaQuestionable = TurnInWatch.TurnInWithQuestionable(chosen == DeliveryKind.Gather, inBags, planned);
         // Who drives the delivery: Satisfier (which may run Questionable to gather), or Questionable alone turning in.
         bool Busy() => viaQuestionable ? QuestionableTools.Running : SatisfierBridge.Running;
+        // Questionable is stopped after every gathering delivery, also one Satisfier ran: left running after a turn-in that ranked the
+        // client up, it goes on to the next quest in the journal (the client's new sidequest) on its own.
         bool StopAll()
         {
             SatisfierBridge.Stop();
-            if (viaQuestionable) QuestionableTools.StopIfRunning();
+            if (chosen == DeliveryKind.Gather) QuestionableTools.StopIfRunning();
             return true;
         }
         try
@@ -281,6 +289,15 @@ internal static class CustomDeliveryTools
                 // turn-in window without the items: stop it there too.
                 var now = await Game.Run(() => Find(c.Name)).ConfigureAwait(false);
                 if (now.DeliveriesLeft != lastLeft) { lastLeft = now.DeliveriesLeft; progressAt = DateTime.UtcNow; }
+                // Checked before the conversation: the client's cutscene after the last turn-in still holds the character then.
+                rankedUp = now.Rank != c.Rank;
+                if (c.DeliveriesLeft - now.DeliveriesLeft >= planned || rankedUp)
+                {
+                    await Game.Run(StopAll).ConfigureAwait(false);
+                    await Recovery.Run(ct).ConfigureAwait(false);
+                    if (rankedUp) statuses.Add($"{c.Name} ranked up: new requests.");
+                    break;
+                }
 
                 // The turn-in conversation can get in the way: Questionable opens the turn-in window before gathering and leaves it
                 // open, and the game then counts the player as busy; a turn-in window can also load hidden, or vanish while the game
@@ -291,14 +308,17 @@ internal static class CustomDeliveryTools
                     (RetainerUi.Ready("SatisfactionSupply") || RetainerUi.Ready("SelectString") || Recovery.OrphanedEvent,
                      TurnInWatch.QuestionableTurningIn(QuestionableTools.Running, Items.CountInBags(c.Items[(int)chosen]), stillNeeded))).ConfigureAwait(false);
                 supplyOpenSince = inConversation ? supplyOpenSince ?? DateTime.UtcNow : null;
-                var turningIn = status.StartsWith("Turning in", StringComparison.OrdinalIgnoreCase) || questionableTurningIn;
+                var turningIn = TurnInWatch.SatisfierTurningIn(status) || questionableTurningIn;
                 var asking = turningIn && await Game.Run(() => RetainerUi.Ready("SelectYesno")).ConfigureAwait(false);
                 questionSince = asking ? questionSince ?? DateTime.UtcNow : null;
                 if (supplyOpenSince is { } openSince && !turningIn && DateTime.UtcNow - openSince > TimeSpan.FromSeconds(5))
                 {
                     var freed = await Recovery.Run(ct).ConfigureAwait(false);
                     if (freed.Actions.Count > 0) statuses.Add($"The turn-in conversation was in the way: {string.Join(" ", freed.Actions)}");
-                    if (freed.Problem is { } problem) throw new ToolException($"The turn-in conversation with {c.Name} is stuck: {problem}");
+                    // A cutscene (the client's, after a rank-up) ends on its own: wait it out, unless it lasts.
+                    if (freed.Problem is { } problem && (!freed.Blocked || turnIn.BlockedTooLong(true, DateTime.UtcNow)))
+                        throw new ToolException($"The turn-in conversation with {c.Name} is stuck: {problem}");
+                    if (!freed.Blocked) turnIn.BlockedTooLong(false, DateTime.UtcNow);
                     supplyOpenSince = null;
                 }
                 else if (questionSince is { } asked && DateTime.UtcNow - asked > TimeSpan.FromSeconds(3))
@@ -315,14 +335,6 @@ internal static class CustomDeliveryTools
                     await Game.Run(StopAll).ConfigureAwait(false);
                     var freed = await Recovery.Run(ct).ConfigureAwait(false);
                     statuses.Add($"Turning in stalled for 45 seconds: stopped it. {string.Join(" ", freed.Actions)}".TrimEnd());
-                    break;
-                }
-                rankedUp = now.Rank != c.Rank;
-                if (c.DeliveriesLeft - now.DeliveriesLeft >= planned || rankedUp)
-                {
-                    await Game.Run(StopAll).ConfigureAwait(false);
-                    await Recovery.Run(ct).ConfigureAwait(false);
-                    if (rankedUp) statuses.Add($"{c.Name} ranked up: new requests.");
                     break;
                 }
                 await Task.Delay(1000, ct).ConfigureAwait(false);

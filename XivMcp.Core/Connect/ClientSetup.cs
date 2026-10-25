@@ -203,11 +203,23 @@ public static class ClientSetup
 
     // ---------------------------------------------------------------- Claude Code
 
-    /// <summary>Arguments for <c>claude</c> that add XIV MCP for all the player's projects (user scope).</summary>
-    public static string[] ClaudeCodeAddArgs(string endpoint, string? token) =>
-        token is null
-            ? ["mcp", "add", "--scope", "user", "--transport", "http", ServerName, endpoint]
-            : ["mcp", "add", "--scope", "user", "--transport", "http", ServerName, endpoint, "--header", $"Authorization: Bearer {token}"];
+    /// <summary>
+    /// How long Claude Code waits for one tool call. Without a timeout of its own it gives an HTTP server 60 seconds, and logging in,
+    /// walking somewhere or AutoRetainer at the bell take minutes; 30 minutes is the longest any tool waits.
+    /// </summary>
+    public const int ClaudeCodeTimeoutMs = 30 * 60 * 1000;
+
+    /// <summary>
+    /// Arguments for <c>claude</c> that add XIV MCP for all the player's projects (user scope), as JSON: <c>mcp add</c> has no way
+    /// to set the server's timeout.
+    /// </summary>
+    public static string[] ClaudeCodeAddArgs(string endpoint, string? token)
+    {
+        var server = new JsonObject { ["type"] = "http" };
+        foreach (var (k, v) in HttpServer(endpoint, token)) server[k] = v?.DeepClone();
+        server["timeout"] = ClaudeCodeTimeoutMs;
+        return ["mcp", "add-json", "--scope", "user", ServerName, server.ToJsonString()];
+    }
 
     /// <summary>Removes an earlier user-scope entry, so adding again updates it. Project entries are left alone.</summary>
     public static string[] ClaudeCodeRemoveArgs(string scope = "user") => ["mcp", "remove", "--scope", scope, ServerName];

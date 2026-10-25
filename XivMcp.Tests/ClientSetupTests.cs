@@ -105,9 +105,21 @@ public class ClientSetupTests
     [Fact]
     public void Claude_Code_adds_the_server_for_all_projects_with_the_token_header()
     {
-        Assert.Equal(["mcp", "add", "--scope", "user", "--transport", "http", "ffxiv", Endpoint, "--header", $"Authorization: Bearer {Token}"],
-                     ClientSetup.ClaudeCodeAddArgs(Endpoint, Token));
-        Assert.Equal(["mcp", "add", "--scope", "user", "--transport", "http", "ffxiv", Endpoint], ClientSetup.ClaudeCodeAddArgs(Endpoint, null));
+        var args = ClientSetup.ClaudeCodeAddArgs(Endpoint, Token);
+        Assert.Equal(["mcp", "add-json", "--scope", "user", "ffxiv"], args[..^1]);
+        var entry = JsonNode.Parse(args[^1])!.AsObject();
+        Assert.Equal("http", entry["type"]!.GetValue<string>());
+        Assert.Equal(Endpoint, entry["url"]!.GetValue<string>());
+        Assert.Equal($"Bearer {Token}", entry["headers"]!["Authorization"]!.GetValue<string>());
+        Assert.False(JsonNode.Parse(ClientSetup.ClaudeCodeAddArgs(Endpoint, null)[^1])!.AsObject().ContainsKey("headers"));
+    }
+
+    [Fact]
+    public void Claude_Code_waits_for_tools_that_take_minutes()
+    {
+        // Without a timeout of its own, Claude Code gives an HTTP server's calls 60 seconds; logins, walks and the bell take longer.
+        var entry = JsonNode.Parse(ClientSetup.ClaudeCodeAddArgs(Endpoint, Token)[^1])!;
+        Assert.Equal(30 * 60 * 1000, entry["timeout"]!.GetValue<int>());
     }
 
     [Fact]

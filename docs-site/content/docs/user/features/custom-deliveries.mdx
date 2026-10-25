@@ -33,6 +33,13 @@ Without `kind`, the gathering request comes first (Miner or Botanist, whichever 
 
 `do_custom_deliveries` plans every client's remaining deliveries within the weekly allowance, then delivers them one client after another. `kind` uses one kind for everyone, `clients` limits it to some clients. `get_job` follows it.
 
+The plan:
+
+- **Clients below their top rank come first**, as their deliveries still raise their rank. The others follow in the game's order.
+- **Gathering first, crafting for the rest.** Gathering stops where the scrip cap would be passed (the cap counts every delivery in the plan), or where the request takes fewer deliveries than the client still does (Tiisol Ja at rank 4 takes three of each). Crafting then takes the client's remaining deliveries.
+
+A cutscene after a turn-in (a rank-up, the week's last delivery) is waited out; only one that keeps the character for over three minutes stops the delivery. After a gathering delivery Questionable is stopped, so it doesn't go on to the client's new sidequest by itself.
+
 While a delivery runs, Satisfier's window stays open: Satisfier keeps its client data up to date while it is shown.
 
 While a delivery runs, **YesAlready** is paused (TextAdvance is not). Its "Custom Deliveries" option turns items in the moment a delivery window loads, even while the window is still hidden behind a client's dialogue, as with Tiisol Ja. The conversation then runs ahead without the window, Satisfier waits for a window that never shows, and anything that touches the hidden window can crash the game. YesAlready resumes as soon as the delivery is done.

@@ -5,10 +5,11 @@ description: Add XIV MCP to Claude Code for all your projects.
 
 ## One click
 
-In `/xivmcp` → **Connect**, choose **Claude Code** and click the button. XIV MCP runs `claude mcp add` for you, without a console window, for all your projects.
+In `/xivmcp` → **Connect**, choose **Claude Code** and click the button. XIV MCP runs `claude mcp add-json` for you, without a console window, for all your projects.
 
 - An earlier user-wide `ffxiv` entry is replaced.
 - Entries that belong to single projects are left alone.
+- The entry waits up to 30 minutes for a tool. Without that, Claude Code gives up on a call after 60 seconds, and logging in, walking somewhere or the summoning bell take longer.
 
 <Screenshot src="connect-claude-code.png" alt="The Claude Code panel with the update button, the next steps and the connected status" caption="The Claude Code panel. Under Prefer to run the command yourself? is the command, with your token hidden." width={640} />
 
@@ -17,12 +18,17 @@ In `/xivmcp` → **Connect**, choose **Claude Code** and click the button. XIV M
 In PowerShell:
 
 ```powershell
+setx MCP_TOOL_TIMEOUT 1800000
 claude mcp add --scope user --transport http `
   ffxiv http://localhost:37521/mcp `
   --header "Authorization: Bearer <token>"
 ```
 
-Replace `<token>` with the token from `/xivmcp` → **Connect**.
+Replace `<token>` with the token from `/xivmcp` → **Connect**. `MCP_TOOL_TIMEOUT` lets tools run for up to 30 minutes; it applies to every MCP server and takes effect in a new terminal.
+
+## Tools that time out
+
+If a tool fails with "The operation timed out." after about a minute, your entry has no timeout: it was added before XIV MCP 0.3.0.6, or by a project. Click **Update in Claude Code**, or add `"timeout": 1800000` to the `ffxiv` entry in `~/.claude.json`, and start a new session.
 
 ## Removing it
 

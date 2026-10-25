@@ -231,6 +231,18 @@ public class QuestionableMessageTests
         Assert.False(QuestionableMessage.NeedsPlayer("[QST v15.756.3.30] Set next quest to 5264 (Toil for the Soil)."));
         Assert.Null(QuestionableMessage.Text("You obtain 2,697 gil."));
     }
+
+    [Fact]
+    public void A_path_that_navmesh_could_not_find_is_worth_another_try()
+    {
+        // Seen while flying to Snow on the Mountain: started again after landing, Questionable went on.
+        const string noPath = "[QST v15.756.3.56] vnavmesh was not able to find a path! Please report this to Questionable developers. " +
+                              "5336_Snow on the Mountain / 1 / 1 Land-and-retry timed out, still InFlight";
+        Assert.True(QuestionableMessage.NavigationFailed(noPath));
+        Assert.False(QuestionableMessage.NeedsPlayer(noPath));
+        Assert.False(QuestionableMessage.NavigationFailed("[QST v1] Duty - Could not use AutoDuty to queue for The Clyteum."));
+        Assert.False(QuestionableMessage.NavigationFailed("vnavmesh was not able to find a path!")); // not from Questionable
+    }
 }
 
 public class QuestBatchTests

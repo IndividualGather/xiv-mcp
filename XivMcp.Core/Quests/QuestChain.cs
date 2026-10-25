@@ -227,6 +227,13 @@ public static class QuestionableMessage
 
     public static bool NeedsPlayer(string chat) =>
         Text(chat) is { } text && NeedsPlayerNotices.Any(n => text.StartsWith(n, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Questionable stopped because vnavmesh found no path (often while still in the air): a path from where the character is now,
+    /// once landed, usually works, so starting it again is worth a try.
+    /// </summary>
+    public static bool NavigationFailed(string chat) =>
+        Text(chat) is { } text && text.Contains("not able to find a path", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>Several quests at once.</summary>

@@ -17,6 +17,13 @@ public class DeliveryPlanTests
     }
 
     [Fact]
+    public void A_client_gets_no_more_than_it_takes_this_week()
+    {
+        var plan = DeliveryPlan.Choose([Npc("Zhloe") with { Left = 2 }], All, allowances: 12);
+        Assert.Equal([(DeliveryKind.Gather, 2)], plan.Select(p => (p.Kind, p.Count)));
+    }
+
+    [Fact]
     public void Gathering_comes_first_then_crafting_whatever_the_bonus()
     {
         var plan = DeliveryPlan.Choose([Npc("Zhloe", bonus: DeliveryKind.Craft), Npc("Adkiragh", gather: 0, bonus: DeliveryKind.Fish)], All, allowances: 12);
@@ -49,8 +56,53 @@ public class DeliveryPlanTests
     public void Locked_and_finished_npcs_are_skipped_and_a_partial_last_one_is_capped()
     {
         var plan = DeliveryPlan.Choose(
-            [Npc("Locked", unlocked: false), Npc("Done", craft: 0, gather: 0, fish: 0), Npc("Zhloe", gather: 3), Npc("Kurenai")], All, allowances: 5);
+            [Npc("Locked", unlocked: false), Npc("Done", craft: 0, gather: 0, fish: 0), Npc("Zhloe", craft: 0, gather: 3), Npc("Kurenai")], All, allowances: 5);
         Assert.Equal([("Zhloe", 3), ("Kurenai", 2)], plan.Select(p => (p.Npc.Name, p.Count)));
+    }
+
+    [Fact]
+    public void A_request_that_takes_fewer_than_the_client_still_takes_is_topped_up_with_crafting()
+    {
+        // Tiisol Ja at rank 4: six deliveries left this week, but each request takes only three more.
+        var tiisol = Npc("Tiisol Ja", craft: 3, gather: 3, fish: 3) with { Left = 6 };
+        var plan = DeliveryPlan.Choose([tiisol], All, allowances: 12);
+        Assert.Equal([(DeliveryKind.Gather, 3), (DeliveryKind.Craft, 3)], plan.Select(p => (p.Kind, p.Count)));
+    }
+
+    [Fact]
+    public void Gathering_stops_at_the_scrip_cap_and_crafting_takes_the_rest()
+    {
+        // 3,399/4,000 gatherers' scrips, 270 per bonus delivery: two fit.
+        var gatherers = new CappedReward("Purple Gatherers' Scrip", 3399, 4000, 270);
+        var nito = Npc("Nitowikwe") with { Rewards = [[], [gatherers], []] };
+        var plan = DeliveryPlan.Choose([nito], All, allowances: 12);
+        Assert.Equal([(DeliveryKind.Gather, 2), (DeliveryKind.Craft, 4)], plan.Select(p => (p.Kind, p.Count)));
+    }
+
+    [Fact]
+    public void The_scrip_cap_is_shared_by_every_client_in_the_plan()
+    {
+        var gatherers = new CappedReward("Purple Gatherers' Scrip", 3399, 4000, 180);
+        CappedReward[][] rewards = [[], [gatherers], []];
+        var plan = DeliveryPlan.Choose([Npc("Zhloe") with { Rewards = rewards }, Npc("Kurenai") with { Rewards = rewards }], All, allowances: 12);
+        // 601 scrips fit three deliveries of 180: all three go to the first client.
+        Assert.Equal([("Zhloe", DeliveryKind.Gather, 3), ("Zhloe", DeliveryKind.Craft, 3), ("Kurenai", DeliveryKind.Craft, 6)],
+                     plan.Select(p => (p.Npc.Name, p.Kind, p.Count)));
+    }
+
+    [Fact]
+    public void Clients_who_still_rank_up_come_first()
+    {
+        var plan = DeliveryPlan.Choose([Npc("Zhloe"), Npc("Nitowikwe"), Npc("Tiisol Ja") with { GainsRank = true }], All, allowances: 12);
+        Assert.Equal(["Tiisol Ja", "Zhloe"], plan.Select(p => p.Npc.Name));
+    }
+
+    [Fact]
+    public void A_chosen_kind_is_not_topped_up_with_another()
+    {
+        var tiisol = Npc("Tiisol Ja", craft: 3, gather: 3, fish: 3) with { Left = 6 };
+        var plan = DeliveryPlan.Choose([tiisol], All, allowances: 12, kind: DeliveryKind.Gather);
+        Assert.Equal([(DeliveryKind.Gather, 3)], plan.Select(p => (p.Kind, p.Count)));
     }
 
     [Fact]

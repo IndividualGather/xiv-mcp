@@ -24,6 +24,36 @@ public class TurnInWatchTests
         Assert.False(TurnInWatch.TurnInWithQuestionable(isGather: false, inBags: 3, toDeliver: 3));
     }
 
+    [Theory]
+    [InlineData("Turning in", true)]
+    [InlineData("turning in 3x Railroad Repair Kit", true)]
+    // After the turn-in Satisfier waits for the client's cutscene: still the turn-in, not a stuck conversation.
+    [InlineData("Wait for CS", true)]
+    [InlineData("Crafting 6x Railroad Repair Kit", false)]
+    [InlineData("Teleporting to Tuliyollal", false)]
+    [InlineData("", false)]
+    public void Satisfier_says_when_it_is_turning_in(string status, bool turningIn) =>
+        Assert.Equal(turningIn, TurnInWatch.SatisfierTurningIn(status));
+
+    [Fact]
+    public void A_cutscene_in_the_way_is_waited_out_for_a_while()
+    {
+        var watch = new TurnInWatch(TimeSpan.FromSeconds(45));
+        Assert.False(watch.BlockedTooLong(blocked: true, now: T0));
+        Assert.False(watch.BlockedTooLong(blocked: true, now: T0.AddMinutes(2)));
+        Assert.True(watch.BlockedTooLong(blocked: true, now: T0.AddMinutes(3).AddSeconds(1)));
+    }
+
+    [Fact]
+    public void Being_free_again_resets_the_blocked_clock()
+    {
+        var watch = new TurnInWatch(TimeSpan.FromSeconds(45));
+        Assert.False(watch.BlockedTooLong(true, T0));
+        Assert.False(watch.BlockedTooLong(false, T0.AddMinutes(2)));
+        Assert.False(watch.BlockedTooLong(true, T0.AddMinutes(4)));
+        Assert.True(watch.BlockedTooLong(true, T0.AddMinutes(7).AddSeconds(1)));
+    }
+
     [Fact]
     public void Gathering_never_counts_as_a_stalled_turn_in()
     {

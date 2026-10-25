@@ -335,6 +335,21 @@ internal static class QuestionableTools
                         continue;
                     }
                     stoppedSince = s.Running ? null : stoppedSince ?? DateTime.UtcNow;
+                    // vnavmesh found no path (in the air, say): from where the character is once landed, it usually does.
+                    if (!s.Running && chat.Last is { } failed && QuestionableMessage.NavigationFailed(failed) && restarts < MaxRestarts)
+                    {
+                        restarts++;
+                        var again = s.Current is { Length: > 0 } cur && ids.Contains(cur) ? cur : first.QuestionableId;
+                        Svc.Log.Information($"[MCP] Questionable found no path ({QuestionableMessage.Text(failed)}); starting it again on quest {again} ({restarts}/{MaxRestarts}).");
+                        chat.Clear();
+                        var landBy = DateTime.UtcNow.AddSeconds(30);
+                        while (DateTime.UtcNow < landBy && await Game.Run(() => Svc.Condition[ConditionFlag.InFlight]).ConfigureAwait(false))
+                            await Task.Delay(TimeSpan.FromSeconds(1), ct).ConfigureAwait(false);
+                        await Task.Delay(TimeSpan.FromSeconds(2), ct).ConfigureAwait(false);
+                        await Game.Run(() => Ipc<string, bool>("StartQuest", again)).ConfigureAwait(false);
+                        stoppedSince = null;
+                        continue;
+                    }
                     if (DateTime.UtcNow - stoppedSince > TimeSpan.FromSeconds(10))
                         throw new ToolException($"Questionable stopped on its own while on {first.Name}." + (chat.Said is { Length: > 0 } why ? why : " Its window says why (a duty, a level, a step it cannot do)."));
                     elsewhereSince = s.Current is { Length: > 0 } c && !ids.Contains(c) ? elsewhereSince ?? DateTime.UtcNow : null;
@@ -396,6 +411,9 @@ internal static class QuestionableTools
         public QuestionableChat() => Svc.Chat.ChatMessage += OnChat;
 
         public string? Last => last;
+
+        /// <summary>Forgets the last message, once it was acted on (Questionable started again after it).</summary>
+        public void Clear() => last = null;
 
         /// <summary>" Questionable said: …", or "" when it said nothing.</summary>
         public string Said => last is { } l && QuestionableMessage.Text(l) is { } t ? $" Questionable said: \"{t}\"" : "";

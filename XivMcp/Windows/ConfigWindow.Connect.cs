@@ -279,7 +279,7 @@ internal sealed partial class ConfigWindow
                     finally { busy.TryRemove("claude", out _); }
                 });
             }
-        Tooltip("Runs the claude mcp add command for you, without a console window. An earlier XIV MCP entry for all projects is replaced.");
+        Tooltip("Adds XIV MCP to Claude Code for you (claude mcp add-json), without a console window, with a 30-minute timeout for tools that take minutes. An earlier XIV MCP entry for all projects is replaced.");
         ResultLine("claude");
         Steps(["Start a new Claude Code session.", "Ask about your character."]);
         Gap(4);
@@ -649,7 +649,9 @@ internal sealed partial class ConfigWindow
         ImGui.TextColored(Muted, "Your token is filled in when copying.");
     }
 
+    // By hand, the timeout goes in MCP_TOOL_TIMEOUT: a JSON argument (mcp add-json) loses its quotes in Windows PowerShell.
     private static string ClaudeCommand(string endpoint, string? token) =>
+        $"setx MCP_TOOL_TIMEOUT {ClientSetup.ClaudeCodeTimeoutMs}\n" +
         $"claude mcp add --scope user --transport http {ClientSetup.ServerName} {endpoint}" + (token is null ? "" : $" --header \"Authorization: Bearer {token}\"");
 
     private static string CodexCommand(string endpoint, string? token) => token is null
