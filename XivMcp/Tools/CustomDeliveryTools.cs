@@ -36,8 +36,8 @@ internal static class CustomDeliveryTools
             Name = "deliver_custom_delivery",
             Description = "Delivers one client's request with Satisfier and waits until it is done. 'kind' craft: buys the ingredient from " +
                           "the client's vendor, crafts with Artisan and turns in; gather: gathers with Questionable and turns in; fish: turns " +
-                          "in the fish you carry (catch them first: do_custom_deliveries does both, or catch_fish). Without 'kind': gathering " +
-                          "(Miner or Botanist), else crafting; fishing only when the player asks for it. Delivers only as many as fit under " +
+                          "in the fish you carry (catch them first: do_custom_deliveries does both, or catch_fish). Without 'kind': the bonus " +
+                          "request, else crafting, else gathering (Miner or Botanist); fishing only when the player asks for it. Delivers only as many as fit under " +
                           "the reward scrips' cap (get_custom_deliveries shows fitUnderScripCap), and refuses when none fit: spend the scrips " +
                           "first. Requires 'Custom Deliveries' in /xivmcp.",
             InputSchema = """
@@ -45,7 +45,7 @@ internal static class CustomDeliveryTools
                   "type": "object",
                   "properties": {
                     "client": { "type": "string", "description": "The client's name (as get_custom_deliveries names them)." },
-                    "kind": { "type": "string", "enum": ["craft", "gather", "fish"], "description": "Default gather, else craft. Use 'fish' only when the player asked for fishing." }
+                    "kind": { "type": "string", "enum": ["craft", "gather", "fish"], "description": "Default: the bonus request, else craft, else gather. Use 'fish' only when the player asked for fishing." }
                   },
                   "required": ["client"]
                 }
@@ -58,8 +58,10 @@ internal static class CustomDeliveryTools
         {
             Name = "do_custom_deliveries",
             Description = "Starts a background job for this week's custom deliveries: plans every client's remaining deliveries within the " +
-                          "weekly allowance (clients below their top rank first; gathering with Miner or Botanist as far as the scrip cap " +
-                          "allows, crafting for the rest; never fishing unless asked for; only kinds a plugin can do), then " +
+                          "weekly allowance (clients below their top rank first, then clients with a bonus request, then those whose " +
+                          "'The Customer Is Always Right' achievements need the most deliveries; per client the bonus request first, then " +
+                          "crafting as far as the scrip cap allows, gathering with Miner or Botanist for the rest; never fishing unless " +
+                          "asked for; only kinds a plugin can do), then " +
                           "delivers them one client after another with deliver_custom_delivery. Fishing requests are caught first with " +
                           "AutoHook (switch to Fisher, bait, the spot, fish_until), only with kind 'fish'. Optional 'kind' for everyone and 'clients' to limit it. " +
                           "Follow it with get_job. Requires 'Custom Deliveries' in /xivmcp; each step follows its own module.",
@@ -76,11 +78,11 @@ internal static class CustomDeliveryTools
             Handler = async (args, ct) =>
             {
                 var only = args.Array("clients")?.Select(n => n?.ToString() ?? "").Where(n => n.Length > 0).ToList();
-                var (clients, npcs, allowances) = await Game.Run(() =>
-                {
-                    var all = SatisfierBridge.Clients();
-                    return (all, all.Select(c => c.ForPlan()).ToList(), SatisfierBridge.Allowances());
-                }).ConfigureAwait(false);
+                var (clients, allowances) = await Game.Run(() => (SatisfierBridge.Clients(), SatisfierBridge.Allowances())).ConfigureAwait(false);
+                var achievementLeft = new Dictionary<string, int?>();
+                foreach (var c in clients.Where(c => c.Unlocked && c.DeliveriesLeft > 0))
+                    achievementLeft[c.Name] = await AchievementProgress.DeliveriesLeft(c.Name, ct).ConfigureAwait(false);
+                var npcs = await Game.Run(() => clients.Select(c => c.ForPlan(achievementLeft.GetValueOrDefault(c.Name))).ToList()).ConfigureAwait(false);
                 var plan = DeliveryPlan.Choose(npcs, Possible(), allowances, Kind(args), only);
                 if (plan.Count == 0)
                     throw new ToolException(allowances == 0 ? "No custom deliveries left this week." : "Nothing to deliver: no unlocked client has a request a plugin can do.");
@@ -112,7 +114,11 @@ internal static class CustomDeliveryTools
                 {
                     started = JobManager.Describe(job),
                     allowancesLeft = allowances,
-                    plan = plan.Select(p => new { client = p.Npc.Name, kind = p.Kind.ToString().ToLowerInvariant(), count = p.Count, bonus = p.Npc.Bonus.Contains(p.Kind) }),
+                    plan = plan.Select(p => new
+                    {
+                        client = p.Npc.Name, kind = p.Kind.ToString().ToLowerInvariant(), count = p.Count, bonus = p.Npc.Bonus.Contains(p.Kind),
+                        ranksUp = p.Npc.GainsRank, achievementDeliveriesLeft = p.Npc.AchievementLeft,
+                    }),
                 };
             },
         };
@@ -193,7 +199,7 @@ internal static class CustomDeliveryTools
         if (!c.Unlocked) throw new ToolException($"{c.Name} is not unlocked yet.");
         if (c.DeliveriesLeft == 0) throw new ToolException($"{c.Name} takes no more deliveries this week.");
         if (await Game.Run(SatisfierBridge.Allowances).ConfigureAwait(false) == 0) throw new ToolException("No custom deliveries left this week.");
-        var forPlan = await Game.Run(c.ForPlan).ConfigureAwait(false);
+        var forPlan = await Game.Run(() => c.ForPlan()).ConfigureAwait(false);
         var chosen = kind ?? DeliveryPlan.Choose([forPlan], Possible(), 99).FirstOrDefault()?.Kind
                      ?? throw new ToolException($"None of {c.Name}'s requests can be delivered automatically now (crafting needs Artisan, gathering Questionable).");
         switch (chosen)

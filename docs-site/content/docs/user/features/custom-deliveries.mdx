@@ -27,7 +27,7 @@ Each client asks for three things a week: something to **craft**, to **gather** 
 - **Gathering**: Satisfier has **Questionable** gather the items, and Questionable turns them in. When the items are already in your bags, XIV MCP has Questionable turn them in directly: Satisfier's own turn-in doesn't work for every client (Tiisol Ja).
 - **Fishing**, only when you ask for it: XIV MCP catches the fish with **AutoHook** (switch to Fisher, bait, the spot, fishing until there are enough), then Satisfier turns them in. Spearfishing requests aren't supported yet.
 
-Without `kind`, the gathering request comes first (Miner or Botanist, whichever it needs), and the crafting one when gathering isn't possible. Fishing is never chosen unless you ask for it.
+Without `kind`, the request with this week's bonus comes first, then the crafting request (crafters' scrips buy the more valuable materia), and the gathering one (Miner or Botanist, whichever it needs) when crafting isn't possible. Fishing is never chosen unless you ask for it.
 
 ## The weekly job
 
@@ -35,8 +35,12 @@ Without `kind`, the gathering request comes first (Miner or Botanist, whichever 
 
 The plan:
 
-- **Clients below their top rank come first**, as their deliveries still raise their rank. The others follow in the game's order.
-- **Gathering first, crafting for the rest.** Gathering stops where the scrip cap would be passed (the cap counts every delivery in the plan), or where the request takes fewer deliveries than the client still does (Tiisol Ja at rank 4 takes three of each). Crafting then takes the client's remaining deliveries.
+- **Clients below their top rank come first**, as their deliveries still raise their rank.
+- **Then clients with a bonus** this week, on a request that can be delivered (a fishing bonus only counts when you ask for fishing).
+- **Then clients whose achievements need the most deliveries**: each client's "The Customer Is Always Right" achievements count the deliveries to them, up to 150. XIV MCP asks the game for that count, as the Achievements window does. The others follow in the game's order.
+- **Per client: the bonus request, then crafting, gathering for the rest.** A request stops where the scrip cap would be passed (the cap counts every delivery in the plan), or where it takes fewer deliveries than the client still does (Tiisol Ja at rank 4 takes three of each). The next kind then takes the client's remaining deliveries.
+
+The plan shows per client whether it ranks up, whether the request has the bonus, and the deliveries its achievements still need (`achievementDeliveriesLeft`).
 
 A cutscene after a turn-in (a rank-up, the week's last delivery) is waited out; only one that keeps the character for over three minutes stops the delivery. After a gathering delivery Questionable is stopped, so it doesn't go on to the client's new sidequest by itself.
 

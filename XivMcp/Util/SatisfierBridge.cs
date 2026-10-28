@@ -26,13 +26,15 @@ internal static class SatisfierBridge
     {
         /// <summary>
         /// The client for <see cref="DeliveryPlan"/>: its deliveries left this week, whether it still ranks up (the game shows a
-        /// satisfaction bar only below the top rank) and the capped scrips each request pays. Framework thread (reads the currencies).
+        /// satisfaction bar only below the top rank), the capped scrips each request pays and the deliveries its achievements still
+        /// need (<see cref="AchievementProgress.DeliveriesLeft"/>). Framework thread (reads the currencies).
         /// </summary>
-        public DeliveryNpc ForPlan() => new(Name, Unlocked, Remaining, Enumerable.Range(0, 3).Where(i => Bonus[i]).Select(i => (DeliveryKind)i).ToHashSet())
+        public DeliveryNpc ForPlan(int? achievementLeft = null) => new(Name, Unlocked, Remaining, Enumerable.Range(0, 3).Where(i => Bonus[i]).Select(i => (DeliveryKind)i).ToHashSet())
         {
             Left = DeliveriesLeft,
             GainsRank = SatisfactionMax > 0,
             Rewards = [.. Enumerable.Range(0, 3).Select(i => (IReadOnlyList<CappedReward>)SatisfierBridge.Rewards(this, (DeliveryKind)i))],
+            AchievementLeft = achievementLeft,
         };
     }
 
