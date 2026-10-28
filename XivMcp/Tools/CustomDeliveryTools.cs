@@ -193,6 +193,24 @@ internal static class CustomDeliveryTools
         };
     }
 
+    /// <summary>
+    /// The client's cutscene after a turn-in (the week's last delivery, a rank-up) still holds the character when the deliveries are
+    /// in, and dialogue follows it: wait the cutscene out (recovery doesn't interrupt one), then click through, so the character is
+    /// free when the delivery returns.
+    /// </summary>
+    private static async Task<Recovery.Result> FinishConversation(CancellationToken ct)
+    {
+        var watch = new TurnInWatch(TimeSpan.FromSeconds(45));
+        var actions = new List<string>();
+        while (true)
+        {
+            var freed = await Recovery.Run(ct).ConfigureAwait(false);
+            actions.AddRange(freed.Actions);
+            if (!freed.Blocked || watch.BlockedTooLong(true, DateTime.UtcNow)) return freed with { Actions = actions };
+            await Task.Delay(1000, ct).ConfigureAwait(false);
+        }
+    }
+
     private static async Task<object> Deliver(string name, DeliveryKind? kind, CancellationToken ct)
     {
         var c = await Game.Run(() => Find(name)).ConfigureAwait(false);
@@ -300,7 +318,9 @@ internal static class CustomDeliveryTools
                 if (c.DeliveriesLeft - now.DeliveriesLeft >= planned || rankedUp)
                 {
                     await Game.Run(StopAll).ConfigureAwait(false);
-                    await Recovery.Run(ct).ConfigureAwait(false);
+                    var freed = await FinishConversation(ct).ConfigureAwait(false);
+                    if (freed.Actions.Count > 0) statuses.Add($"After the turn-in: {string.Join(" ", freed.Actions)}");
+                    if (freed.Problem is { } problem) statuses.Add($"The character is still held after the turn-in: {problem}");
                     if (rankedUp) statuses.Add($"{c.Name} ranked up: new requests.");
                     break;
                 }
