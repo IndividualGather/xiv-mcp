@@ -39,7 +39,7 @@ internal static partial class NavigationTools
                           "aetheryte to teleport to, or asks them to enter the inn room or house. Tell the player when that happens. Destinations: " +
                           "summoning_bell (nearby one, otherwise the preferred bell location from /xivmcp, falling back to the inn), company_chest (FC " +
                           "house), workshop (FC workshop, walks to the voyage control panel), inn, home, fc_house, apartment, object (by name in the " +
-                          "current zone), npc (an NPC anywhere in the world by name, from the game data: travels to its zone and walks up to it), or fishing_spot (a fishing spot by name or id, as find_fish names it: travels there and walks to the water until Cast can be used, as a Fisher). Waits until arrived (or the timeout) and returns the steps taken; then use interact_with_object. " +
+                          "current zone), npc (an NPC anywhere in the world by name, from the game data: travels to its zone and walks up to it), or fishing_spot (a fishing spot by name or id, as find_fish names it: travels there and walks to the water until Cast can be used, as a Fisher). Waits until arrived and returns the steps taken; then use interact_with_object. Fails with the reason and the steps so far when it can't get there or times out (a job then waits). " +
                           "stop_navigation aborts. Teleports cost gil as usual. Requires 'Game & navigation' in /xivmcp.",
             InputSchema = $$"""
                 {
@@ -69,19 +69,25 @@ internal static partial class NavigationTools
                 var steps = new List<string>();
                 try
                 {
-                    await Game.RunLoggedIn(() => { EnsureCanTravel(); return true; }).ConfigureAwait(false);
+                    await WaitUntilFreeToTravel(cts.Token).ConfigureAwait(false);
                     var result = await Navigate(destination, name, config, steps, cts.Token).ConfigureAwait(false);
                     return new { arrived = true, destination, at = result, steps };
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    StopAll();
+                    throw new ToolException($"Didn't arrive: timed out.{StepsSoFar(steps)}");
                 }
                 catch (OperationCanceledException)
                 {
                     StopAll();
-                    return new { arrived = false, destination, reason = ct.IsCancellationRequested ? "stopped" : "timed out", steps };
+                    throw;
                 }
                 catch (ToolException ex)
                 {
+                    // Failing (instead of reporting arrived: false) keeps a job from going on as if the character were there.
                     StopAll();
-                    return new { arrived = false, destination, reason = ex.Message, steps };
+                    throw new ToolException($"Didn't arrive: {ex.Message}{StepsSoFar(steps)}");
                 }
                 finally
                 {
@@ -321,6 +327,29 @@ internal static partial class NavigationTools
     }
 
     // ------------------------------------------------------------------ helpers
+
+    private static string StepsSoFar(List<string> steps) => steps.Count == 0 ? "" : " Steps so far: " + string.Join(" ", steps);
+
+    /// <summary>
+    /// Right after gathering, a cast or a zone change the character is busy for a moment (a job's next step starts at once),
+    /// so wait a little for that to pass before refusing.
+    /// </summary>
+    private static async Task WaitUntilFreeToTravel(CancellationToken ct)
+    {
+        var until = DateTime.UtcNow.AddSeconds(20);
+        while (true)
+        {
+            try
+            {
+                await Game.RunLoggedIn(() => { EnsureCanTravel(); return true; }).ConfigureAwait(false);
+                return;
+            }
+            catch (ToolException) when (DateTime.UtcNow < until)
+            {
+                await Task.Delay(500, ct).ConfigureAwait(false);
+            }
+        }
+    }
 
     internal static void EnsureCanTravel()
     {

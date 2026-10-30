@@ -161,8 +161,8 @@ public sealed class Plugin : IDalamudPlugin
                     Chat.Print($"Started job {job["id"]} — see /xivmcp → Jobs.", "Hello MCP");
                     break;
                 case "bell":
-                    // A built-in tool that uses other plugins, then ours with its result. navigate_to reports arrived: false (with a
-                    // reason) when it can't get there, for example because a plugin it needs is missing; Hello MCP's page in
+                    // A built-in tool that uses other plugins, then ours with its result. navigate_to fails (with a reason, and the
+                    // job waits) when it can't get there, for example because a plugin it needs is missing; Hello MCP's page in
                     // /xivmcp shows what to install.
                     var walk = mcp.StartJob("Hello MCP walks to a bell",
                         new McpJobStep("navigate_to", new { destination = "summoning_bell" }, Id: "walk"),

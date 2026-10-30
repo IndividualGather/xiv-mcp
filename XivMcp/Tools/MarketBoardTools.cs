@@ -125,6 +125,9 @@ internal static class MarketBoardTools
 
     // ---------------------------------------------------------------- market board
 
+    /// <summary>The map icon of a market board.</summary>
+    private const uint MarketBoardIcon = 60570;
+
     private static readonly Lazy<HashSet<uint>> MarketBoardIds = new(() =>
         Svc.Data.GetExcelSheet<EObjName>(Dalamud.Game.ClientLanguage.English)
            .Where(n => n.Singular.ExtractText().Equals("market board", StringComparison.OrdinalIgnoreCase)).Select(n => n.RowId).ToHashSet());
@@ -133,8 +136,21 @@ internal static class MarketBoardTools
     {
         if (await Game.Run(() => RetainerUi.Ready("ItemSearch")).ConfigureAwait(false)) return;
         var ids = await Task.Run(() => MarketBoardIds.Value, ct).ConfigureAwait(false);
-        if (await NavigationTools.WalkTo("Market Board", o => ids.Contains(o.BaseId), steps, ct).ConfigureAwait(false) is null)
+        if (await NavigationTools.WalkTo("Market Board", o => ids.Contains(o.BaseId), steps, ct).ConfigureAwait(false) is not null) return;
+
+        // In a large city the nearest board may be too far away to be loaded yet: the map shows where the boards are.
+        var markers = await Game.Run(() =>
+        {
+            var self = Svc.Objects.LocalPlayer!.Position;
+            return NavigationTools.MarkerPositions(Svc.ClientState.MapId, MarketBoardIcon)
+                .OrderBy(p => System.Numerics.Vector2.Distance(new(p.X, p.Z), new(self.X, self.Z))).ToList();
+        }).ConfigureAwait(false);
+        if (markers.Count == 0)
             throw new ToolException("No market board in this zone: go to a city with one (Limsa Lominsa, Gridania, Ul'dah or a later hub).");
+        await NavigationTools.WalkTowards(markers[0], "the market board", () => Svc.Objects.Any(o => ids.Contains(o.BaseId) && o.IsTargetable &&
+            Game.DistanceToPlayer(o.Position) <= 40), steps, ct).ConfigureAwait(false);
+        if (await NavigationTools.WalkTo("Market Board", o => ids.Contains(o.BaseId), steps, ct).ConfigureAwait(false) is null)
+            throw new ToolException("Walked to where the map shows a market board, but there is none in reach.");
         var board = await Game.Run(() =>
         {
             var obj = Svc.Objects.Where(o => ids.Contains(o.BaseId)).OrderBy(o => Game.DistanceToPlayer(o.Position) ?? float.MaxValue).First();

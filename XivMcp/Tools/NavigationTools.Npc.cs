@@ -162,6 +162,42 @@ internal static partial class NavigationTools
         return null;
     }
 
+    /// <summary>Where a map shows markers with this icon (world X/Z; Y unknown, 0). Framework thread.</summary>
+    internal static List<Vector3> MarkerPositions(uint mapId, uint icon)
+    {
+        if (Svc.Data.GetExcelSheet<Map>().GetRowOrDefault(mapId) is not { } map) return [];
+        if (Svc.Data.GetSubrowExcelSheet<MapMarker>().GetRowOrDefault(map.MapMarkerRange) is not { } markers) return [];
+        var scale = map.SizeFactor / 100f;
+        return markers.Where(m => m.Icon == icon)
+            .Select(m => new Vector3((m.X - 1024) / scale - map.OffsetX, 0, (m.Y - 1024) / scale - map.OffsetY)).ToList();
+    }
+
+    /// <summary>
+    /// Walks towards a spot in the current zone that is too far away to be loaded as an object yet (its height unknown), until
+    /// the path ends or <paramref name="seen"/> is true; without vnavmesh the player is asked to walk there.
+    /// </summary>
+    internal static async Task WalkTowards(Vector3 position, string label, Func<bool> seen, List<string> steps, CancellationToken ct)
+    {
+        var territory = await Game.Run(() => Svc.ClientState.TerritoryType).ConfigureAwait(false);
+        if (!VnavmeshLoaded)
+        {
+            await GuideWalk(territory, position, label, 10f, seen, steps, ct).ConfigureAwait(false);
+            return;
+        }
+        await WaitForMesh(ct).ConfigureAwait(false);
+        var target = await Game.Run(() =>
+            Ipc<Vector3, float, float, Vector3?>("vnavmesh.Query.Mesh.NearestPointReachable", position with { Y = PlayerHeight() }, 10f, 60f)
+            ?? position).ConfigureAwait(false);
+        if (!await StartPath(target, 3f, steps, ct).ConfigureAwait(false))
+            throw new ToolException($"vnavmesh could not find a path to {label}.");
+        steps.Add($"vnavmesh: walking towards {label}.");
+        phase = $"walking to {label}";
+        await Task.Delay(500, ct).ConfigureAwait(false);
+        while (await Game.Run(() => PathRunning && !seen()).ConfigureAwait(false))
+            await Task.Delay(250, ct).ConfigureAwait(false);
+        await Game.Run(() => { StopMoving(); return true; }).ConfigureAwait(false);
+    }
+
     private static float Flat(Vector3 a, Vector3 b) => Vector2.Distance(new Vector2(a.X, a.Z), new Vector2(b.X, b.Z));
 
     internal static string TerritoryName(uint territory) =>

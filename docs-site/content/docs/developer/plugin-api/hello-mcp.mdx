@@ -34,7 +34,7 @@ It also declares the tools its jobs use besides its own, `get_game_status` and `
 | Command | What it does |
 |---|---|
 | `/hellomcp job` | Starts a job: the countdown, then a chat message that uses the countdown's result (`{{count.seconds}}`), then XIV MCP's own `get_game_status`. |
-| `/hellomcp bell` | Starts a job that takes you to a summoning bell with XIV MCP's `navigate_to`, then prints the result (`{{walk.arrived}}`: `false` if you did not get there in time). |
+| `/hellomcp bell` | Starts a job that takes you to a summoning bell with XIV MCP's `navigate_to`, then prints the result (`{{walk.arrived}}`). If you don't get there, `navigate_to` fails with the reason and the job waits in **/xivmcp → Jobs**. |
 | `/hellomcp jobs` | Lists the jobs the plugin started. |
 | `/hellomcp status` | Shows what the plugin sees (`mcp.GetStatus()`), including tools its jobs use that cannot run. |
 
