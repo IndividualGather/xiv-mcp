@@ -19,7 +19,7 @@ public static class BuiltInCapabilities
     public static IReadOnlySet<string> NotForPlugins { get; } = new HashSet<string>
     {
         "start_job", "update_job", "pause_job", "resume_job", "cancel_job",
-        "list_plugin_config_files", "get_plugin_config", "set_plugin_config", "set_plugin_enabled", "reload_plugin",
+        "list_plugin_config_files", "get_plugin_config", "set_plugin_config", "set_plugin_enabled", "reload_plugin", "list_plugin_collections", "set_plugin_collection_enabled",
         "take_screenshot", "request_spending_approval", "revoke_approval",
         "show_xivmcp_window", "press_xivmcp_control", "capture_ui_events",
     };

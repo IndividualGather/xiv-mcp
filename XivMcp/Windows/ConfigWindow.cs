@@ -345,6 +345,22 @@ internal sealed partial class ConfigWindow : Window
         Tooltip("Opens the Dalamud plugin installer filtered to Item Vendor Location; install it from there.");
     }
 
+    /// <summary>Whether XIV MCP turns on the plugins a task needs (installed but off) for the task, and off again afterwards.</summary>
+    private void DrawTurnOnNeededPlugins()
+    {
+        var config = plugin.Config;
+        ImGui.Spacing();
+        var on = config.TurnOnNeededPlugins;
+        if (ImGui.Checkbox("Turn on plugins a task needs##turn-on-needed", ref on))
+        {
+            config.TurnOnNeededPlugins = on;
+            config.Save();
+        }
+        Tooltip("When a task needs a plugin you have installed but turned off (custom deliveries need Satisfier, retainers AutoRetainer, " +
+                "quests Questionable, walking vnavmesh), XIV MCP turns it on for the task and off again a minute after the task is done. " +
+                "Your plugin collections are not changed. Chat says which plugin it turned on and off.");
+    }
+
     /// <summary>Optional gil limit above which a gil purchase asks too.</summary>
     private void DrawGilLimit()
     {

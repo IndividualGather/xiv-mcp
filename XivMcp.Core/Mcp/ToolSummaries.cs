@@ -167,6 +167,8 @@ public static class ToolSummaries
         ["list_plugin_config_files"] = "Lists the settings files of another plugin.",
         ["get_plugin_config"] = "Looks at the settings of another plugin, including any passwords or keys stored there.",
         ["set_plugin_enabled"] = "Turns another plugin on or off.",
+        ["list_plugin_collections"] = "Lists your Dalamud plugin collections and the plugins each turns on.",
+        ["set_plugin_collection_enabled"] = "Turns a plugin collection on or off. Asks you first.",
         ["reload_plugin"] = "Restarts another plugin.",
         ["set_plugin_config"] = "Changes the settings of another plugin. The old settings are backed up first.",
 

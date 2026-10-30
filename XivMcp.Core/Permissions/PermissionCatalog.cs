@@ -82,7 +82,7 @@ public static class PermissionCatalog
         ],
         ["ui_editing"] = ["get_macros", "list_waymark_presets", "get_waymark_preset", "set_macro", "clear_macro", "set_waymark_preset"],
         ["online"] = ["get_item_sources", "get_market_prices", "find_fish", "get_fashion_report"],
-        ["plugin_management"] = ["list_plugin_config_files", "get_plugin_config", "set_plugin_enabled", "reload_plugin", "set_plugin_config"],
+        ["plugin_management"] = ["list_plugin_config_files", "get_plugin_config", "list_plugin_collections", "set_plugin_enabled", "reload_plugin", "set_plugin_config", "set_plugin_collection_enabled"],
         ["screen"] = ["take_screenshot"],
         ["trading"] = ["get_trade", "trade_with_player", "cancel_trade"],
         ["jobs"] = ["list_jobs", "get_job", "start_job", "update_job", "pause_job", "resume_job", "cancel_job", "wait", "wait_until_arrived"],

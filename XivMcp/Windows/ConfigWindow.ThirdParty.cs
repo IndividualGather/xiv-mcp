@@ -37,6 +37,7 @@ internal sealed partial class ConfigWindow
         public Action? Options(string groupId) => groupId switch
         {
             "game_navigation" => window.DrawBellPreference,
+            "plugin_management" => window.DrawTurnOnNeededPlugins,
             "items_retainers" => window.DrawMoveDelay,
             "saucy" => window.DrawGoldSaucerOptions,
             "market" => () =>

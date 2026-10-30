@@ -54,6 +54,13 @@ public sealed class McpTool
         };
     }
 
+    /// <summary>The same tool with its handler wrapped, e.g. to prepare what it needs first.</summary>
+    public McpTool WithHandler(Func<Func<ToolArgs, CancellationToken, Task<object?>>, Func<ToolArgs, CancellationToken, Task<object?>>> wrap) => new()
+    {
+        Name = Name, Description = Description, InputSchema = InputSchema, Handler = wrap(Handler), ReadOnly = ReadOnly, Destructive = Destructive,
+        Provider = Provider, Capabilities = Capabilities, Available = Available,
+    };
+
     /// <summary>The input schema; a broken one is logged and replaced by an empty schema, so one tool can't break tools/list for all.</summary>
     public JsonNode ParsedSchema()
     {

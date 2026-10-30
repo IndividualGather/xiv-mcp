@@ -156,6 +156,84 @@ internal static class PluginTools
 
         yield return new McpTool
         {
+            Name = "list_plugin_collections",
+            Description = "Lists the Dalamud plugin collections (set up in the plugin installer): name, whether each is on, the default collection " +
+                          "(always on), and the plugins each turns on. Requires 'Plugin management' in /xivmcp.",
+            Handler = (_, _) => Task.Run<object?>(() =>
+            {
+                RequireEnabled();
+                var collections = DalamudInternals.Collections().Select(c => new
+                {
+                    name = c.Info.Name,
+                    enabled = c.Info.Enabled,
+                    isDefault = c.Info.IsDefault ? true : (bool?)null,
+                    plugins = c.Info.Plugins,
+                }).ToList();
+                return new { count = collections.Count, collections };
+            }),
+        };
+
+        yield return new McpTool
+        {
+            Name = "set_plugin_collection_enabled",
+            Description = "Turns a Dalamud plugin collection on or off, exactly like its switch in the plugin installer: Dalamud then loads the " +
+                          "plugins it wants and unloads those no enabled collection wants. The player approves in game first. The default " +
+                          "collection is always on. Requires 'Plugin management' in /xivmcp.",
+            InputSchema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "collection": { "type": "string", "description": "The collection's name (from list_plugin_collections)." },
+                    "enabled": { "type": "boolean", "description": "true = turn on, false = turn off." }
+                  },
+                  "required": ["collection", "enabled"]
+                }
+                """,
+            ReadOnly = false,
+            Handler = async (args, _) =>
+            {
+                RequireEnabled();
+                var enabled = args.Bool("enabled", true);
+                var name = args.String("collection") ?? throw new ToolException("'collection' is required.");
+                var all = DalamudInternals.Collections();
+                XivMcp.Integrations.PluginCollection target;
+                try { target = XivMcp.Integrations.PluginCollection.Find(all.Select(c => c.Info).ToList(), name); }
+                catch (ArgumentException ex) { throw new ToolException(ex.Message); }
+                if (XivMcp.Integrations.PluginCollection.Refusal(target, enabled, all.Select(c => c.Info).ToList(), Svc.PluginInterface.InternalName) is { } refusal)
+                    throw new ToolException(refusal);
+                if (target.Enabled == enabled) return new { collection = target.Name, enabled, changed = false };
+
+                // A collection turns many plugins on or off at once, automation among them: the player decides each time.
+                var shown = target.Plugins.Take(15).ToList();
+                await Consent.Require($"Turn {(enabled ? "on" : "off")} the plugin collection {target.Name}?",
+                [
+                    $"Asked by {args.Caller?.Name ?? "your AI assistant"}.",
+                    $"{(enabled ? "Loads" : "Unloads (unless another collection keeps them)")}: {string.Join(", ", shown)}{(target.Plugins.Count > shown.Count ? $" and {target.Plugins.Count - shown.Count} more" : "")}.",
+                ], TimeSpan.FromMinutes(2), default).ConfigureAwait(false);
+
+                await Gate.WaitAsync().ConfigureAwait(false);
+                try
+                {
+                    var profile = all.First(c => c.Info == target).Profile;
+                    var before = DalamudInternals.InstalledPlugins().Where(DalamudInternals.IsLoaded).Select(DalamudInternals.InternalName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    await DalamudInternals.SetCollectionEnabled(profile, enabled).ConfigureAwait(false);
+                    var after = DalamudInternals.InstalledPlugins().Where(DalamudInternals.IsLoaded).Select(DalamudInternals.InternalName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    Svc.Log.Information($"[MCP] Turned {(enabled ? "on" : "off")} the plugin collection {target.Name}");
+                    return new
+                    {
+                        collection = target.Name,
+                        enabled,
+                        changed = true,
+                        loaded = after.Except(before).OrderBy(n => n).ToList(),
+                        unloaded = before.Except(after).OrderBy(n => n).ToList(),
+                    };
+                }
+                finally { Gate.Release(); }
+            },
+        };
+
+        yield return new McpTool
+        {
             Name = "list_plugin_config_files",
             Description = "Lists the configuration files of a Dalamud plugin: its main <InternalName>.json and everything in its config directory, " +
                           "with relative path, size and last modification time. Requires 'Plugin management' in /xivmcp.",

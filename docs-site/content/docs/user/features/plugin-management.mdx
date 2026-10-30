@@ -10,14 +10,29 @@ These tools are in the **Plugin management** module, which is denied by default,
 |---|---|
 | `list_plugins` | Installed plugins with internal name, version, load state and flags (module **Game data**, so reading it is allowed by default even while *Plugin management* is denied) |
 | `set_plugin_enabled` / `reload_plugin` | Turns a plugin on or off, or reloads it, like the installer's switch |
+| `list_plugin_collections` | Your plugin collections, whether each is on, and the plugins each turns on |
+| `set_plugin_collection_enabled` | Turns a collection on or off, like its switch in the installer: its plugins load, and those no enabled collection wants unload |
 | `list_plugin_config_files` / `get_plugin_config` / `set_plugin_config` | Lists, reads and changes plugin settings by path, with a dry run and type checks |
+
+> "Turn on my Automate collection."
+
+## Plugins a task needs
+
+Under **Plugin management** in `/xivmcp` → **Modules**, **Turn on plugins a task needs** lets XIV MCP turn on a plugin that you have installed but turned off, when a task needs it. Custom deliveries need Satisfier, for example, and craft with Artisan; retainers need AutoRetainer, quests Questionable, and walking vnavmesh. It is off by default. Switching it on is your approval, so these don't ask each time.
+
+- **What is turned on:** the plugin the task drives, and the plugins that do a part of its work (walking, travel, crafting). Of plugins that stand in for each other, one is enough. The tools of a plugin that is off are offered too, so your assistant can use them.
+- **For now, not for good:** the plugin is loaded, not added to a collection, so your collections stay as they are.
+- **Off again afterwards:** a minute after no tool has run and no job is unfinished. A job can run for hours, and the plugins stay on until it ends. A job that waits for your assistant (*pending*) counts as unfinished. Plugins you had on yourself stay on.
+- **In chat:** XIV MCP says which plugin it turned on, for which tool, and when it turns it off again.
+
+Turning a collection off unloads the plugins no other enabled collection wants, including ones XIV MCP turned on for a task that is still running.
 
 ## How settings are changed
 
-Every change asks you in game first, even when **Plugin management** is set to *Allow*: enabling or disabling a plugin, reloading one, and changing settings (the approval lists each change). Other plugins can run automation or commands, or protect you, so XIV MCP never changes them without you.
+Every change asks you in game first, even when **Plugin management** is set to *Allow*: enabling or disabling a plugin or a collection, reloading one, and changing settings (the approval lists each change). Turning on the plugins a task needs is the exception, once you have allowed it. Other plugins can run automation or commands, or protect you, so XIV MCP never changes them without you.
 
 Plugins keep their settings in memory and often save them when they shut down. So `set_plugin_config` unloads a loaded plugin, writes the change through Dalamud's own file storage, and loads the plugin again.
 
 - The previous file is backed up to `pluginConfigs/XivMcp/backups/<plugin>/` (the last 10 per file).
-- XIV MCP refuses to manage itself.
+- XIV MCP refuses to manage itself, and to turn off a collection when it is the only enabled one that keeps XIV MCP loaded. The default collection is always on.
 - Dalamud has no public way to do this, so these tools use its internal plugin manager, like the installer does. They may need an update after Dalamud updates.

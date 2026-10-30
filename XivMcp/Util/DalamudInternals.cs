@@ -135,6 +135,22 @@ internal static class DalamudInternals
 
     public static Guid WorkingId(object plugin) => (Guid)Prop(plugin, "EffectiveWorkingPluginId")!;
 
+    /// <summary>The plugin collections (Dalamud's profiles), each with the plugins it turns on.</summary>
+    public static List<(object Profile, XivMcp.Integrations.PluginCollection Info)> Collections() =>
+        ((IEnumerable)Prop(ProfileManager, "Profiles")!).Cast<object>()
+        .Select(p => (p, new XivMcp.Integrations.PluginCollection(
+            Prop(p, "Name") as string ?? "", Prop(p, "IsEnabled") is true, Prop(p, "IsDefaultProfile") is true,
+            ((IEnumerable)Prop(p, "Plugins")!).Cast<object>().Where(e => Prop(e, "IsEnabled") is true).Select(e => Prop(e, "InternalName") as string ?? "")
+                .Where(n => n.Length > 0).ToList())))
+        .ToList();
+
+    /// <summary>Turns a collection on or off and applies it, like its switch in the plugin installer: its plugins load or unload.</summary>
+    public static async Task SetCollectionEnabled(object profile, bool enabled)
+    {
+        if (Prop(ProfileManager, "IsBusy") is true) throw new ToolException("Dalamud is applying plugin collections right now; try again in a moment.");
+        await (Task)profile.GetType().GetMethod("SetStateAsync", Any)!.Invoke(profile, [enabled, true])!;
+    }
+
     /// <summary>Writes a config file through Dalamud's ReliableFileStorage so its backup DB stays in sync; falls back to a plain atomic write.</summary>
     public static async Task WriteConfigFile(string path, string contents, Guid workingPluginId)
     {

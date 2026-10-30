@@ -29,6 +29,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly CharacterRoster roster;
     private JobManager? jobs;
     internal JobManager? Jobs => jobs;
+    private readonly PluginWakeUp wakeUp;
     private readonly PluginCompat compat;
     private readonly CacheRegistry caches;
     private readonly XivMcp.Api.PluginApi pluginApi;
@@ -135,7 +136,9 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(XivMcpWindowTools.Create(() => configWindow, () => overlayWindow, () => jobs, pluginInterface.IsDev, () => Config.EnableDevTools))
             .ToList();
         // Tools that drive one other plugin belong to that plugin's integration (same provider + capability contract as third-party tools).
-        tools = XivMcp.Integrations.IntegrationCatalog.Apply(tools, PluginCompat.IsLoaded).ToList();
+        // With "Turn on plugins a task needs", a plugin that is installed but off counts too: it is turned on when its tool runs.
+        wakeUp = new PluginWakeUp(Config, () => jobs?.All().Any(j => !j.Finished) == true);
+        tools = XivMcp.Integrations.IntegrationCatalog.Apply(tools, wakeUp.Usable).Select(wakeUp.Wrap).ToList();
         var registry = new ToolRegistry(tools);
 
         // Third-party tools: policy per capability, in-game approval, side-effect checks and an audit log.
@@ -208,6 +211,7 @@ public sealed class Plugin : IDalamudPlugin
         pluginApi.Dispose();
         probe.Dispose();
         jobs?.Dispose();
+        wakeUp.Dispose();
         Server.Dispose();
         XivMcp.Util.AppIcons.Reset();
         workshop.Dispose();

@@ -192,7 +192,22 @@ public static class IntegrationCatalog
             ["do_quests"] = [Combat, MoveCharacter, GameUi, EditSettings],
             ["start_main_scenario"] = [Combat, MoveCharacter, GameUi],
             ["stop_questing"] = [GameUi],
-        }),
+        })
+        {
+            Helpers = new Dictionary<string, ToolRequirement[]>
+            {
+                ["complete_quest"] = QuestTravel,
+                ["do_tribe_dailies"] = QuestTravel,
+                ["do_quests"] = QuestTravel,
+                ["start_main_scenario"] = QuestTravel,
+            },
+        },
+    ];
+
+    private static ToolRequirement[] QuestTravel =>
+    [
+        new("vnavmesh", Need.Improves, "Questionable walks with it.", "Questionable can't move you, and stops."),
+        new("Lifestream", Need.Improves, "Questionable travels between zones and cities with it.", "Questionable stops where it has to travel."),
     ];
 
     /// <summary>Whether a tool of an integration is offered: its plugin, or one of the plugins that also make it available, is loaded.</summary>

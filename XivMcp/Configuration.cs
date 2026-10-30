@@ -74,6 +74,12 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>AutoHook ocean fishing preset strings the player pasted, by goal (Points, Legendary, Achievement, Levelling).</summary>
     public System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<string>> OceanPresets { get; set; } = new();
 
+    /// <summary>
+    /// When a task needs a plugin that is installed but turned off, XIV MCP turns it on for the task and off again afterwards (only
+    /// while Plugin management isn't denied).
+    /// </summary>
+    public bool TurnOnNeededPlugins { get; set; }
+
     /// <summary>Longer walks ride a mount (Mount Roulette) and fly where the zone allows it.</summary>
     public bool UseMountForWalks { get; set; } = true;
 
