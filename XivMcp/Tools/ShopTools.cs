@@ -464,6 +464,8 @@ internal static class ShopTools
     private static async Task<string> OpenShop(Offer offer, string? menuOption, List<string> steps, CancellationToken ct)
     {
         if (await Game.Run(() => AnyVisible(ShopAddons)).ConfigureAwait(false) is { } already) return already;
+        // A vendor that won't trade yet says why in the chat log (e.g. a gemstone trader before the zone's contribution is done).
+        using var feedback = new GameCommands.Feedback();
         await Game.RunLoggedIn(() =>
         {
             var npc = Svc.Objects.Where(o => o.BaseId == offer.NpcId && o.IsTargetable).OrderBy(o => Game.DistanceToPlayer(o.Position)).FirstOrDefault()
@@ -479,7 +481,7 @@ internal static class ShopTools
         steps.Add($"Talking to {offer.Npc}.");
 
         var deadline = DateTime.UtcNow.AddSeconds(15);
-        var lastAction = DateTime.MinValue;
+        var lastAction = DateTime.UtcNow - TimeSpan.FromMilliseconds(600);
         while (DateTime.UtcNow < deadline)
         {
             ct.ThrowIfCancellationRequested();
@@ -496,13 +498,20 @@ internal static class ShopTools
                 FireMenu(addon, index);
                 return "selected:" + entries[index];
             }).ConfigureAwait(false);
-            if (outcome is null) continue;
+            if (outcome is null)
+            {
+                if (feedback.Messages.Count > 0 && DateTime.UtcNow - lastAction > TimeSpan.FromSeconds(2)) break;
+                continue;
+            }
             if (outcome.StartsWith("open:")) { steps.Add($"Shop open ({outcome[5..]})."); await Task.Delay(400, ct).ConfigureAwait(false); return outcome[5..]; }
             if (outcome.StartsWith("menu:"))
                 throw new ToolException($"Couldn't tell which menu entry opens the shop. Entries: {outcome[5..]}. Retry with menu_option.");
             if (outcome.StartsWith("selected:")) steps.Add($"Menu: {outcome[9..]}.");
             lastAction = DateTime.UtcNow;
         }
+        if (feedback.Messages.Count > 0)
+            throw new ToolException($"{offer.Npc} didn't open the shop. The game said: \"{string.Join(" ", feedback.Messages.Distinct())}\" " +
+                                    "Get the item elsewhere (another vendor from find_vendors, or the market board with buy_from_market_board).");
         throw new ToolException($"The shop window didn't open after talking to {offer.Npc}. Windows open: {await Game.Run(OpenWindows).ConfigureAwait(false)}.");
     }
 

@@ -115,6 +115,7 @@ internal static class CraftPlanTools
                                 warnings.Add($"No gearset for {job}: Artisan can't switch to it, and the predicted stats (and Raphael solutions) use your current gear.");
 
                         var changed = false;
+                        var problems = new List<string>();
                         foreach (var step in plan.Steps)
                         {
                             ct.ThrowIfCancellationRequested();
@@ -135,11 +136,14 @@ internal static class CraftPlanTools
                                 now = await Game.Run(() => ArtisanBridge.Predict(step.RecipeId)).ConfigureAwait(false);
                                 if (!now.InProgress && !now.HasSolution) break; // finished without a result (failed or timed out in Artisan)
                             }
+                            var outcome = now.HasSolution ? await Game.Run(() => Simulate(step.RecipeId)).ConfigureAwait(false) : null;
+                            if (outcome?.Problem(collectable: outcome.TierQuality.Count > 0) is { } problem) problems.Add($"{step.Item}: {problem}");
                             raphael.Add(new
                             {
                                 item = step.Item,
                                 recipeId = step.RecipeId,
                                 solution = now.HasSolution ? (before.HasSolution ? "already cached" : $"built in {(DateTime.UtcNow - started).TotalSeconds:0.#} s") : now.InProgress ? "still building" : "failed (Artisan will fall back to its standard solver)",
+                                reaches = outcome?.Describe(),
                                 macroSteps = now.Steps,
                                 stats = new { craftsmanship = now.Craftsmanship, control = now.Control, cp = now.Cp, level = now.Level },
                                 food = now.Food == 0 ? null : Items.Name(now.Food),
@@ -148,6 +152,8 @@ internal static class CraftPlanTools
                         }
                         await Game.Run(() => { ArtisanBridge.Save(); return true; }).ConfigureAwait(false);
                         if (changed) warnings.Add("Switched the list's recipes to Artisan's Raphael solver (per-recipe setting in Artisan).");
+                        if (problems.Count > 0)
+                            throw new ToolException($"Not starting: the Artisan list '{name}' is ready, but crafting it now would waste the materials. " + string.Join(" ", problems));
                     }
                 }
 
@@ -238,7 +244,7 @@ internal static class CraftPlanTools
             problem = s.Problem,
             raphael = raphael ? RaphaelInfo(s) : null,
             collectable = s.IsTarget && Collectables.RewardFor(s.ItemId) is { } reward
-                ? new { turnIn = Collectables.Describe(reward), scripForAll = (long)reward.HighReward * s.Produces, note = "Raphael solutions for collectables aim for the highest collectability tier." }
+                ? new { turnIn = Collectables.Describe(reward), scripForAll = (long)reward.HighReward * s.Produces, note = "Raphael solutions for collectables aim for the highest collectability tier; prepare_craft_plan simulates the solution with your stats and refuses when it doesn't reach the lowest tier." }
                 : null,
         }).ToList(),
         materials = plan.Materials.Select(m => new
@@ -271,10 +277,13 @@ internal static class CraftPlanTools
         try
         {
             var p = ArtisanBridge.Predict(s.RecipeId);
+            var outcome = p.HasSolution ? Simulate(s.RecipeId) : null;
             return new
             {
                 solverSelected = p.RaphaelSelected,
                 solutionCached = p.HasSolution,
+                reaches = outcome?.Describe(),
+                problem = outcome?.Problem(collectable: outcome.TierQuality.Count > 0),
                 building = p.InProgress ? true : (bool?)null,
                 stats = new { craftsmanship = p.Craftsmanship, control = p.Control, cp = p.Cp, level = p.Level },
                 food = p.Food == 0 ? null : Items.Name(p.Food),
@@ -284,6 +293,17 @@ internal static class CraftPlanTools
         catch (Exception ex)
         {
             return new { unavailable = ex is ToolException ? ex.Message : $"{ex.GetType().Name}: {ex.Message}" };
+        }
+    }
+
+    /// <summary>What the cached Raphael solution achieves with the predicted stats; null when Artisan's simulator can't be reached. Framework thread.</summary>
+    private static XivMcp.Crafting.CraftOutcome? Simulate(uint recipeId)
+    {
+        try { return ArtisanBridge.Simulate(recipeId); }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"[MCP] Could not simulate the Raphael solution for recipe {recipeId}: {ex.Message}");
+            return null;
         }
     }
 
@@ -301,11 +321,15 @@ internal static class CraftPlanTools
                 options.Add(new { how = "gather", job = g.Job, level = g.Level, tool = CraftGatherTools.GatherBuddyLoaded ? "set_gather_list + set_auto_gather" : null });
             if (Fish.Value.Contains(id))
                 options.Add(new { how = "fish", job = "FSH", tool = CraftGatherTools.GatherBuddyLoaded ? "set_gather_list + set_auto_gather" : null });
-            switch (ShopTools.SoldByVendor(id))
-            {
-                case true: options.Add(new { how = "buy", from = "NPC vendor", tool = "find_vendors / buy_item" }); break;
-                case null: options.Add(new { how = "buy?", hint = "a vendor-location plugin would show which vendors sell it" }); break;
-            }
+            // Vendors that take other currencies (gemstones, scrips) show up under "exchange", and may need unlocking first.
+            if (GilShopItems.Value.Contains(id))
+                switch (ShopTools.SoldByVendor(id))
+                {
+                    case true: options.Add(new { how = "buy", from = "gil vendor", tool = "find_vendors / buy_item" }); break;
+                    case null: options.Add(new { how = "buy?", hint = "a vendor-location plugin would show which vendors sell it" }); break;
+                }
+            if (Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(id) is { IsUntradable: false, ItemSearchCategory.RowId: > 0 })
+                options.Add(new { how = "market board", tool = "get_market_prices / buy_from_market_board" });
             if (Ventured.Value.Contains(id))
                 options.Add(new { how = "venture", tool = "find_ventures / assign_venture" });
             if (teamcraft.TryGetValue(id, out var tc) && tc is not null)
@@ -337,6 +361,9 @@ internal static class CraftPlanTools
 
     private static readonly Lazy<HashSet<uint>> Fish = new(() =>
         Svc.Data.GetExcelSheet<FishParameter>().Select(f => f.Item.RowId).Concat(Svc.Data.GetExcelSheet<SpearfishingItem>().Select(s => s.Item.RowId)).Where(i => i != 0).ToHashSet());
+
+    private static readonly Lazy<HashSet<uint>> GilShopItems = new(() =>
+        Svc.Data.GetSubrowExcelSheet<GilShopItem>().SelectMany(rows => rows).Select(r => r.Item.RowId).Where(i => i != 0).ToHashSet());
 
     private static readonly Lazy<HashSet<uint>> Ventured = new(() =>
         Svc.Data.GetExcelSheet<RetainerTaskNormal>().Select(r => r.Item.RowId).Where(i => i != 0).ToHashSet());

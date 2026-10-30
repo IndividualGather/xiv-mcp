@@ -20,6 +20,14 @@ Planning works on its own. Crafting and gathering go through **Artisan** and **G
 
 With `"quantity": "fill"`, `plan_craft` plans as many as fit in your bags. For collectables, it also plans no more than can be turned in before the scrip cap, with the scrips per collectability tier.
 
+## Is your gear good enough?
+
+`prepare_craft_plan` plays each prepared solution through Artisan's simulator with the stats Artisan will craft with, assuming normal conditions, and shows what it reaches (for collectables, the tier and collectability). If a solution doesn't finish the craft, or a collectable stays below the lowest tier, it refuses before anything is crafted: better gear, food or a potion is needed first. `plan_craft` shows the same for solutions already prepared.
+
+## Where materials come from
+
+`plan_craft` lists gil vendors only when a gil shop sells the material. Vendors that take other currencies, such as gemstones or scrips, are listed as exchanges. Some of them only trade once you have unlocked them. Tradeable materials also list the market board. When a vendor won't trade, `buy_item` passes on what the game says.
+
 ## A whole project as one job
 
 > "Craft as many of this collectable as I can turn in before the scrip cap, gather what is missing, and turn them in."

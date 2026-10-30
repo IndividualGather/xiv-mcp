@@ -75,6 +75,39 @@ internal static class ArtisanBridge
             IsRaphaelSelected(api, recipeId), steps, key, food, potion);
     }
 
+    /// <summary>
+    /// Runs the cached Raphael solution for a recipe through Artisan's own simulator, with the stats Artisan will craft with and normal
+    /// conditions throughout: whether it finishes and the quality it reaches. Null when no solution is cached. Framework thread.
+    /// </summary>
+    public static XivMcp.Crafting.CraftOutcome? Simulate(uint recipeId)
+    {
+        var api = Resolve();
+        var (craft, raphConfig, _, _) = BuildCraft(api, recipeId);
+        var cache = api.T("Artisan.CraftingLogic.Solvers.RaphaelCache");
+        var args = new object?[] { craft, raphConfig, null };
+        if (cache.GetMethods(All).First(m => m.Name == "HasSolution" && m.GetParameters().Length == 3).Invoke(null, args) is not true || args[2] is not { } macro)
+            return null;
+
+        var sim = api.T("Artisan.CraftingLogic.Simulator");
+        var skills = api.T("Artisan.RawInformation.Character.Skills");
+        var touchCombo = Enum.Parse(skills, "TouchCombo");
+        var touchComboRefined = Enum.Parse(skills, "TouchComboRefined");
+        var step = Invoke(sim, "CreateInitial", craft, 0)!;
+        foreach (var macroStep in (IEnumerable)Field(macro, "Steps")!)
+        {
+            var action = Field(macroStep, "Action")!;
+            if (action.Equals(touchCombo)) action = Invoke(sim, "NextTouchCombo", step, craft)!;
+            else if (action.Equals(touchComboRefined)) action = Invoke(sim, "NextTouchComboRefined", step, craft)!;
+            // Success roll 0 = every action succeeds; condition roll 1 = the condition stays normal.
+            var result = Invoke(sim, "Execute", craft, step, action, 0f, 1f)!;
+            if (result.GetType().GetField("Item1")!.GetValue(result)!.ToString() == "Succeeded")
+                step = result.GetType().GetField("Item2")!.GetValue(result)!;
+        }
+        var finishes = (int)Field(step, "Progress")! >= (int)Field(craft, "CraftProgress")!;
+        int[] tiers = [(int)Field(craft, "CraftQualityMin1")!, (int)Field(craft, "CraftQualityMin2")!, (int)Field(craft, "CraftQualityMin3")!];
+        return new XivMcp.Crafting.CraftOutcome(finishes, (int)Field(step, "Quality")!, (bool)Field(craft, "CraftCollectible")! ? tiers : []);
+    }
+
     /// <summary>Starts building the Raphael solution for a recipe (no-op if one is cached or being built). Framework thread.</summary>
     public static void Build(uint recipeId)
     {
