@@ -90,6 +90,9 @@ internal static class LoginTools
                     if (target is null) return new { loggedIn = name, note = "Already logged in on this character." };
                     await Game.Run(() => { EnsureSafeToLogOut(); return true; }).ConfigureAwait(false);
                     var who = await LobbyLogin.Run(target, TimeSpan.FromSeconds(args.Int("timeout_seconds", 300, 60, 1800)), steps.Add, ct).ConfigureAwait(false);
+                    // In game is not yet in the world: the zone still loads, and the next tool would find the character between areas.
+                    await NavigationTools.WaitUntilSettled(ct).ConfigureAwait(false);
+                    steps.Add("In the world.");
                     return new { loggedIn = who, world = await Game.Run(() => Excel.Name(Svc.PlayerState.CurrentWorld)).ConfigureAwait(false), steps };
                 }
                 catch (ToolException ex)
@@ -127,7 +130,7 @@ internal static class LoginTools
                                                      known is { ServiceAccount: >= 0 } k ? k.ServiceAccount : null);
                     }).ConfigureAwait(false);
                     var who = await LobbyLogin.Run(target, TimeSpan.FromMinutes(5), steps.Add, ct, relog: true).ConfigureAwait(false);
-                    await Task.Delay(2500, ct).ConfigureAwait(false); // let the roster record the list
+                    await NavigationTools.WaitUntilSettled(ct).ConfigureAwait(false); // also gives the roster time to record the list
                     var account = roster.CurrentAccount;
                     return new
                     {
