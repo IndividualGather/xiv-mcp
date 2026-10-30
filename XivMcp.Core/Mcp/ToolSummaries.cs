@@ -112,6 +112,7 @@ public static class ToolSummaries
         ["get_sales"] = "Lists the sales your retainers made while XIV MCP was running.",
         ["list_approvals"] = "Lists the spending approvals you have given.",
         ["buy_item"] = "Buys an item from a vendor. Purchases not paid in gil ask you first.",
+        ["buy_ceruleum_tanks"] = "Buys Ceruleum Tanks with company credits from the workshop's mammet. Asks you first.",
         ["request_spending_approval"] = "Asks you to allow spending up to an amount of one currency, so later purchases need no more asking.",
         ["revoke_approval"] = "Withdraws a spending approval you have given.",
         ["sell_item"] = "Lists an item through a retainer, just below the cheapest offer. Prices far too low are refused.",

@@ -622,7 +622,7 @@ internal static class SubmarineTools
         if (fuel is { } f && f.Used > f.Available)
         {
             await Game.Run(() => Fire("AirShipExplorationDetail", -1)).ConfigureAwait(false);
-            throw new ToolException($"Not enough Ceruleum Tanks: the voyage needs {f.Used}, you have {f.Available}.");
+            throw new ToolException($"Not enough Ceruleum Tanks: the voyage needs {f.Used}, you have {f.Available}. buy_ceruleum_tanks buys more with company credits in the workshop.");
         }
         if (distance is { } d && d.Used > d.Available)
         {

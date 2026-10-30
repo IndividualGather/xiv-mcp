@@ -107,6 +107,7 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(ItemSourceTools.Create(Config))
             .Concat(FishingTools.Create(Config))
             .Concat(ShopTools.Create(Config, compat))
+            .Concat(CreditShopTools.Create(Config))
             .Concat(VendorTools.Create(Config))
             .Concat(ShopTools.ApprovalTools(Config))
             .Concat(VentureTools.Create(Config, retainers, compat))

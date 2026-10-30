@@ -53,6 +53,7 @@ public static class BuiltInCapabilities
         ["recall_submersible"] = [GameUi, SpendCurrency],
         ["dye_item"] = [GameUi, MoveItems, SpendCurrency],
         ["buy_item"] = [GameUi, MoveCharacter, SpendGil, SpendCurrency],
+        ["buy_ceruleum_tanks"] = [GameUi, MoveCharacter, SpendCurrency],
         ["buy_from_market_board"] = [GameUi, MoveCharacter, SpendGil],
         ["sell_item"] = [GameUi, TradeItems],
         ["reprice_listings"] = [GameUi, TradeItems],

@@ -40,6 +40,7 @@ At the voyage control panel in your FC workshop, your assistant can repair and s
 | `recall_submersible` | Calls a submersible back from its voyage, as the panel's *Recall submersible* does: it is back at once, without loot, and the Ceruleum Tanks used for the voyage are not refunded. Then send it out again with `deploy_submersible`. |
 | `collect_submersible` | Finishes the voyages of submersibles that are back without sending them out: collects the loot, then shows their rank-ups, the sectors they unlocked and explored, and the sectors each can visit now |
 | `deploy_submersible` | Sends a submersible on a voyage: its last route, or the points you name (up to five, on one sea). Without a name, every submersible that is back goes out on its last route. |
+| `buy_ceruleum_tanks` | Buys Ceruleum Tanks with your free company's credits from the mammet in the workshop (Mammet Voyager #004A, *Company Credit Exchange*), in purchases of up to 99, as far as the credits go. It asks you in the game first. |
 
 Things to ask:
 
@@ -52,7 +53,7 @@ Things to ask:
 - **Getting there:** `navigate_to` with destination `workshop` takes you to the panel.
 - **Loot first, then the route:** a submersible that is back is finalized first, which collects its loot. Only then does the game raise its rank and unlock the sectors it found, so a new route is chosen afterwards: `collect_submersible` shows what changed, and `deploy_submersible` checks the route against it too.
 - **Repairs before deploying:** parts below 20% are repaired first (you can change this, or turn it off). A submersible with a part at 0% can't sail until it is repaired; XIV MCP reports one the game didn't send.
-- **Fuel:** each voyage uses Ceruleum Tanks from your bags. If you have too few, nothing is sent.
+- **Fuel:** each voyage uses Ceruleum Tanks from your bags. If you have too few, nothing is sent. `buy_ceruleum_tanks` buys more in the workshop with company credits, which are not gil: an approval window shows the number of tanks and the credits first. Your character needs the free company's permission to spend credits, and *Market & purchases* must be allowed.
 - **Routes:** points are given by name, map letter or id; they must be unlocked and within the submersible's rank.
 
 `get_submersibles` shows each part's condition, the routes and when each submersible returns.
