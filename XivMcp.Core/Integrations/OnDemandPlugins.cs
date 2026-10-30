@@ -39,7 +39,7 @@ public static class OnDemandPlugins
 }
 
 /// <summary>
-/// The plugins XIV MCP turned on for a task, and when they go off again: once no tool call has run and no job has been unfinished for
+/// The plugins XIV MCP turned on for a task, and when they go off again: once no tool call has run and no job has been queued or running for
 /// <see cref="IdleBefore"/>. A task can be a job that runs for hours, and the next call often follows a moment after the last one.
 /// Plugins the player had on are never listed, so they stay on.
 /// </summary>

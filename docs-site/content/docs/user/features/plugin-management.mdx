@@ -22,7 +22,7 @@ Under **Plugin management** in `/xivmcp` → **Modules**, **Turn on plugins a ta
 
 - **What is turned on:** the plugin the task drives, and the plugins that do a part of its work (walking, travel, crafting). Of plugins that stand in for each other, one is enough. The tools of a plugin that is off are offered too, so your assistant can use them.
 - **For now, not for good:** the plugin is loaded, not added to a collection, so your collections stay as they are.
-- **Off again afterwards:** a minute after no tool has run and no job is unfinished. A job can run for hours, and the plugins stay on until it ends. A job that waits for your assistant (*pending*) counts as unfinished. Plugins you had on yourself stay on.
+- **Off again afterwards:** a minute after no tool has run and no job is queued or running. A job can run for hours, and the plugins stay on until it ends. A paused job, or one that waits for your assistant (*pending*), runs nothing: the plugins go off, and come back on when it continues. Plugins you had on yourself stay on.
 - **In chat:** XIV MCP says which plugin it turned on, for which tool, and when it turns it off again.
 
 Turning a collection off unloads the plugins no other enabled collection wants, including ones XIV MCP turned on for a task that is still running.

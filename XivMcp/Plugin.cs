@@ -137,7 +137,7 @@ public sealed class Plugin : IDalamudPlugin
             .ToList();
         // Tools that drive one other plugin belong to that plugin's integration (same provider + capability contract as third-party tools).
         // With "Turn on plugins a task needs", a plugin that is installed but off counts too: it is turned on when its tool runs.
-        wakeUp = new PluginWakeUp(Config, () => jobs?.All().Any(j => !j.Finished) == true);
+        wakeUp = new PluginWakeUp(Config, () => jobs?.All().Any(j => j.State is JobManager.JobState.Queued or JobManager.JobState.Running) == true);
         tools = XivMcp.Integrations.IntegrationCatalog.Apply(tools, wakeUp.Usable).Select(wakeUp.Wrap).ToList();
         var registry = new ToolRegistry(tools);
 
