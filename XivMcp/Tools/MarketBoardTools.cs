@@ -10,6 +10,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.UI.Info;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Excel.Sheets;
+using XivMcp.Maps;
 using XivMcp.Mcp;
 using XivMcp.Util;
 
@@ -29,8 +30,8 @@ internal static class MarketBoardTools
         yield return new McpTool
         {
             Name = "buy_from_market_board",
-            Description = "Buys an item on the market board of the current world: walks to a market board in the current zone (be in a city with " +
-                          "one: Limsa Lominsa, Gridania, Ul'dah or a later hub), opens it, reads the listings and buys the cheapest ones until " +
+            Description = "Buys an item on the market board of the current world: walks to a market board in the current zone (where there is " +
+                          "none, it travels to a town with one), opens it, reads the listings and buys the cheapest ones until " +
                           "'quantity' is reached, never above 'max_unit_price' gil per item. Listings are bought whole, so it may buy a few more. " +
                           "Gil purchases above the limit in /xivmcp ask in game first (or use a standing 'approval'). Requires 'Market & " +
                           "purchases' in /xivmcp.",
@@ -97,7 +98,7 @@ internal static class MarketBoardTools
         }
         if (approval is null && config.AskAboveGil > 0 && total > config.AskAboveGil)
             await Consent.Require($"Buy {name} on the market board?",
-                [$"{plan.Sum(p => p.Quantity)} × {name} for {total:N0} gil in total ({string.Join(", ", plan.Select(p => $"{p.Quantity} at {p.UnitPrice:N0}"))})."],
+                [$"{plan.Sum(p => p.Quantity)} Ã— {name} for {total:N0} gil in total ({string.Join(", ", plan.Select(p => $"{p.Quantity} at {p.UnitPrice:N0}"))})."],
                 ConsentTimeout, ct).ConfigureAwait(false);
 
         // 4. Buy listing by listing; Dalamud reports each finished purchase.
@@ -125,8 +126,25 @@ internal static class MarketBoardTools
 
     // ---------------------------------------------------------------- market board
 
-    /// <summary>The map icon of a market board.</summary>
+    /// <summary>The map icon of a market board (MapSymbol "Market Board").</summary>
     private const uint MarketBoardIcon = 60570;
+
+    /// <summary>The nearest market board this map shows, if any. Framework thread.</summary>
+    private static System.Numerics.Vector3? NearestBoardOnMap(uint mapId)
+    {
+        var self = Svc.Objects.LocalPlayer!.Position;
+        return NavigationTools.MarkerPositions(mapId, MarketBoardIcon)
+            .OrderBy(p => System.Numerics.Vector2.Distance(new(p.X, p.Z), new(self.X, self.Z)))
+            .Select(p => (System.Numerics.Vector3?)p).FirstOrDefault();
+    }
+
+    /// <summary>Towns (with an aetheryte, not housing) whose map shows a market board.</summary>
+    private static readonly Lazy<List<MarketTown>> MarketTowns = new(() =>
+        Svc.Data.GetExcelSheet<TerritoryType>()
+            .Where(t => t.TerritoryIntendedUse.RowId == 0 && t.Aetheryte.RowId != 0 && t.Map.RowId != 0 &&
+                        NavigationTools.MarkerPositions(t.Map.RowId, MarketBoardIcon).Count > 0)
+            .Select(t => new MarketTown(t.RowId, NavigationTools.TerritoryName(t.RowId), t.PlaceNameRegion.RowId, t.ExVersion.RowId))
+            .ToList());
 
     private static readonly Lazy<HashSet<uint>> MarketBoardIds = new(() =>
         Svc.Data.GetExcelSheet<EObjName>(Dalamud.Game.ClientLanguage.English)
@@ -136,21 +154,8 @@ internal static class MarketBoardTools
     {
         if (await Game.Run(() => RetainerUi.Ready("ItemSearch")).ConfigureAwait(false)) return;
         var ids = await Task.Run(() => MarketBoardIds.Value, ct).ConfigureAwait(false);
-        if (await NavigationTools.WalkTo("Market Board", o => ids.Contains(o.BaseId), steps, ct).ConfigureAwait(false) is not null) return;
-
-        // In a large city the nearest board may be too far away to be loaded yet: the map shows where the boards are.
-        var markers = await Game.Run(() =>
-        {
-            var self = Svc.Objects.LocalPlayer!.Position;
-            return NavigationTools.MarkerPositions(Svc.ClientState.MapId, MarketBoardIcon)
-                .OrderBy(p => System.Numerics.Vector2.Distance(new(p.X, p.Z), new(self.X, self.Z))).ToList();
-        }).ConfigureAwait(false);
-        if (markers.Count == 0)
-            throw new ToolException("No market board in this zone: go to a city with one (Limsa Lominsa, Gridania, Ul'dah or a later hub).");
-        await NavigationTools.WalkTowards(markers[0], "the market board", () => Svc.Objects.Any(o => ids.Contains(o.BaseId) && o.IsTargetable &&
-            Game.DistanceToPlayer(o.Position) <= 40), steps, ct).ConfigureAwait(false);
         if (await NavigationTools.WalkTo("Market Board", o => ids.Contains(o.BaseId), steps, ct).ConfigureAwait(false) is null)
-            throw new ToolException("Walked to where the map shows a market board, but there is none in reach.");
+            await WalkToFarBoard(ids, steps, ct).ConfigureAwait(false);
         var board = await Game.Run(() =>
         {
             var obj = Svc.Objects.Where(o => ids.Contains(o.BaseId)).OrderBy(o => Game.DistanceToPlayer(o.Position) ?? float.MaxValue).First();
@@ -174,6 +179,35 @@ internal static class MarketBoardTools
             await Task.Delay(250, ct).ConfigureAwait(false);
         }
         throw new ToolException("The market board did not open.");
+    }
+
+    /// <summary>
+    /// In a large city the nearest board may be too far away to be loaded yet: the map shows where the boards are. A zone without one
+    /// (Solution Nine, for example) means a trip to a town that has one.
+    /// </summary>
+    private static async Task WalkToFarBoard(HashSet<uint> ids, List<string> steps, CancellationToken ct)
+    {
+        var board = await Game.Run(() => NearestBoardOnMap(Svc.ClientState.MapId)).ConfigureAwait(false);
+        if (board is null)
+        {
+            var towns = await Task.Run(() => MarketTowns.Value, ct).ConfigureAwait(false);
+            var town = await Game.Run(() =>
+            {
+                var here = Svc.Data.GetExcelSheet<TerritoryType>().GetRowOrDefault(Svc.ClientState.TerritoryType);
+                return MarketTown.Pick(towns, Svc.ClientState.TerritoryType, here?.PlaceNameRegion.RowId ?? 0);
+            }).ConfigureAwait(false) ?? throw new ToolException("No market board in this zone, and XIV MCP knows no town with one.");
+            var townMap = Svc.Data.GetExcelSheet<TerritoryType>().GetRow(town.Territory).Map.RowId;
+            var spot = NavigationTools.MarkerPositions(townMap, MarketBoardIcon)[0];
+            steps.Add($"No market board in this zone: going to the one in {town.Name}.");
+            await NavigationTools.TravelNear(new NavigationTools.NpcSpot(0, "the market board", town.Territory, townMap, spot, false), steps, ct)
+                .ConfigureAwait(false);
+            board = await Game.Run(() => NearestBoardOnMap(Svc.ClientState.MapId)).ConfigureAwait(false)
+                    ?? throw new ToolException($"Couldn't get to {town.Name} for its market board.");
+        }
+        await NavigationTools.WalkTowards(board.Value, "the market board", () => Svc.Objects.Any(o => ids.Contains(o.BaseId) && o.IsTargetable &&
+            Game.DistanceToPlayer(o.Position) <= 40), steps, ct).ConfigureAwait(false);
+        if (await NavigationTools.WalkTo("Market Board", o => ids.Contains(o.BaseId), steps, ct).ConfigureAwait(false) is null)
+            throw new ToolException("Walked to where the map shows a market board, but there is none in reach.");
     }
 
     /// <summary>
