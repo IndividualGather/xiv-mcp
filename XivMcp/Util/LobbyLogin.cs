@@ -40,6 +40,7 @@ internal static class LobbyLogin
         var dcSelectedAt = DateTime.MinValue;
         var confirmed = false;
         var selectedAt = DateTime.MinValue;
+        var arrival = new LoginArrival();
         string? lastStep = null;
         returnedToTitleAt = DateTime.MinValue;
         void Step(string s) { if (s != lastStep) { step(s); lastStep = s; } }
@@ -49,7 +50,7 @@ internal static class LobbyLogin
             ct.ThrowIfCancellationRequested();
             await Task.Delay(250, ct).ConfigureAwait(false);
             var throttled = DateTime.UtcNow - lastAction < TimeSpan.FromMilliseconds(1200);
-            var result = await Game.Run(() => Tick(target, throttled, ref mustLeave, ref loggingOut, ref worldSelected, ref dcSelectedAt, ref confirmed, ref selectedAt)).ConfigureAwait(false);
+            var result = await Game.Run(() => Tick(target, throttled, arrival, ref mustLeave, ref loggingOut, ref worldSelected, ref dcSelectedAt, ref confirmed, ref selectedAt)).ConfigureAwait(false);
             switch (result.Kind)
             {
                 case TickKind.Done: return result.Text!;
@@ -78,15 +79,20 @@ internal static class LobbyLogin
         public static TickResult Did(string what) => new(TickKind.Acted, what);
     }
 
-    private static unsafe TickResult Tick(Target target, bool throttled, ref bool mustLeave, ref bool loggingOut, ref bool worldSelected, ref DateTime dcSelectedAt,
-                                              ref bool confirmed, ref DateTime selectedAt)
+    private static unsafe TickResult Tick(Target target, bool throttled, LoginArrival arrival, ref bool mustLeave, ref bool loggingOut, ref bool worldSelected,
+                                              ref DateTime dcSelectedAt, ref bool confirmed, ref DateTime selectedAt)
     {
         // In game?
         if (Svc.ClientState.IsLoggedIn && Svc.Objects.LocalPlayer is { } player)
         {
             var me = Svc.PlayerState.ContentId;
-            if (!loggingOut && !mustLeave && (me == target.ContentId || (target.ContentId == 0 && player.Name.TextValue.Equals(target.Name, StringComparison.OrdinalIgnoreCase))))
-                return new TickResult(TickKind.Done, player.Name.TextValue);
+            var isTarget = me == target.ContentId || (target.ContentId == 0 && player.Name.TextValue.Equals(target.Name, StringComparison.OrdinalIgnoreCase));
+            if (!loggingOut && !mustLeave)
+                switch (arrival.Judge(isTarget ? 1UL : 0UL, 1UL, confirmed, DateTime.UtcNow))
+                {
+                    case LoginArrivalVerdict.Arrived: return new TickResult(TickKind.Done, player.Name.TextValue);
+                    case LoginArrivalVerdict.Wait: return TickResult.Wait($"In game as {player.Name.TextValue}; waiting for the game to show {target.Name}…");
+                }
             var logoutPrompt = loggingOut ? YesNo() : null;
             if (logoutPrompt != null)
             {
@@ -103,6 +109,15 @@ internal static class LobbyLogin
             loggingOut = true;
             Framework.Instance()->GetUIModule()->ExecuteMainCommand(LogoutCommand);
             return TickResult.Did($"Logging out of {player.Name.TextValue}.");
+        }
+        if (loggingOut)
+        {
+            // Logged out (again, after a login that brought the wrong character): the login starts over from the title screen.
+            confirmed = false;
+            worldSelected = false;
+            dcSelectedAt = DateTime.MinValue;
+            selectedAt = DateTime.MinValue;
+            arrival.Reset();
         }
         loggingOut = false;
         mustLeave = false;
