@@ -108,6 +108,30 @@ internal static class ArtisanBridge
         return new XivMcp.Crafting.CraftOutcome(finishes, (int)Field(step, "Quality")!, (bool)Field(craft, "CraftCollectible")! ? tiers : []);
     }
 
+    /// <summary>
+    /// Ends the running crafting list like the Cancel button in Artisan's list window. Artisan's stop request (IPC) only pauses a
+    /// list, which then stays "running" and keeps Artisan busy. Framework thread.
+    /// </summary>
+    public static void CancelList()
+    {
+        var api = Resolve();
+        // Stop first, so a craft in progress is left the way Artisan leaves it (synthesis closed); the backing field then clears
+        // the request without the property's "resume".
+        Invoke(api.T("Artisan.IPC.IPC"), "SetStopRequest", true);
+        api.T("Artisan.IPC.IPC").GetField("stopCraftingRequest", All)?.SetValue(null, false);
+        var ui = api.T("Artisan.CraftingLists.CraftingListUI");
+        var functions = api.T("Artisan.CraftingLists.CraftingListFunctions");
+        ui.GetField("Processing", All)!.SetValue(null, false);
+        functions.GetProperty("Paused", All)!.SetValue(null, false);
+        var clTasks = functions.GetField("CLTM", All)!.GetValue(null)!;
+        clTasks.GetType().GetMethod("Abort", Type.EmptyTypes)!.Invoke(clTasks, null);
+        // The list window unhooks its timer when cancelling; without that the next list would count its crafts twice.
+        var finished = api.T("Artisan.GameInterop.Crafting").GetEvent("CraftFinished", All);
+        var timer = ui.GetMethod("UpdateListTimer", All);
+        if (finished is not null && timer is not null)
+            finished.GetRemoveMethod(true)!.Invoke(null, [Delegate.CreateDelegate(finished.EventHandlerType!, timer)]);
+    }
+
     /// <summary>Starts building the Raphael solution for a recipe (no-op if one is cached or being built). Framework thread.</summary>
     public static void Build(uint recipeId)
     {

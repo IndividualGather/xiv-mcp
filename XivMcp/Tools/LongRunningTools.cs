@@ -204,7 +204,7 @@ internal static class LongRunningTools
                 }
                 catch (OperationCanceledException)
                 {
-                    await Game.Run(() => { try { Svc.PluginInterface.GetIpcSubscriber<bool, object>("Artisan.SetStopRequest").InvokeAction(true); } catch { } return true; }).ConfigureAwait(false);
+                    await Game.Run(() => { CraftGatherTools.StopArtisan(); return true; }).ConfigureAwait(false);
                     throw;
                 }
 

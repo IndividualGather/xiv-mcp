@@ -43,4 +43,6 @@ Your assistant can run this as one [background job](/docs/user/features/jobs):
 
 ## Good to know
 
+Stopping a crafting list (`crafting_control` with `stop`, or pausing or cancelling a job while it crafts) ends the list like Artisan's **Cancel** button. Artisan's own stop request would only pause it and keep Artisan busy.
+
 Neither plugin offers a way to change its lists from outside. So editing a list briefly unloads the plugin, updates its file (with a backup) and loads it again. The Raphael preparation uses Artisan's internals and may need an update after Artisan changes.

@@ -127,7 +127,7 @@ internal static class CraftGatherTools
                             Svc.PluginInterface.GetIpcSubscriber<bool, object>("Artisan.SetListPause").InvokeAction(action == "pause");
                             return new { action, state = ArtisanState() };
                         case "stop":
-                            Svc.PluginInterface.GetIpcSubscriber<bool, object>("Artisan.SetStopRequest").InvokeAction(true);
+                            StopArtisan();
                             return new { action, state = ArtisanState() };
                         default:
                             throw new ToolException("action must be start_list, pause, resume or stop.");
@@ -412,7 +412,29 @@ internal static class CraftGatherTools
     internal static void EnsureArtisanIdle()
     {
         if (Ipc("Artisan.IsBusy") == true || Ipc("Artisan.IsListRunning") == true)
-            throw new ToolException("Artisan is busy (crafting or running a list). Stop or pause it first.");
+            throw new ToolException(Ipc("Artisan.IsListPaused") == true
+                ? "Artisan has a paused crafting list. Stop it first (crafting_control action=stop), or resume it."
+                : "Artisan is busy (crafting or running a list). Stop or pause it first.");
+    }
+
+    /// <summary>
+    /// Stops Artisan: a running list is cancelled (Artisan's own stop request only pauses it, which keeps Artisan busy), anything else
+    /// gets the stop request. Framework thread.
+    /// </summary>
+    internal static void StopArtisan()
+    {
+        if (Ipc("Artisan.IsListRunning") == true)
+            try
+            {
+                ArtisanBridge.CancelList();
+                return;
+            }
+            catch (Exception ex)
+            {
+                Svc.Log.Warning($"[MCP] Could not cancel Artisan's list, only pausing it: {ex.Message}");
+            }
+        try { Svc.PluginInterface.GetIpcSubscriber<bool, object>("Artisan.SetStopRequest").InvokeAction(true); }
+        catch { /* Artisan unloaded meanwhile */ }
     }
 
     /// <summary>
