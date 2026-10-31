@@ -12,6 +12,7 @@ using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Excel.Sheets;
 using XivMcp.Maps;
 using XivMcp.Mcp;
+using XivMcp.Shops;
 using XivMcp.Util;
 
 namespace XivMcp.Tools;
@@ -33,6 +34,7 @@ internal static class MarketBoardTools
             Description = "Buys an item on the market board of the current world: walks to a market board in the current zone (where there is " +
                           "none, it travels to a town with one), opens it, reads the listings and buys the cheapest ones until " +
                           "'quantity' is reached, never above 'max_unit_price' gil per item. Listings are bought whole, so it may buy a few more. " +
+                          "If fewer are listed within the limit, it buys those and then fails, saying how many are still missing (a job then waits). " +
                           "Gil purchases above the limit in /xivmcp ask in game first (or use a standing 'approval'). Requires 'Market & " +
                           "purchases' in /xivmcp.",
             InputSchema = """
@@ -98,12 +100,13 @@ internal static class MarketBoardTools
         }
         if (approval is null && config.AskAboveGil > 0 && total > config.AskAboveGil)
             await Consent.Require($"Buy {name} on the market board?",
-                [$"{plan.Sum(p => p.Quantity)} Ã— {name} for {total:N0} gil in total ({string.Join(", ", plan.Select(p => $"{p.Quantity} at {p.UnitPrice:N0}"))})."],
+                [$"{plan.Sum(p => p.Quantity)} × {name} for {total:N0} gil in total ({string.Join(", ", plan.Select(p => $"{p.Quantity} at {p.UnitPrice:N0}"))})."],
                 ConsentTimeout, ct).ConfigureAwait(false);
 
         // 4. Buy listing by listing; Dalamud reports each finished purchase.
         var bought = new List<object>();
         long spent = 0;
+        var got = 0;
         foreach (var listing in plan)
         {
             ct.ThrowIfCancellationRequested();
@@ -115,12 +118,16 @@ internal static class MarketBoardTools
             }
             var cost = (long)listing.UnitPrice * listing.Quantity + listing.Tax;
             spent += cost;
+            got += (int)listing.Quantity;
             bought.Add(new { quantity = listing.Quantity, unitPrice = listing.UnitPrice, hq = listing.Hq, gil = cost });
             if (approval is not null) Approvals.Spend(approval.Id, cost);
             await Task.Delay(1500, ct).ConfigureAwait(false);
         }
         await Game.Run(CloseMarketBoard).ConfigureAwait(false);
         if (bought.Count == 0) throw new ToolException($"No {name} could be bought: the listings changed. Try again.");
+        // Fewer than wanted (the rest above the limit, or gone): fail, so a job doesn't go on as if all were bought.
+        var nextPrice = listings.Where(l => l.UnitPrice > maxPrice && (hq is null || l.Hq == hq)).Select(l => (uint?)l.UnitPrice).Min();
+        if (MarketPurchase.Shortfall(name, quantity, got, spent, nextPrice, maxPrice) is { } shortfall) throw new ToolException(shortfall);
         return new { item = name, bought, total = bought.Count, gilSpent = spent, steps };
     }
 
