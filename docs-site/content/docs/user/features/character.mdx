@@ -44,6 +44,14 @@ Some of this data is only sent by the game in certain places, such as your retai
 | `get_macros` | Reads your macros | UI editing (reading) |
 | `set_macro` / `clear_macro` | Creates, edits or clears a macro, with a dry run and a backup first | UI editing (changes) |
 
+## Gear sets
+
+| Tool | What it does | Module |
+|---|---|---|
+| `update_gearset` | Saves the gear you wear into a gear set (optionally putting on another set first, to copy it), deletes a set or renames it | UI editing (changes) |
+
+Tools that pick a gear set for a job, such as crafting, take the first set of that job. If that set is old or lists missing items, copy a better set of the same job into it, or delete it.
+
 ## Waymark presets
 
 | Tool | What it does | Module |

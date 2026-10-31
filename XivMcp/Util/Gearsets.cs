@@ -66,11 +66,7 @@ internal static class Gearsets
         var set = await Game.RunLoggedIn(() =>
         {
             var s = Resolve(query);
-            var c = Svc.Condition;
-            if (c[ConditionFlag.InCombat]) throw new ToolException("Can't change gear in combat.");
-            if (c[ConditionFlag.Crafting] || c[ConditionFlag.Gathering] || c[ConditionFlag.Casting] || c[ConditionFlag.OccupiedInCutSceneEvent]
-                || c[ConditionFlag.BetweenAreas] || c[ConditionFlag.Occupied39])
-                throw new ToolException("Can't change gear right now (crafting, gathering, casting, in a cutscene or a zone change).");
+            EnsureCanChangeGear();
             return s;
         }).ConfigureAwait(false);
         if (set.Current && await Game.Run(CurrentJob).ConfigureAwait(false) == set.JobId) return set;
@@ -83,6 +79,16 @@ internal static class Gearsets
             if (await Game.Run(CurrentJob).ConfigureAwait(false) == set.JobId) return set with { Current = true };
         }
         throw new ToolException($"Equipped gearset {set.Number} ({set.Name}), but the job did not change to {set.Job}.");
+    }
+
+    /// <summary>Gear can't change in combat, while crafting, gathering, casting, in a cutscene or a zone change. Framework thread.</summary>
+    public static void EnsureCanChangeGear()
+    {
+        var c = Svc.Condition;
+        if (c[ConditionFlag.InCombat]) throw new ToolException("Can't change gear in combat.");
+        if (c[ConditionFlag.Crafting] || c[ConditionFlag.Gathering] || c[ConditionFlag.Casting] || c[ConditionFlag.OccupiedInCutSceneEvent]
+            || c[ConditionFlag.BetweenAreas] || c[ConditionFlag.Occupied39])
+            throw new ToolException("Can't change gear right now (crafting, gathering, casting, in a cutscene or a zone change).");
     }
 
     public static uint CurrentJob() => Svc.Objects.LocalPlayer?.ClassJob.RowId ?? 0;

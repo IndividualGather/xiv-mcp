@@ -127,6 +127,7 @@ public static class ToolSummaries
         ["set_macro"] = "Writes or changes a macro. The old macro is backed up first.",
         ["clear_macro"] = "Deletes a macro. It is backed up first.",
         ["set_waymark_preset"] = "Saves a waymark preset to one of your preset slots, replacing what was there.",
+        ["update_gearset"] = "Saves the gear you wear into one of your gear sets, or deletes or renames a gear set.",
 
         // Online lookups
         ["get_item_sources"] = "Finds online where an item comes from: crafting, vendors, drops or gathering.",
