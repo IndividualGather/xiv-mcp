@@ -107,6 +107,7 @@ internal static class ShopTools
                 try
                 {
                     var item = await Game.RunLoggedIn(() => Items.Resolve(args.String("item") ?? throw new ToolException("'item' is required."))).ConfigureAwait(false);
+                    await Game.Run(() => RequireUnlocked(item.RowId)).ConfigureAwait(false);
                     var offer = ItemVendorLocationLoaded
                         ? await Game.Run(() => PickOffer(item.RowId, args.String("npc"))).ConfigureAwait(false)
                         : await AskForShop(item, steps, ct).ConfigureAwait(false);
@@ -702,6 +703,21 @@ internal static class ShopTools
                 && subs.Any(s => ids.Contains(s.SpecialShop.RowId)))
                 categories.Add(category.Name.ExtractText().Trim());
         return (shops, categories);
+    }
+
+    /// <summary>
+    /// Refuses before travelling when every exchange that sells the item needs a quest the character hasn't done: the game leaves
+    /// those pages out of the exchange window, so the item would just be missing there.
+    /// </summary>
+    private static bool RequireUnlocked(uint itemId)
+    {
+        var quests = Svc.Data.GetExcelSheet<SpecialShop>()
+            .Where(s => s.Item.Any(i => i.ReceiveItems.Any(r => r.Item.RowId == itemId)))
+            .Select(s => s.Quest.RowId);
+        if (ShopUnlocks.MissingQuest(quests, FishingTools.SoldForGil(itemId), QuestManager.IsQuestComplete) is not { } quest) return true;
+        var questName = Svc.Data.GetExcelSheet<Quest>().TryGetRow(quest, out var row) ? row.Name.ExtractText() : $"#{quest}";
+        throw new ToolException($"{Items.Name(itemId)} can't be bought yet: the exchanges that sell it need the quest \"{questName}\" " +
+                                "completed first (check_quests shows where it starts).");
     }
 
     private static unsafe string? InclusionText(int index)
