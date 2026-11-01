@@ -298,6 +298,9 @@ internal static class FashionTools
         }
         foreach (var p in pieces.Where(p => p.Piece.Dye is not null && !p.AlreadyDyed))
             Add("dye_item", new JsonObject { ["item"] = p.ItemId, ["dye"] = p.Piece.Dye }, $"Dyes {p.Name} {p.Piece.Dye}");
+        // The set's dyes for slots it has no piece for: whatever is worn there takes the color (its glamour, if it has one).
+        foreach (var (slot, dye) in set.OtherDyes)
+            Add("dye_item", new JsonObject { ["slot"] = slot, ["dye"] = dye }, $"Dyes the piece worn on the {slot} {dye}");
 
         foreach (var p in pieces.Where(p => p.Source is ItemSource.Vendor or ItemSource.Market)) BoughtForReport[p.ItemId] = 0;
 
@@ -747,7 +750,11 @@ internal static class FashionTools
             {
                 if (Svc.Objects.LocalPlayer?.StatusList.Any(s => s.StatusId == VipCardStatus) == true) return "already active";
                 if (InventoryManager.Instance()->GetInventoryItemCount(VipCardItem) == 0) return "none in your bags";
-                FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentInventoryContext.Instance()->UseItem(VipCardItem, InventoryType.Invalid, 0, 0);
+                // Like right-click → Use on the card in the bags: the game needs the bag and slot it is in (without them it did nothing,
+                // and a hotbar-style ActionManager.UseAction was refused).
+                var at = Find(VipCardItem);
+                if (at is not { } where) return "none in your bags";
+                FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentInventoryContext.Instance()->UseItem(VipCardItem, where.Container, (uint)where.Slot, 0);
                 return "used";
             }
         }).ConfigureAwait(false);
