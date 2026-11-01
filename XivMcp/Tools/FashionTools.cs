@@ -744,22 +744,37 @@ internal static class FashionTools
     /// </summary>
     internal static async Task<string> UseVipCard(CancellationToken ct)
     {
-        var state = await Game.Run(() =>
+        static bool Active() => Svc.Objects.LocalPlayer?.StatusList.Any(s => s.StatusId == VipCardStatus) == true;
+        var have = await Game.Run(() => { unsafe { return Active() ? "already active" : InventoryManager.Instance()->GetInventoryItemCount(VipCardItem) == 0 ? "none in your bags" : null; } }).ConfigureAwait(false);
+        if (have is not null) return have;
+        // Right after a teleport and a walk the game says "Cannot execute at this time" for a moment (or the player is still mounted):
+        // get off, and try again until it lets the card be used.
+        try { await NavigationTools.GetOffMount([], ct).ConfigureAwait(false); }
+        catch (ToolException ex) { return $"not used: {ex.Message}"; }
+        uint status = 0;
+        var until = DateTime.UtcNow.AddSeconds(10);
+        while (true)
         {
-            unsafe
+            // Like using it from a hotbar. Checked in game: this gives the buff, although UseAction returns false for it (the card has a
+            // cast), so only the buff counts. AgentInventoryContext.UseItem without a bag slot did nothing.
+            status = await Game.Run(() =>
             {
-                if (Svc.Objects.LocalPlayer?.StatusList.Any(s => s.StatusId == VipCardStatus) == true) return "already active";
-                if (InventoryManager.Instance()->GetInventoryItemCount(VipCardItem) == 0) return "none in your bags";
-                // Like using it from a hotbar. Checked in game: this gives the buff, although UseAction returns false for it (the card
-                // has a cast), so only the buff counts. AgentInventoryContext.UseItem without a bag slot did nothing.
-                var am = ActionManager.Instance();
-                var status = am->GetActionStatus(ActionType.Item, VipCardItem);
-                if (status != 0) return $"the game won't use it right now (action status {status})";
-                am->UseAction(ActionType.Item, VipCardItem, 0xE0000000, 65535);
-                return "used";
-            }
-        }).ConfigureAwait(false);
-        if (state != "used") return state;
+                unsafe
+                {
+                    var am = ActionManager.Instance();
+                    var s = am->GetActionStatus(ActionType.Item, VipCardItem);
+                    if (s == 0) am->UseAction(ActionType.Item, VipCardItem, 0xE0000000, 65535);
+                    return s;
+                }
+            }).ConfigureAwait(false);
+            if (status == 0 || DateTime.UtcNow > until) break;
+            await Task.Delay(500, ct).ConfigureAwait(false);
+        }
+        if (status != 0)
+        {
+            var why = await Game.Run(() => Svc.Data.GetExcelSheet<LogMessage>().GetRowOrDefault(status)?.Text.ExtractText()).ConfigureAwait(false);
+            return $"not used: the game refused it ({(string.IsNullOrEmpty(why) ? $"action status {status}" : why)})";
+        }
         var active = await WaitFor(() => Svc.Objects.LocalPlayer?.StatusList.Any(s => s.StatusId == VipCardStatus) == true, TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
         return active ? "used" : "not used: its bonus did not show up";
     }
