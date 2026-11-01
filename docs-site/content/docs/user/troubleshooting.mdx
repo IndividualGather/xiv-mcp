@@ -50,6 +50,11 @@ The tool's module (or the tool itself) is set to *Deny*. Allow it, or set it to 
 While a job runs a step that acts in the game, other tools that change something are refused, so they cannot collide. Wait for the step, or pause the job in `/xivmcp` → **Jobs**.
 
 </Accordion>
+<Accordion title="A call is refused because another tool is still running">
+
+Tools that act in the game run one at a time. Two at once, such as two submersibles sent from the voyage control panel together, would drive the same game window against each other and can leave the game holding your character with no window left to close. So while one runs, a second one is refused with the name of the one still running, and your assistant calls it again afterwards. A job step waits for its turn instead. Reading, stopping (`stop_navigation`, `pause_job`, …), waiting and XIV MCP's own windows are never held back.
+
+</Accordion>
 <Accordion title="A third-party plugin was suspended">
 
 One of its calls changed something it did not declare, such as your gil or your items. Its page in `/xivmcp` → **Third-party plugins** shows the reason and the audit log. Click **Lift suspension** there if you know why it happened and trust the plugin.

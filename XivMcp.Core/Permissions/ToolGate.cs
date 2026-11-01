@@ -71,6 +71,9 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
 
     public SessionApprovals Sessions { get; } = new();
 
+    /// <summary>One call that acts in the game at a time (see <see cref="ActionLane"/>).</summary>
+    public ActionLane Lane { get; } = new(clock ?? (() => DateTime.UtcNow));
+
     public AuditLog Audit => audit;
 
     /// <summary>The mode a capability has for a provider right now (disabled or suspended plugins: Deny).</summary>
@@ -177,7 +180,7 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
         string? error = null;
         try
         {
-            return await tool.Handler(args, ct).ConfigureAwait(false);
+            return await Run(tool, args, ct, inJob).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { outcome = "cancelled"; throw; }
         catch (Exception ex) { outcome = "error"; error = ex.Message; throw; }
@@ -352,18 +355,26 @@ public sealed class ToolGate(IPolicyStore store, IApprovalGate gate, IGameProbe 
         // Plain allowed reads are the bulk of all calls; they aren't audited, except reads of sensitive things: other plugins'
         // settings (which can hold secrets) and screenshots.
         if (decision == "allowed" && access == Access.Read && group?.Id is not ("plugin_management" or "screen"))
-            return await tool.Handler(args, ct).ConfigureAwait(false);
+            return await Run(tool, args, ct, inJob).ConfigureAwait(false);
 
         var started = now();
         var outcome = "ok";
         string? error = null;
-        try { return await tool.Handler(args, ct).ConfigureAwait(false); }
+        try { return await Run(tool, args, ct, inJob).ConfigureAwait(false); }
         catch (OperationCanceledException) { outcome = "cancelled"; throw; }
         catch (Exception ex) { outcome = "error"; error = ex.Message; throw; }
         finally
         {
             audit.Add(Entry(decision) with { Outcome = outcome, Error = error, DurationMs = (long)(now() - started).TotalMilliseconds });
         }
+    }
+
+    /// <summary>Runs the handler; calls that act in the game take their turn first (a job step waits for it, others are refused).</summary>
+    private async Task<object?> Run(McpTool tool, ToolArgs args, CancellationToken ct, bool inJob)
+    {
+        if (!ActionLane.Needs(tool)) return await tool.Handler(args, ct).ConfigureAwait(false);
+        using var turn = await Lane.EnterAsync(tool.Name, wait: inJob, ct).ConfigureAwait(false);
+        return await tool.Handler(args, ct).ConfigureAwait(false);
     }
 
     /// <summary>The strictest mode a plugin has for these capabilities (reading counts as allowed); Deny when it isn't enabled.</summary>

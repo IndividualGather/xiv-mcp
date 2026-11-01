@@ -31,6 +31,7 @@ The player sees an abbreviated version in `/xivmcp`, with the full text as a too
 ## Limits
 
 - **One acting step at a time:** while a job step that changes something runs, other calls that are not read-only are refused, so nothing collides with it. Read-only tools and XIV MCP's waiting steps (`wait`, `wait_until_arrived`) are not blocked, and do not block others; they still follow the player's settings.
+- **One acting call at a time, also outside jobs:** when your tool is not read-only and another acting call (yours, XIV MCP's or another plugin's) is still running, yours is refused with the name of the running one. As a job step it waits for its turn instead. Declare tools that only read as read-only, so they are never held back.
 - **Size:** results are JSON strings; keep them to a few kilobytes.
 - **Identity:** IPC does not identify the caller, so your owner name is taken as given. Do not register under another plugin's name.
 - **Observation, not a sandbox:** XIV MCP notices changes to gil, currencies, item counts, zone, world, sent chat and logins. Other effects, such as a market listing, still need declaring.
