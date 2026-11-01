@@ -81,8 +81,8 @@ internal static class ShopTools
                           "opens the shop through the NPC's menu and buys the quantity in batches of up to 99, confirming like a player. Checks free " +
                           "bag slots (and gil for gil shops) first and verifies what arrived. Gil shops buy directly. Any other shop (tomestones, " +
                           "scrips, seals, items) shows an approval popup in game while its window is open, and only buys when the player clicks " +
-                          "Approve. Supported shop windows: gil shops and the common exchange windows (not grand company or multi-page \"inclusion\" " +
-                          "shops). Requires 'Market & purchases' in /xivmcp.",
+                          "Approve. Supported shop windows: gil shops, the common exchange windows and the scrip exchanges with several pages, where " +
+                          "it picks the page and sub-page that sell the item (not grand company shops). Requires 'Market & purchases' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
@@ -685,33 +685,45 @@ internal static class ShopTools
     // ------------------------------------------------------------------ multi-page exchanges (scrip exchange: InclusionShop)
 
     /// <summary>
-    /// Pages (categories) and sub-pages where an item is offered in multi-page exchanges: InclusionShop → Category[page] → its series'
-    /// sub-rows (sub-page = index + 1) → the SpecialShop that lists the item.
+    /// Names of the shops (SpecialShop) that sell an item, and of the exchange categories that lead to them. The exchange window
+    /// names its sub-pages after these shops, so the page is found by name in the window (see <see cref="ExchangePages"/>).
     /// </summary>
-    private static List<(int Page, int SubPage)> InclusionRoutes(uint itemId)
+    private static (HashSet<string> Shops, HashSet<string> Categories) InclusionShopNames(uint itemId)
     {
         var specials = Svc.Data.GetExcelSheet<SpecialShop>()
-            .Where(s => s.Item.Any(i => i.ReceiveItems.Any(r => r.Item.RowId == itemId))).Select(s => s.RowId).ToHashSet();
+            .Where(s => s.Item.Any(i => i.ReceiveItems.Any(r => r.Item.RowId == itemId))).ToList();
+        var shops = specials.Select(s => s.Name.ExtractText().Trim()).Where(n => n.Length > 0).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var ids = specials.Select(s => s.RowId).ToHashSet();
         var series = Svc.Data.GetSubrowExcelSheet<InclusionShopSeries>();
-        var routes = new List<(int, int)>();
-        foreach (var shop in Svc.Data.GetExcelSheet<InclusionShop>())
-            for (var page = 0; page < shop.Category.Count; page++)
-            {
-                if (shop.Category[page].ValueNullable is not { } category || category.InclusionShopSeries.RowId == 0) continue;
-                if (!series.TryGetRow(category.InclusionShopSeries.RowId, out var subs)) continue;
-                for (var j = 0; j < subs.Count; j++)
-                    if (specials.Contains(subs[j].SpecialShop.RowId)) routes.Add((page, j + 1));
-            }
-        return routes.Distinct().ToList();
+        var categories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var category in Svc.Data.GetExcelSheet<InclusionShopCategory>())
+            if (category.InclusionShopSeries.RowId != 0 && series.TryGetRow(category.InclusionShopSeries.RowId, out var subs)
+                && subs.Any(s => ids.Contains(s.SpecialShop.RowId)))
+                categories.Add(category.Name.ExtractText().Trim());
+        return (shops, categories);
     }
 
-    /// <summary>Selects the page and sub-page of the open exchange that show the item.</summary>
+    private static unsafe string? InclusionText(int index)
+    {
+        var a = Addon("InclusionShop");
+        if (a == null || index >= a->AtkValuesCount) return null;
+        var v = a->AtkValues[index];
+        if (v.Type is not (AtkValueType.String or AtkValueType.ManagedString or AtkValueType.String8) || v.String.Value == null) return null;
+        return MemoryHelper.ReadSeStringNullTerminated((nint)v.String.Value).TextValue;
+    }
+
+    /// <summary>
+    /// Selects the page and sub-page of the open exchange that show the item: goes through the window's categories (those leading to
+    /// a shop that sells it first) and picks the sub-page named after that shop.
+    /// </summary>
     private static async Task ShowInInclusionShop(uint itemId, List<string> steps, CancellationToken ct)
     {
         bool Visible() { unsafe { var a = Addon("InclusionShop"); return a != null && InclusionIndex(a, itemId) >= 0; } }
         if (await Game.Run(Visible).ConfigureAwait(false)) return;
-        var routes = await Game.Run(() => InclusionRoutes(itemId)).ConfigureAwait(false);
-        foreach (var (page, sub) in routes)
+        var (shops, likely) = await Game.Run(() => InclusionShopNames(itemId)).ConfigureAwait(false);
+        var categories = await Game.Run(() => ExchangePages.Categories(InclusionText)).ConfigureAwait(false);
+        var order = Enumerable.Range(0, categories.Count).OrderBy(p => likely.Contains(categories[p].Trim()) ? 0 : 1).ToList();
+        foreach (var page in order)
         {
             await Game.Run(() =>
             {
@@ -731,15 +743,23 @@ internal static class ShopTools
                 return true;
             }).ConfigureAwait(false);
             await Task.Delay(700, ct).ConfigureAwait(false);
+            if (await Game.Run(Visible).ConfigureAwait(false))
+            {
+                steps.Add($"Exchange page \"{categories[page]}\".");
+                return;
+            }
+            var subPages = await Game.Run(() => ExchangePages.SubPages(InclusionText)).ConfigureAwait(false);
+            if (ExchangePages.SubPageOf(subPages, shops) is not { } sub) continue;
             await Game.Run(() => { unsafe { FireMixed(Addon("InclusionShop"), 13, (uint)sub); } return true; }).ConfigureAwait(false);
             await Task.Delay(700, ct).ConfigureAwait(false);
             if (await Game.Run(Visible).ConfigureAwait(false))
             {
-                steps.Add($"Exchange page {page + 1}, sub-page {sub}.");
+                steps.Add($"Exchange page \"{categories[page]}\", sub-page \"{subPages[sub]}\".");
                 return;
             }
         }
-        throw new ToolException($"{Items.Name(itemId)} is not offered on any page of this exchange.");
+        throw new ToolException($"{Items.Name(itemId)} is not offered on any page of this exchange"
+            + (shops.Count > 0 ? $" (it is sold in: {string.Join(", ", shops)})." : "."));
     }
 
     /// <summary>Row of an item among the exchange's visible items (AtkValues: count at 298, item ids from 300 in steps of 18).</summary>
