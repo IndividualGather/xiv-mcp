@@ -750,17 +750,18 @@ internal static class FashionTools
             {
                 if (Svc.Objects.LocalPlayer?.StatusList.Any(s => s.StatusId == VipCardStatus) == true) return "already active";
                 if (InventoryManager.Instance()->GetInventoryItemCount(VipCardItem) == 0) return "none in your bags";
-                // Like right-click → Use on the card in the bags: the game needs the bag and slot it is in (without them it did nothing,
-                // and a hotbar-style ActionManager.UseAction was refused).
-                var at = Find(VipCardItem);
-                if (at is not { } where) return "none in your bags";
-                FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentInventoryContext.Instance()->UseItem(VipCardItem, where.Container, (uint)where.Slot, 0);
+                // Like using it from a hotbar. Checked in game: this gives the buff, although UseAction returns false for it (the card
+                // has a cast), so only the buff counts. AgentInventoryContext.UseItem without a bag slot did nothing.
+                var am = ActionManager.Instance();
+                var status = am->GetActionStatus(ActionType.Item, VipCardItem);
+                if (status != 0) return $"the game won't use it right now (action status {status})";
+                am->UseAction(ActionType.Item, VipCardItem, 0xE0000000, 65535);
                 return "used";
             }
         }).ConfigureAwait(false);
         if (state != "used") return state;
-        var active = await WaitFor(() => Svc.Objects.LocalPlayer?.StatusList.Any(s => s.StatusId == VipCardStatus) == true, TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
-        return active ? "used" : "used, but its bonus did not show up";
+        var active = await WaitFor(() => Svc.Objects.LocalPlayer?.StatusList.Any(s => s.StatusId == VipCardStatus) == true, TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+        return active ? "used" : "not used: its bonus did not show up";
     }
 
     // ---------------------------------------------------------------- helpers (framework thread)
