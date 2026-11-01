@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Game.Inventory;
 using XivMcp.Mcp;
+using XivMcp.Transfers;
 using XivMcp.Util;
 
 namespace XivMcp.Tools;
@@ -26,14 +27,26 @@ internal static class FcChestTools
         {
             Name = "get_fc_chest",
             Description = "Contents of the free company chest (item tabs, crystals and gil): live while the game has it loaded, otherwise the last " +
-                          "snapshot with its age (the game only sends the chest when it is opened). " +
+                          "snapshot with its age (the game only sends the chest when it is opened). With the chest window open, the item tabs " +
+                          "the game hasn't sent yet are selected first, like looking into each. " +
                           "Filter by item name.",
             InputSchema = """
                 { "type": "object", "properties": { "query": { "type": "string", "description": "Only items whose name contains this text." } } }
                 """,
-            Handler = (args, _) => Game.RunLoggedIn<object?>(() =>
+            Handler = async (args, ct) =>
             {
-                var query = args.String("query");
+                // With the chest window open, select the tabs the game hasn't sent yet, like the player looking into each.
+                var unreadable = await LoadPages(Enumerable.Range(1, ChestTabs.Pages), ct).ConfigureAwait(false);
+                var result = await Game.RunLoggedIn(() => Read(args.String("query"))).ConfigureAwait(false);
+                return unreadable.Count == 0 ? result
+                    : new { chest = result, unreadableTabs = unreadable.Select(p => $"FreeCompanyPage{p}").ToList(),
+                            note = "These tabs did not load when selected (no access to them, or the game did not answer)." };
+            },
+        };
+
+        // The chest as the game has it loaded, or the last snapshot. Framework thread.
+        static object Read(string? query)
+        {
                 if (!StorageTracker.IsLoaded("fc_chest"))
                 {
                     // Not loaded right now: answer from the last snapshot, with its age.
@@ -70,8 +83,7 @@ internal static class FcChestTools
                     var gil = FFXIVClientStructs.FFXIV.Client.Game.InventoryManager.Instance()->GetFreeCompanyGil();
                     return new { gil, tabs, crystals, fcch = PluginCompat.FcchLoaded ? "installed: use fc_chest_transfer to deposit or withdraw" : null };
                 }
-            }),
-        };
+        }
 
         yield return new McpTool
         {
@@ -179,6 +191,42 @@ internal static class FcChestTools
                 finally { InventoryActionTools.Gate.Release(); }
             },
         };
+    }
+
+    /// <summary>
+    /// Selects the chest window's item tabs that are not loaded yet, like clicking them, and waits until the game sent their items
+    /// (it only sends a tab when it is selected). Does nothing when the chest window is closed. Returns the pages that stayed empty
+    /// handed (no access to that tab, or the game did not answer).
+    /// </summary>
+    public static async Task<List<int>> LoadPages(IEnumerable<int> pages, CancellationToken ct)
+    {
+        var failed = new List<int>();
+        if (!await Game.Run(() => GameWindows.Ready("FreeCompanyChest")).ConfigureAwait(false)) return failed;
+        foreach (var page in pages)
+        {
+            if (await Game.Run(() => PageLoaded(page)).ConfigureAwait(false)) continue;
+            if (!await Game.Run(() => SelectTab(page)).ConfigureAwait(false)) { failed.Add(page); continue; }
+            if (!await GameWindows.WaitFor(() => PageLoaded(page), TimeSpan.FromSeconds(5), ct).ConfigureAwait(false)) failed.Add(page);
+        }
+        return failed;
+    }
+
+    private static unsafe bool PageLoaded(int page)
+    {
+        var c = FFXIVClientStructs.FFXIV.Client.Game.InventoryManager.Instance()->GetInventoryContainer(
+            (FFXIVClientStructs.FFXIV.Client.Game.InventoryType)ChestPages[page - 1]);
+        return c != null && c->IsLoaded;
+    }
+
+    private static unsafe bool SelectTab(int page)
+    {
+        var addon = GameWindows.Addon("FreeCompanyChest");
+        if (addon == null) return false;
+        var node = addon->GetNodeById(ChestTabs.TabNode(page));
+        if (node == null || (int)node->Type < 1000) return false;
+        var component = ((FFXIVClientStructs.FFXIV.Component.GUI.AtkComponentNode*)node)->Component;
+        if (component == null || component->GetComponentType() != FFXIVClientStructs.FFXIV.Component.GUI.ComponentType.RadioButton) return false;
+        return VentureTools.Click(addon, (FFXIVClientStructs.FFXIV.Component.GUI.AtkComponentButton*)component);
     }
 
     private sealed record Measurement(Dictionary<uint, long> Items, long BagTotal, uint PlayerGil);

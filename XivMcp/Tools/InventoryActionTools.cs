@@ -148,7 +148,8 @@ internal static class InventoryActionTools
                           "Give the source either as from_container+from_slot or as item_id (first matching stack, optionally limited to from_container); " +
                           "omit to_slot to use the first empty slot of to_container. Container names come from get_inventory (Inventory1-4, ArmoryHead, ..., " +
                           "SaddleBag1/2, PremiumSaddleBag1/2, RetainerPage1-7, FreeCompanyPage1-5, and for crystals Crystals, RetainerCrystals and " +
-                          "FreeCompanyCrystals). Saddlebag/retainer/company chest windows must be open. 'quantity' moves part of a stack: it is split off " +
+                          "FreeCompanyCrystals). Saddlebag/retainer/company chest windows must be open; the chest's item tabs a move needs are selected " +
+                          "automatically (the game only sends a tab once it is selected). 'quantity' moves part of a stack: it is split off " +
                           "first (needs an empty slot in the source container). Crystals move between crystal containers only, as whole stacks, into the " +
                           "slot of their kind. " +
                           "Armory containers only accept matching gear. " +
@@ -281,6 +282,15 @@ internal static class InventoryActionTools
         {
             try { await PluginCompat.WaitForFcch(TimeSpan.FromMinutes(2), ct).ConfigureAwait(false); }
             catch (ToolException ex) { return MoveResult.Fail(req.Index, ex.Message); }
+        }
+        // The game only sends a chest tab once it is selected: select the ones this move takes from or puts into (all of them when the
+        // item is looked for everywhere). Nothing happens while the chest window is closed.
+        var pages = Transfers.ChestTabs.PagesFor(req.From?.ToString(), req.To.ToString(), searchesAll: req.ItemId is not null && req.From is null);
+        if (pages.Count > 0)
+        {
+            var unloaded = await FcChestTools.LoadPages(pages, ct).ConfigureAwait(false);
+            if (unloaded.Count > 0 && TouchesChest(req))
+                return MoveResult.Fail(req.Index, $"The company chest's tab {string.Join(", ", unloaded)} did not load when selected (no access to it, or the game did not answer).");
         }
 
         // Part of a stack: split it off first, then move the new stack.
