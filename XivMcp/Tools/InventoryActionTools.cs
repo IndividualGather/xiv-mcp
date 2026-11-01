@@ -290,7 +290,7 @@ internal static class InventoryActionTools
         {
             var unloaded = await FcChestTools.LoadPages(pages, ct).ConfigureAwait(false);
             if (unloaded.Count > 0 && TouchesChest(req))
-                return MoveResult.Fail(req.Index, $"The company chest's tab {string.Join(", ", unloaded)} did not load when selected (no access to it, or the game did not answer).");
+                return MoveResult.Fail(req.Index, $"The company chest's tab {string.Join(", ", unloaded)} isn't shown in the chest window (the company rank gives no access to it).");
         }
 
         // Part of a stack: split it off first, then move the new stack.

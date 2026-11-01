@@ -40,7 +40,7 @@ internal static class FcChestTools
                 var result = await Game.RunLoggedIn(() => Read(args.String("query"))).ConfigureAwait(false);
                 return unreadable.Count == 0 ? result
                     : new { chest = result, unreadableTabs = unreadable.Select(p => $"FreeCompanyPage{p}").ToList(),
-                            note = "These tabs did not load when selected (no access to them, or the game did not answer)." };
+                            note = "The chest window doesn't show these tabs (the company rank gives no access to them), so their contents may be old." };
             },
         };
 
@@ -194,9 +194,9 @@ internal static class FcChestTools
     }
 
     /// <summary>
-    /// Selects the chest window's item tabs that are not loaded yet, like clicking them, and waits until the game sent their items
-    /// (it only sends a tab when it is selected). Does nothing when the chest window is closed. Returns the pages that stayed empty
-    /// handed (no access to that tab, or the game did not answer).
+    /// Selects the chest window's item tabs, like clicking them, and waits until the game sent their items: it only sends a tab when
+    /// it is selected, and keeps an older copy (marked loaded) until then, so every tab asked for is selected. Does nothing when the
+    /// chest window is closed. Returns the pages that could not be selected (tabs the window doesn't show, for the company rank).
     /// </summary>
     public static async Task<List<int>> LoadPages(IEnumerable<int> pages, CancellationToken ct)
     {
@@ -204,18 +204,23 @@ internal static class FcChestTools
         if (!await Game.Run(() => GameWindows.Ready("FreeCompanyChest")).ConfigureAwait(false)) return failed;
         foreach (var page in pages)
         {
-            if (await Game.Run(() => PageLoaded(page)).ConfigureAwait(false)) continue;
+            var before = await Game.Run(() => PageContents(page)).ConfigureAwait(false);
             if (!await Game.Run(() => SelectTab(page)).ConfigureAwait(false)) { failed.Add(page); continue; }
-            if (!await GameWindows.WaitFor(() => PageLoaded(page), TimeSpan.FromSeconds(5), ct).ConfigureAwait(false)) failed.Add(page);
+            // The game answers within a moment; an unchanged tab can't be told apart from a slow answer, so wait a little either way.
+            var started = DateTime.UtcNow;
+            await GameWindows.WaitFor(() => PageContents(page) != before && DateTime.UtcNow - started > TimeSpan.FromMilliseconds(300),
+                TimeSpan.FromSeconds(1.5), ct).ConfigureAwait(false);
         }
         return failed;
     }
 
-    private static unsafe bool PageLoaded(int page)
+    /// <summary>A fingerprint of a chest page's slots, to see when the game has sent it. Framework thread.</summary>
+    private static string PageContents(int page)
     {
-        var c = FFXIVClientStructs.FFXIV.Client.Game.InventoryManager.Instance()->GetInventoryContainer(
-            (FFXIVClientStructs.FFXIV.Client.Game.InventoryType)ChestPages[page - 1]);
-        return c != null && c->IsLoaded;
+        var sb = new System.Text.StringBuilder();
+        foreach (var item in Svc.Inventory.GetInventoryItems(ChestPages[page - 1]))
+            if (!item.IsEmpty) sb.Append(item.InventorySlot).Append(':').Append(item.ItemId).Append('x').Append(item.Quantity).Append(';');
+        return sb.ToString();
     }
 
     private static unsafe bool SelectTab(int page)
