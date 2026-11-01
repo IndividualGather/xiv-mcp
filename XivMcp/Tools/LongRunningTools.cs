@@ -31,15 +31,21 @@ internal static class LongRunningTools
             Name = "gather_until",
             Description = "Gathers with GatherBuddy Reborn until the bags hold the wanted quantities, then stops. Give 'items' ([{ item, quantity }] " +
                           "— quantity = how many you want to have in the bags) or an existing GatherBuddy 'list' (its quantities are the targets). " +
-                          "Other active auto-gather lists are switched off meanwhile and restored afterwards. Fails (job: pending) if GatherBuddy " +
-                          "stops on its own before the targets are reached, or the bags are full. Meant as a job step (start_job) — it can run for " +
-                          "hours. Requires GatherBuddy Reborn and 'Crafting & gathering' in /xivmcp.",
+                          "'until' ([{ item, quantity }]) stops on other items instead, e.g. the aethersand GatherBuddy reduces gathered " +
+                          "collectables into (the gathered items then never stay in the bags): give the collectables in 'items' with a high " +
+                          "quantity and the aethersand in 'until'. Other active auto-gather lists are switched off meanwhile and restored " +
+                          "afterwards. When GatherBuddy switches itself off before the targets are reached (e.g. between the windows of timed " +
+                          "nodes), it is started again, up to 'restarts' times (default 20). Fails (job: pending) when that runs out, or the bags " +
+                          "are full. Meant as a job step (start_job) — it can run for hours. Requires GatherBuddy Reborn and 'Crafting & " +
+                          "gathering' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
                   "properties": {
                     "items": { "type": "array", "items": { "type": "object", "properties": { "item": { "type": "string" }, "quantity": { "type": "integer" } }, "required": ["item", "quantity"] } },
                     "list": { "type": "string", "description": "Existing GatherBuddy list (name or index) instead of items." },
+                    "until": { "type": "array", "description": "Stop once the bags hold these instead of the gathered items' quantities.", "items": { "type": "object", "properties": { "item": { "type": "string" }, "quantity": { "type": "integer" } }, "required": ["item", "quantity"] } },
+                    "restarts": { "type": "integer", "minimum": 0, "maximum": 200, "description": "How often to start GatherBuddy again when it switches itself off (default 20)." },
                     "timeout_minutes": { "type": "integer", "description": "Give up after this long (default 600)." }
                   }
                 }
@@ -66,6 +72,12 @@ internal static class LongRunningTools
                         }
                         return true;
                     }).ConfigureAwait(false);
+                var maxRestarts = args.Int("restarts", 20, 0, 200);
+                Dictionary<uint, int>? until = null;
+                if (args.Node("until") is JsonArray untilItems && untilItems.Count > 0)
+                    until = await Game.Run(() => untilItems.OfType<JsonObject>().Select(o => new ToolArgs(o)).ToDictionary(
+                        a => Items.Resolve(a.String("item") ?? throw new ToolException("Each 'until' entry needs 'item'.")).RowId,
+                        a => a.Int("quantity", 1, 1, 99999))).ConfigureAwait(false);
 
                 List<string> restore = [];
                 string? usedList = null;
@@ -109,20 +121,32 @@ internal static class LongRunningTools
                     await WaitForPlugin(CraftGatherTools.GatherBuddy, ct).ConfigureAwait(false);
                     await Game.Run(() => { Svc.PluginInterface.GetIpcSubscriber<bool, object>("GatherBuddyReborn.SetAutoGatherEnabled").InvokeAction(true); return true; }).ConfigureAwait(false);
                     await Task.Delay(5000, ct).ConfigureAwait(false);
+                    var goal = until ?? targets;
+                    var restarts = 0;
                     while (true)
                     {
                         ct.ThrowIfCancellationRequested();
                         var state = await Game.Run(() => (
-                            Have: targets.ToDictionary(t => t.Key, t => Items.CountInBags(t.Key)),
+                            Have: goal.ToDictionary(t => t.Key, t => Items.CountInBags(t.Key)),
                             Running: CraftGatherTools.Ipc("GatherBuddyReborn.IsAutoGatherEnabled") == true,
                             Status: CraftGatherTools.SafeString("GatherBuddyReborn.GetAutoGatherStatusText"),
                             Free: Items.FreeBagSlots())).ConfigureAwait(false);
-                        var missing = targets.Where(t => state.Have[t.Key] < t.Value).ToList();
+                        var missing = goal.Where(t => state.Have[t.Key] < t.Value).ToList();
                         if (missing.Count == 0)
-                            return new { done = true, gathered = Describe(targets, state.Have), minutes = Math.Round((DateTime.UtcNow - started).TotalMinutes, 1) };
+                            return new { done = true, gathered = Describe(goal, state.Have), restarts, minutes = Math.Round((DateTime.UtcNow - started).TotalMinutes, 1) };
                         if (state.Free == 0) throw new ToolException($"Bags are full; still missing {Missing(missing, state.Have)}.");
-                        if (!state.Running) throw new ToolException($"GatherBuddy stopped ({state.Status ?? "no status"}); still missing {Missing(missing, state.Have)}.");
                         if (DateTime.UtcNow - started > timeout) throw new ToolException($"Timed out; still missing {Missing(missing, state.Have)}.");
+                        if (!state.Running)
+                        {
+                            if (restarts >= maxRestarts)
+                                throw new ToolException($"GatherBuddy stopped ({state.Status ?? "no status"}) after {restarts} restart(s); still missing {Missing(missing, state.Have)}.");
+                            restarts++;
+                            Svc.Log.Information($"[MCP] gather_until: GatherBuddy stopped ({state.Status}); starting it again ({restarts}/{maxRestarts}).");
+                            await Task.Delay(30000, ct).ConfigureAwait(false);
+                            await Game.Run(() => { Svc.PluginInterface.GetIpcSubscriber<bool, object>("GatherBuddyReborn.SetAutoGatherEnabled").InvokeAction(true); return true; }).ConfigureAwait(false);
+                            await Task.Delay(5000, ct).ConfigureAwait(false);
+                            continue;
+                        }
                         await Task.Delay(10000, ct).ConfigureAwait(false);
                     }
                 }

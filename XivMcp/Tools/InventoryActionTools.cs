@@ -271,30 +271,36 @@ internal static class InventoryActionTools
                         if (useHq ? hq == 0 : nq == 0) throw new ToolException($"No {(useHq ? "HQ" : "NQ")} {name} in the bags.");
                         var actionId = item.RowId + (useHq ? 1_000_000u : 0);
                         var before = nq + hq;
-                        if (await UseOnce(actionId, ct).ConfigureAwait(false) is { } refused)
+                        // Right after another item the game can swallow a use without a message, so a use that shows no effect is sent once more.
+                        var gone = false;
+                        for (var attempt = 0; attempt < 2 && !gone; attempt++)
                         {
-                            if (used == 0) throw new ToolException($"{name} wasn't used: {refused}");
-                            messages.Add(refused);
-                            break;
-                        }
-                        // The game may ask first (reading a book, a one-time unlock): this tool was called to use it, so answer Yes.
-                        var gone = await GameWindows.WaitFor(() =>
-                        {
-                            if (GameWindows.YesNoPrompt() is { } prompt)
+                            if (await UseOnce(actionId, ct).ConfigureAwait(false) is { } refused)
                             {
-                                messages.Add($"Answered Yes: {prompt}");
-                                GameWindows.AnswerYesNo(true);
-                                return false;
+                                if (used == 0) throw new ToolException($"{name} wasn't used: {refused}");
+                                messages.Add(refused);
+                                break;
                             }
-                            return Items.CountInBags(item.RowId) < before;
-                        }, TimeSpan.FromSeconds(15), ct).ConfigureAwait(false);
+                            // The game may ask first (reading a book, a one-time unlock): this tool was called to use it, so answer Yes.
+                            gone = await GameWindows.WaitFor(() =>
+                            {
+                                if (GameWindows.YesNoPrompt() is { } prompt)
+                                {
+                                    messages.Add($"Answered Yes: {prompt}");
+                                    GameWindows.AnswerYesNo(true);
+                                    return false;
+                                }
+                                return Items.CountInBags(item.RowId) < before;
+                            }, TimeSpan.FromSeconds(attempt == 0 ? 6 : 15), ct).ConfigureAwait(false);
+                        }
                         if (!gone)
                         {
+                            if (used == 0) throw new ToolException($"The game didn't use {name} (it is still in the bags).");
                             messages.Add("The game didn't use it (it is still in the bags).");
                             break;
                         }
                         used++;
-                        await Task.Delay(800, ct).ConfigureAwait(false);
+                        await Task.Delay(1500, ct).ConfigureAwait(false);
                     }
                     Svc.Log.Information($"[MCP] Used {used}x {name}");
                     return new
