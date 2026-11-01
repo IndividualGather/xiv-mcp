@@ -13,6 +13,7 @@ using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Excel.Sheets;
 using XivMcp.Fashion;
+using XivMcp.Maps;
 using XivMcp.Mcp;
 using XivMcp.Permissions;
 using XivMcp.Util;
@@ -747,10 +748,21 @@ internal static class FashionTools
         static bool Active() => Svc.Objects.LocalPlayer?.StatusList.Any(s => s.StatusId == VipCardStatus) == true;
         var have = await Game.Run(() => { unsafe { return Active() ? "already active" : InventoryManager.Instance()->GetInventoryItemCount(VipCardItem) == 0 ? "none in your bags" : null; } }).ConfigureAwait(false);
         if (have is not null) return have;
-        // Right after a teleport and a walk the game says "Cannot execute at this time" for a moment (or the player is still mounted):
-        // get off, and try again until it lets the card be used.
+        // The card is only used while standing still ("Cannot execute at this time" right after a teleport and a walk): stop the walk,
+        // get off the mount, wait until the player has stood on one spot for a second, then try until the game lets it be used.
+        await Game.Run(() => { Navigation.StopMoving(); return true; }).ConfigureAwait(false);
         try { await NavigationTools.GetOffMount([], ct).ConfigureAwait(false); }
         catch (ToolException ex) { return $"not used: {ex.Message}"; }
+        var still = new StandingStill(samples: 4);
+        var stood = await WaitFor(() =>
+        {
+            var p = Svc.Objects.LocalPlayer?.Position;
+            if (p is not { } at) return false;
+            var busy = Svc.Condition[ConditionFlag.Mounted] || Svc.Condition[ConditionFlag.Casting] || Svc.Condition[ConditionFlag.Jumping]
+                       || Svc.Condition[ConditionFlag.BetweenAreas] || Svc.Condition[ConditionFlag.BetweenAreas51] || Navigation.PathRunning;
+            return still.Add(at.X, at.Y, at.Z, busy);
+        }, TimeSpan.FromSeconds(15), ct).ConfigureAwait(false);
+        if (!stood) return "not used: the character didn't stand still";
         uint status = 0;
         var until = DateTime.UtcNow.AddSeconds(10);
         while (true)

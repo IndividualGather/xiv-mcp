@@ -28,7 +28,7 @@ These tools have their own module, **Gold Saucer**, under **Integrations maintai
 2. **The dyes**, with `dye_item`: the pieces' colors, and the colors the set gives slots it has no piece for (e.g. "hands: Plum Purple"), on whatever you wear there. Most colors come from **Standard Spectrum Dye** now; if you have none, the job buys one from a vendor or on the market board.
 3. **Presenting** as the last step: it puts on the pieces, walks to the Masked Rose and presents. The best of your 4 weekly attempts counts.
 
-Right before presenting, XIV MCP uses a **Gold Saucer VIP Card** from your bags (more MGP), unless its bonus is already active. Turn this off in `/xivmcp` → Modules → Gold Saucer → *Use a Gold Saucer VIP Card for the Fashion Report* (on by default), or pass `use_vip_card` to `present_fashion_report`. Without a card in your bags, the job presents anyway.
+Right before presenting, XIV MCP uses a **Gold Saucer VIP Card** from your bags (more MGP), unless its bonus is already active. The card only works while standing still, so XIV MCP stops, gets off the mount and waits a moment first. Turn this off in `/xivmcp` → Modules → Gold Saucer → *Use a Gold Saucer VIP Card for the Fashion Report* (on by default), or pass `use_vip_card` to `present_fashion_report`. Without a card in your bags, the job presents anyway.
 
 After the judging, the job puts your gearset back on and, once you approve in game (the approval lists the pieces), **throws away the pieces it bought** (from a vendor or the market board) that are worth 5,000 gil or less: the vendor price, otherwise the lowest market board listing on your world. Only pieces the job itself bought can be thrown away: pieces you had already, or took from a retainer, the glamour dresser or the armoire, never are, and neither is a piece whose value is unknown. Turn this off or change the limit in `/xivmcp` → Modules → Gold Saucer → *Discard cheap pieces bought for the Fashion Report*. The gearset's glamour plate can't be applied in the Gold Saucer, so put it on again somewhere else.
 
@@ -97,7 +97,7 @@ A card that drops arrives in your bags as an item. It counts as had for "until y
 
 Saucy walks from the cashier to the broker with vnavmesh. Without it, Saucy stops after the cashier, and you talk to the broker yourself.
 
-Right before talking to the cashier, who pays out last week's prizes, XIV MCP uses a **Gold Saucer VIP Card** from your bags (more MGP), unless its bonus is already active. Turn this off in `/xivmcp` → Modules → Gold Saucer → *Use a Gold Saucer VIP Card for the Jumbo Cactpot* (on by default), or pass `use_vip_card` to `play_jumbo_cactpot`. Without a card in your bags, it plays anyway.
+Right before talking to the cashier, who pays out last week's prizes, XIV MCP uses a **Gold Saucer VIP Card** from your bags (more MGP), unless its bonus is already active. The card only works while standing still, so XIV MCP stops, gets off the mount and waits a moment first. Turn this off in `/xivmcp` → Modules → Gold Saucer → *Use a Gold Saucer VIP Card for the Jumbo Cactpot* (on by default), or pass `use_vip_card` to `play_jumbo_cactpot`. Without a card in your bags, it plays anyway.
 
 ## What it changes in Saucy
 
