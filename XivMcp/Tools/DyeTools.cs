@@ -37,7 +37,8 @@ internal static class DyeTools
         {
             Name = "dye_item",
             Description = "Dyes a piece of gear the player has (equipped, in the bags or the armoury chest) with a color, like the Dye entry of " +
-                          "its context menu: 'dye' is the color's name as the game calls it (e.g. \"Soot Black\", \"Snow White\", \"Metallic Silver\"), " +
+                          "its context menu, or the piece worn in a 'slot' (head, body, hands, legs, feet, ears, neck, wrists, ring; a glamoured piece's " +
+                          "glamour takes the color): 'dye' is the color's name as the game calls it (e.g. \"Soot Black\", \"Snow White\", \"Metallic Silver\"), " +
                           "'channel' 1 or 2 for gear with two dye channels. Uses one dye item from the bags: for most colors \"Standard Spectrum " +
                           "Dye\" (the result names it); fails if it is missing. Out of combat only. Requires 'Items & retainers' in /xivmcp.",
             InputSchema = """
@@ -45,23 +46,31 @@ internal static class DyeTools
                   "type": "object",
                   "properties": {
                     "item": { "type": ["string", "integer"], "description": "The gear's name or item id." },
+                    "slot": { "type": "string", "description": "Instead of 'item': the piece worn in this slot, e.g. \"hands\"." },
                     "dye": { "type": "string", "description": "The color, e.g. \"Soot Black\"." },
                     "channel": { "type": "integer", "minimum": 1, "maximum": 2, "description": "Which dye channel (default 1)." }
                   },
-                  "required": ["item", "dye"]
+                  "required": ["dye"]
                 }
                 """,
             ReadOnly = false,
             Handler = (args, ct) => Dye(
-                args.Node("item")?.ToString() ?? throw new ToolException("'item' is required."),
+                args.Node("item")?.ToString(), args.String("slot"),
                 args.String("dye") ?? throw new ToolException("'dye' is required."),
                 args.Int("channel", 1, 1, 2), ct),
         };
     }
 
-    internal static async Task<object?> Dye(string itemQuery, string dyeQuery, int channel, CancellationToken ct)
+    internal static async Task<object?> Dye(string? itemQuery, string? slot, string dyeQuery, int channel, CancellationToken ct)
     {
-        var plan = await Game.RunLoggedIn(() => Plan(itemQuery, dyeQuery, channel)).ConfigureAwait(false);
+        if (itemQuery is null == slot is null) throw new ToolException("Give either 'item' or 'slot'.");
+        int? equipSlot = null;
+        if (slot is not null)
+        {
+            try { equipSlot = XivMcp.Fashion.GearSlots.FromName(slot); }
+            catch (ArgumentException ex) { throw new ToolException(ex.Message); }
+        }
+        var plan = await Game.RunLoggedIn(() => Plan(itemQuery, equipSlot, dyeQuery, channel)).ConfigureAwait(false);
         if (plan.AlreadyDyed) return new { item = plan.ItemName, dye = plan.StainName, channel, changed = false, note = "It already has this color." };
 
         if (await Game.Run(() => Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InCombat]).ConfigureAwait(false))
@@ -100,12 +109,19 @@ internal static class DyeTools
     private sealed record DyePlan(InventoryType Container, int Slot, uint ItemId, string ItemName, uint StainId, int Shade, int SubOrder, string StainName, string DyeItemName, bool AlreadyDyed);
 
     /// <summary>Finds the item and the color, and checks the channel and the dye item. Framework thread.</summary>
-    private static unsafe DyePlan Plan(string itemQuery, string dyeQuery, int channel)
+    private static unsafe DyePlan Plan(string? itemQuery, int? equipSlot, string dyeQuery, int channel)
     {
         var items = Svc.Data.GetExcelSheet<Item>();
         var im = InventoryManager.Instance();
         var candidates = new List<(InventoryType Container, int Slot, Item Row)>();
-        foreach (var type in GearContainers)
+        if (equipSlot is { } es)
+        {
+            var worn = im->GetInventoryContainer(InventoryType.EquippedItems)->GetInventorySlot(es);
+            if (worn == null || worn->ItemId == 0 || items.GetRowOrDefault(worn->ItemId) is not { } row)
+                throw new ToolException("Nothing is worn in that slot.");
+            candidates.Add((InventoryType.EquippedItems, es, row));
+        }
+        else foreach (var type in GearContainers)
         {
             var container = im->GetInventoryContainer(type);
             if (container == null) continue;
@@ -113,7 +129,7 @@ internal static class DyeTools
             {
                 var slot = container->GetInventorySlot(i);
                 if (slot == null || slot->ItemId == 0 || items.GetRowOrDefault(slot->ItemId) is not { } row) continue;
-                var matches = uint.TryParse(itemQuery, out var id) ? row.RowId == id : row.Name.ExtractText().Equals(itemQuery.Trim(), StringComparison.OrdinalIgnoreCase);
+                var matches = uint.TryParse(itemQuery!, out var id) ? row.RowId == id : row.Name.ExtractText().Equals(itemQuery!.Trim(), StringComparison.OrdinalIgnoreCase);
                 if (matches) candidates.Add((type, i, row));
             }
         }
