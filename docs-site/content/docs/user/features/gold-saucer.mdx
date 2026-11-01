@@ -97,6 +97,8 @@ A card that drops arrives in your bags as an item. It counts as had for "until y
 
 Saucy walks from the cashier to the broker with vnavmesh. Without it, Saucy stops after the cashier, and you talk to the broker yourself.
 
+Right before talking to the cashier, who pays out last week's prizes, XIV MCP uses a **Gold Saucer VIP Card** from your bags (more MGP), unless its bonus is already active. Turn this off in `/xivmcp` → Modules → Gold Saucer → *Use a Gold Saucer VIP Card for the Jumbo Cactpot* (on by default), or pass `use_vip_card` to `play_jumbo_cactpot`. Without a card in your bags, it plays anyway.
+
 ## What it changes in Saucy
 
 Saucy has no interface for other plugins. XIV MCP sends it `/saucy` commands, and changes its settings in memory for as long as a tool runs (which deck, the deck optimizer, the Cactpot modules and ticket numbers). Afterwards it puts them back. Saucy's settings file is not touched.

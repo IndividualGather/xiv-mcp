@@ -66,6 +66,9 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Use a Gold Saucer VIP Card right before presenting at the Fashion Report (it raises the MGP reward).</summary>
     public bool FashionReportVipCard { get; set; } = true;
 
+    /// <summary>Use a Gold Saucer VIP Card right before the Jumbo Cactpot Cashier pays out last week's prizes.</summary>
+    public bool JumboCactpotVipCard { get; set; } = true;
+
     /// <summary>After presenting, throw away the pieces the Fashion Report job bought that are worth at most <see cref="FashionReportDiscardMaxValue"/>.</summary>
     public bool FashionReportDiscard { get; set; } = true;
 

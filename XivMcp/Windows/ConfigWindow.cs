@@ -380,7 +380,7 @@ internal sealed partial class ConfigWindow : Window
         ImGui.TextColored(Muted, config.AskAboveGil == 0 ? "0: gil purchases never ask." : $"Gil purchases above {config.AskAboveGil:N0} gil ask first.");
     }
 
-    /// <summary>Gold Saucer options: whether the Fashion Report uses a Gold Saucer VIP Card first.</summary>
+    /// <summary>Gold Saucer options: whether the Fashion Report and the Jumbo Cactpot use a Gold Saucer VIP Card first.</summary>
     private void DrawGoldSaucerOptions()
     {
         var config = plugin.Config;
@@ -394,6 +394,15 @@ internal sealed partial class ConfigWindow : Window
         }
         Tooltip("Right before presenting to the Masked Rose, XIV MCP uses a Gold Saucer VIP Card from your bags, unless its bonus is already active. " +
                 "The card raises the MGP the Fashion Report pays.");
+
+        var jumboVip = config.JumboCactpotVipCard;
+        if (ImGui.Checkbox("Use a Gold Saucer VIP Card for the Jumbo Cactpot##jc-vip", ref jumboVip))
+        {
+            config.JumboCactpotVipCard = jumboVip;
+            config.Save();
+        }
+        Tooltip("Right before talking to the Jumbo Cactpot Cashier, who pays out last week's prizes, XIV MCP uses a Gold Saucer VIP Card from " +
+                "your bags, unless its bonus is already active. The card raises the MGP the prizes pay.");
 
         var discard = config.FashionReportDiscard;
         var changed = ImGui.Checkbox("Discard cheap pieces bought for the Fashion Report##fr-discard", ref discard);

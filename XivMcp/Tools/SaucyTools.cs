@@ -21,7 +21,7 @@ internal static class SaucyTools
     private const uint JumboCactpotCashier = 1010451;
     private const int MaxFarmRuns = 200;
 
-    public static IEnumerable<McpTool> Create(Func<JobManager> jobs, Func<string?> client)
+    public static IEnumerable<McpTool> Create(Configuration options, Func<JobManager> jobs, Func<string?> client)
     {
         yield return new McpTool
         {
@@ -423,12 +423,14 @@ internal static class SaucyTools
             Description = "The weekly Jumbo Cactpot at the Gold Saucer, done by Saucy: XIV MCP goes to the Jumbo Cactpot Cashier and talks to them; " +
                           "Saucy collects last week's prizes, walks to the Jumbo Cactpot Broker (with vnavmesh) and buys this week's tickets " +
                           "(up to 3 a week: 100, 150 and 200 MGP) with the 'numbers' (four digits each) or random ones. Without vnavmesh Saucy stops after the " +
-                          "cashier; then talk to the broker yourself.",
+                          "cashier; then talk to the broker yourself. Right before talking to the cashier it uses a Gold Saucer VIP Card (more MGP from " +
+                          "the prizes) unless its bonus is already active, if the setting in /xivmcp says so (on by default) or 'use_vip_card' is true.",
             InputSchema = """
                 {
                   "type": "object",
                   "properties": {
-                    "numbers": { "type": "array", "items": { "type": "string" }, "maxItems": 3, "description": "Up to three 4-digit numbers, e.g. [\"0427\", \"1999\"]. Leave out for random numbers." }
+                    "numbers": { "type": "array", "items": { "type": "string" }, "maxItems": 3, "description": "Up to three 4-digit numbers, e.g. [\"0427\", \"1999\"]. Leave out for random numbers." },
+                    "use_vip_card": { "type": "boolean", "description": "Use a Gold Saucer VIP Card before collecting the prizes (default: the setting in /xivmcp, on unless turned off)." }
                   }
                 }
                 """,
@@ -442,6 +444,10 @@ internal static class SaucyTools
                 var cashier = TriadData.Locate(JumboCactpotCashier, "Jumbo Cactpot Cashier") ?? throw new ToolException("The Jumbo Cactpot Cashier was not found in the game data.");
                 var steps = new List<string>();
                 await NavigationTools.GoToNpc(cashier, steps, ct).ConfigureAwait(false);
+                // The cashier pays out last week's prizes: the card's bonus has to be active by then.
+                string? vip = null;
+                if (args.Node("use_vip_card") is { } v ? v.GetValue<bool>() : options.JumboCactpotVipCard)
+                    vip = await FashionTools.UseVipCard(ct).ConfigureAwait(false);
                 var mgpBefore = await Game.Run(Mgp).ConfigureAwait(false);
                 var settings = new List<(string, object?)> { ("JumboCactpot.NumberMode", numbers.Count > 0 ? 1 : 0) };
                 for (var i = 0; i < 3; i++) settings.Add(($"JumboCactpot.Ticket{i + 1}Number", i < numbers.Count ? numbers[i] : ""));
@@ -482,7 +488,7 @@ internal static class SaucyTools
                 var prizes = (mgpAtPad ?? mgpEnd) - mgpBefore;
                 return new
                 {
-                    tickets, mgpSpent = spent, prizesMgp = prizes > 0 ? prizes : 0, numbers = numbers.Count > 0 ? numbers : null,
+                    tickets, mgpSpent = spent, prizesMgp = prizes > 0 ? prizes : 0, numbers = numbers.Count > 0 ? numbers : null, vipCard = vip,
                     note = tickets == 0
                         ? "No ticket was bought: this week's tickets may be used up, or Saucy did not get to the broker (it walks there with vnavmesh). " +
                           "Prizes, if any, were collected at the cashier."

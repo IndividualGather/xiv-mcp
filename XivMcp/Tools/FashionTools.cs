@@ -739,7 +739,7 @@ internal static class FashionTools
     /// Uses a Gold Saucer VIP Card unless its bonus is already active; returns what happened (for the result). Never throws: a missing
     /// card only means no bonus.
     /// </summary>
-    private static async Task<string> UseVipCard(CancellationToken ct)
+    internal static async Task<string> UseVipCard(CancellationToken ct)
     {
         var state = await Game.Run(() =>
         {

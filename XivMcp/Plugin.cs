@@ -128,7 +128,7 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(DyeTools.Create())
             .Concat(MarketBoardTools.Create(Config))
             .Concat(FashionTools.Create(Config, retainers, () => jobs!, () => Server?.LastClient))
-            .Concat(SaucyTools.Create(() => jobs!, () => Server?.LastClient))
+            .Concat(SaucyTools.Create(Config, () => jobs!, () => Server?.LastClient))
             .Concat(AutoHookTools.Create(Config, () => jobs!, () => Server?.LastClient))
             .Concat(QuestionableTools.Create(() => jobs!, () => Server?.LastClient))
             .Concat(OceanFishingTools.Create(Config, () => jobs!, () => Server?.LastClient))
