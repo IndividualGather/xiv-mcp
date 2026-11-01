@@ -97,6 +97,7 @@ public static class ToolSummaries
         ["get_retainer_inventories"] = "Looks at what your retainers are holding and selling.",
         ["get_fc_chest"] = "Looks at what is in your free company chest.",
         ["find_ventures"] = "Finds which venture brings back an item and which retainer can go.",
+        ["use_item"] = "Uses an item from your bags, like reading a recipe book or folklore tome.",
         ["sort_inventory"] = "Sorts your bags, armoury, saddlebag or a retainer inventory with the game's own sorting.",
         ["move_items"] = "Moves items between your bags, armoury, saddlebag, retainers and chest, one at a time.",
         ["open_retainer"] = "Calls a retainer at the summoning bell.",

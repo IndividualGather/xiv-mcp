@@ -226,6 +226,126 @@ internal static class InventoryActionTools
                 finally { Gate.Release(); }
             },
         };
+
+        yield return new McpTool
+        {
+            Name = "use_item",
+            Description = "Uses an item from the bags like from a hotbar or its context menu's Use: reads a recipe book, folklore tome or orchestrion " +
+                          "roll, uses a manual, food, potion or a mount/minion item. A Yes/No question the game asks about it is answered Yes. " +
+                          "Uses one at a time ('quantity' for several) and only counts it when one left the bags. Out of combat, not while crafting " +
+                          "or gathering. Requires 'Items & retainers' in /xivmcp.",
+            InputSchema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "item": { "type": "string", "description": "Item name or id." },
+                    "quantity": { "type": "integer", "minimum": 1, "maximum": 99, "description": "How many to use, one after another (default 1)." },
+                    "hq": { "type": "boolean", "description": "Use the HQ one (default: HQ if the bags hold one)." }
+                  },
+                  "required": ["item"]
+                }
+                """,
+            ReadOnly = false,
+            Handler = async (args, ct) =>
+            {
+                RequireEnabled();
+                var quantity = args.Int("quantity", 1, 1, 99);
+                var item = await Game.RunLoggedIn(() => Items.Resolve(args.String("item") ?? throw new ToolException("'item' is required."))).ConfigureAwait(false);
+                var name = item.Name.ExtractText();
+                if (item.ItemAction.RowId == 0) throw new ToolException($"{name} can't be used.");
+                await Gate.WaitAsync(ct).ConfigureAwait(false);
+                try
+                {
+                    var used = 0;
+                    var messages = new List<string>();
+                    for (var n = 0; n < quantity; n++)
+                    {
+                        var (nq, hq) = await Game.RunLoggedIn(() => CountNqHq(item.RowId)).ConfigureAwait(false);
+                        if (nq + hq == 0)
+                        {
+                            if (n == 0) throw new ToolException($"No {name} in the bags.");
+                            messages.Add("None left in the bags.");
+                            break;
+                        }
+                        var useHq = args.Node("hq") is null ? hq > 0 : args.Bool("hq", false);
+                        if (useHq ? hq == 0 : nq == 0) throw new ToolException($"No {(useHq ? "HQ" : "NQ")} {name} in the bags.");
+                        var actionId = item.RowId + (useHq ? 1_000_000u : 0);
+                        var before = nq + hq;
+                        if (await UseOnce(actionId, ct).ConfigureAwait(false) is { } refused)
+                        {
+                            if (used == 0) throw new ToolException($"{name} wasn't used: {refused}");
+                            messages.Add(refused);
+                            break;
+                        }
+                        // The game may ask first (reading a book, a one-time unlock): this tool was called to use it, so answer Yes.
+                        var gone = await GameWindows.WaitFor(() =>
+                        {
+                            if (GameWindows.YesNoPrompt() is { } prompt)
+                            {
+                                messages.Add($"Answered Yes: {prompt}");
+                                GameWindows.AnswerYesNo(true);
+                                return false;
+                            }
+                            return Items.CountInBags(item.RowId) < before;
+                        }, TimeSpan.FromSeconds(15), ct).ConfigureAwait(false);
+                        if (!gone)
+                        {
+                            messages.Add("The game didn't use it (it is still in the bags).");
+                            break;
+                        }
+                        used++;
+                        await Task.Delay(800, ct).ConfigureAwait(false);
+                    }
+                    Svc.Log.Information($"[MCP] Used {used}x {name}");
+                    return new
+                    {
+                        item = name,
+                        used,
+                        requested = quantity,
+                        leftInBags = await Game.Run(() => Items.CountInBags(item.RowId)).ConfigureAwait(false),
+                        messages,
+                    };
+                }
+                finally { Gate.Release(); }
+            },
+        };
+    }
+
+    /// <summary>NQ and HQ count of an item in the bags, as the game counts them. Framework thread.</summary>
+    private static unsafe (int Nq, int Hq) CountNqHq(uint itemId)
+    {
+        var im = InventoryManager.Instance();
+        if (im == null) return (0, 0);
+        return (im->GetInventoryItemCount(itemId, false, false, false), im->GetInventoryItemCount(itemId, true, false, false));
+    }
+
+    /// <summary>
+    /// Uses an item action like a hotbar does, once the game allows it (waits up to 10 s, e.g. for a cast or teleport to end). Returns why
+    /// the game refused it, or null when it was sent.
+    /// </summary>
+    private static async Task<string?> UseOnce(uint actionId, CancellationToken ct)
+    {
+        await Game.RunLoggedIn(() => { EnsureNotBusy(); return true; }).ConfigureAwait(false);
+        var until = DateTime.UtcNow.AddSeconds(10);
+        uint status;
+        while (true)
+        {
+            status = await Game.Run(() =>
+            {
+                unsafe
+                {
+                    var am = ActionManager.Instance();
+                    var s = am->GetActionStatus(ActionType.Item, actionId);
+                    if (s == 0) am->UseAction(ActionType.Item, actionId, 0xE0000000, 65535);
+                    return s;
+                }
+            }).ConfigureAwait(false);
+            if (status == 0 || DateTime.UtcNow > until) break;
+            await Task.Delay(500, ct).ConfigureAwait(false);
+        }
+        if (status == 0) return null;
+        var why = await Game.Run(() => Svc.Data.GetExcelSheet<LogMessage>().GetRowOrDefault(status)?.Text.ExtractText()).ConfigureAwait(false);
+        return string.IsNullOrEmpty(why) ? $"the game refused it (action status {status})" : why;
     }
 
     internal sealed record MoveRequest(int Index, GameInventoryType? From, int? FromSlot, uint? ItemId, bool? Hq, GameInventoryType To, int? ToSlot, int? Quantity = null)

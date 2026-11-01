@@ -72,7 +72,7 @@ public static class PermissionCatalog
         ["items_retainers"] =
         [
             "get_retainers", "get_retainer_inventories", "get_fc_chest", "find_ventures",
-            "sort_inventory", "move_items", "open_retainer", "close_retainer", "transfer_retainer_items", "refresh_retainer_inventories",
+            "sort_inventory", "move_items", "use_item", "open_retainer", "close_retainer", "transfer_retainer_items", "refresh_retainer_inventories",
             "assign_venture", "recall_venture", "turn_in_collectables", "move_gil", "repair_submersible", "collect_submersible", "deploy_submersible", "recall_submersible", "dye_item", "equip_items", "retrieve_glamour_item",
         ],
         ["market"] =
