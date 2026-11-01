@@ -79,8 +79,12 @@ internal sealed class PluginCompat : IDisposable
     public const string FcchName = "FCCH";
     public static bool FcchLoaded => IsLoaded(FcchName);
 
-    /// <summary>True while FCCH (FC chest automation) is running a deposit/withdraw or otherwise can't take a command.</summary>
-    public static bool FcchBusy => FcchLoaded && Ipc<bool>("FCCH.IsBusy") == true;
+    /// <summary>
+    /// True while FCCH (FC chest automation) is running a deposit/withdraw or otherwise can't take a command. Not while visiting
+    /// another world: FCCH reports busy the whole time there (see <see cref="Integrations.FcchState"/>). Framework thread.
+    /// </summary>
+    public static bool FcchBusy => FcchLoaded && Integrations.FcchState.IsBusy(Ipc<bool>("FCCH.IsBusy") == true,
+        Svc.Objects.LocalPlayer?.CurrentWorld.RowId ?? 0, Svc.Objects.LocalPlayer?.HomeWorld.RowId ?? 0);
 
     /// <summary>Call before XIV MCP moves items: two plugins sending item moves at the same time confuse the server and each other.</summary>
     public static void EnsureFcchIdle()
