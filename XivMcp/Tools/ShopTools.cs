@@ -138,54 +138,55 @@ internal static class ShopTools
                     try
                     {
                         var window = await OpenShop(offer, args.String("menu_option"), steps, ct).ConfigureAwait(false);
-
-                        // Spending anything but gil is the player's decision; the shop window with the price is open right now.
-                        var isGil = window == "Shop";
-                        // A standing approval (request_spending_approval) replaces the popup for non-gil purchases; it is checked again per batch.
-                        Approvals.Approval? approval = null;
-                        if (!isGil && args.String("approval") is { } approvalId)
+                        try
                         {
-                            try { approval = Approvals.Get(approvalId, item.RowId, args.Caller?.ApprovalOwner ?? "assistant"); }
-                            catch { await CloseShop(ct).ConfigureAwait(false); throw; }
-                            steps.Add($"Using standing approval {approval.Id} ({approval.Remaining:N0} {Items.Name(approval.CurrencyId)} left).");
-                        }
-                        if (approval is null && (!isGil || (config.AskAboveGil > 0 && (long)(offer.GilPrice ?? 0) * quantity > config.AskAboveGil)))
-                        {
-                            var details = new List<string>
+                            // Spending anything but gil is the player's decision; the shop window with the price is open right now.
+                            var isGil = window == "Shop";
+                            // A standing approval (request_spending_approval) replaces the popup for non-gil purchases; it is checked again per batch.
+                            Approvals.Approval? approval = null;
+                            if (!isGil && args.String("approval") is { } approvalId)
                             {
-                                $"Buy {quantity}x {name} from {offer.Npc} ({Location(offer)})",
-                                isGil ? $"About {(long)(offer.GilPrice ?? 0) * quantity:N0} gil (you have {check.Gil:N0})"
-                                      : "This shop is not paid with gil: the price is shown in the shop window that is open now.",
-                            };
-                            steps.Add("Waiting for approval in game.");
-                            try
+                                approval = Approvals.Get(approvalId, item.RowId, args.Caller?.ApprovalOwner ?? "assistant");
+                                steps.Add($"Using standing approval {approval.Id} ({approval.Remaining:N0} {Items.Name(approval.CurrencyId)} left).");
+                            }
+                            if (approval is null && (!isGil || (config.AskAboveGil > 0 && (long)(offer.GilPrice ?? 0) * quantity > config.AskAboveGil)))
                             {
+                                var details = new List<string>
+                                {
+                                    $"Buy {quantity}x {name} from {offer.Npc} ({Location(offer)})",
+                                    isGil ? $"About {(long)(offer.GilPrice ?? 0) * quantity:N0} gil (you have {check.Gil:N0})"
+                                          : "This shop is not paid with gil: the price is shown in the shop window that is open now.",
+                                };
+                                steps.Add("Waiting for approval in game.");
                                 await Consent.Require(isGil ? $"Buy {name} for gil?" : $"Buy {name} with a non-gil currency?", details, ConsentTimeout, ct).ConfigureAwait(false);
+                                steps.Add("Approved in game.");
                             }
-                            catch
-                            {
-                                await CloseShop(ct).ConfigureAwait(false);
-                                throw;
-                            }
-                            steps.Add("Approved in game.");
-                        }
 
-                        var gilBefore = await Game.Run(Gil).ConfigureAwait(false);
-                        if (window == "InclusionShop") await ShowInInclusionShop(item.RowId, steps, ct).ConfigureAwait(false);
-                        var bought = await Purchase(item.RowId, quantity, offer, check.Before, steps, ct, approval).ConfigureAwait(false);
-                        await CloseShop(ct).ConfigureAwait(false);
-                        var after = await Game.Run(() => (Count: Items.CountInBags(item.RowId), Gil: Gil())).ConfigureAwait(false);
-                        return new
+                            var gilBefore = await Game.Run(Gil).ConfigureAwait(false);
+                            if (window == "InclusionShop") await ShowInInclusionShop(item.RowId, steps, ct).ConfigureAwait(false);
+                            var bought = await Purchase(item.RowId, quantity, offer, check.Before, steps, ct, approval).ConfigureAwait(false);
+                            await CloseShop(ct).ConfigureAwait(false);
+                            var after = await Game.Run(() => (Count: Items.CountInBags(item.RowId), Gil: Gil())).ConfigureAwait(false);
+                            return new
+                            {
+                                bought,
+                                requested = quantity,
+                                item = name,
+                                from = offer.Npc,
+                                paidWith = isGil ? "gil" : "non-gil currency (approved in game)",
+                                gilSpent = isGil ? gilBefore - after.Gil : (long?)null,
+                                nowInBags = after.Count,
+                                steps,
+                            };
+                        }
+                        catch
                         {
-                            bought,
-                            requested = quantity,
-                            item = name,
-                            from = offer.Npc,
-                            paidWith = isGil ? "gil" : "non-gil currency (approved in game)",
-                            gilSpent = isGil ? gilBefore - after.Gil : (long?)null,
-                            nowInBags = after.Count,
-                            steps,
-                        };
+                            // A refused purchase, a declined approval or a page that doesn't sell the item: don't leave the shop open
+                            // (the character stays busy and can't change gear until it closes).
+                            try { await CloseShop(CancellationToken.None).ConfigureAwait(false); }
+                            catch (Exception closeError) { Svc.Log.Warning(closeError, "Closing the shop after a failed purchase failed"); }
+                            throw;
+                        }
                     }
                     finally
                     {
