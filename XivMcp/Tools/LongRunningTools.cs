@@ -46,6 +46,7 @@ internal static class LongRunningTools
                     "list": { "type": "string", "description": "Existing GatherBuddy list (name or index) instead of items." },
                     "until": { "type": "array", "description": "Stop once the bags hold these instead of the gathered items' quantities.", "items": { "type": "object", "properties": { "item": { "type": "string" }, "quantity": { "type": "integer" } }, "required": ["item", "quantity"] } },
                     "restarts": { "type": "integer", "minimum": 0, "maximum": 200, "description": "How often to start GatherBuddy again when it switches itself off (default 20)." },
+                    "session_minutes": { "type": "integer", "minimum": 1, "description": "Gather for at most this long, then stop without failing (done=false), e.g. before a break; a later gather_until step carries on." },
                     "timeout_minutes": { "type": "integer", "description": "Give up after this long (default 600)." }
                   }
                 }
@@ -73,6 +74,7 @@ internal static class LongRunningTools
                         return true;
                     }).ConfigureAwait(false);
                 var maxRestarts = args.Int("restarts", 20, 0, 200);
+                TimeSpan? session = args.Node("session_minutes") is null ? null : TimeSpan.FromMinutes(args.Int("session_minutes", 60, 1, 24 * 60));
                 Dictionary<uint, int>? until = null;
                 if (args.Node("until") is JsonArray untilItems && untilItems.Count > 0)
                     until = await Game.Run(() => untilItems.OfType<JsonObject>().Select(o => new ToolArgs(o)).ToDictionary(
@@ -135,6 +137,8 @@ internal static class LongRunningTools
                         if (missing.Count == 0)
                             return new { done = true, gathered = Describe(goal, state.Have), restarts, minutes = Math.Round((DateTime.UtcNow - started).TotalMinutes, 1) };
                         if (state.Free == 0) throw new ToolException($"Bags are full; still missing {Missing(missing, state.Have)}.");
+                        if (session is { } s && DateTime.UtcNow - started > s)
+                            return new { done = false, session = "over", gathered = Describe(goal, state.Have), restarts, minutes = Math.Round((DateTime.UtcNow - started).TotalMinutes, 1) };
                         if (DateTime.UtcNow - started > timeout) throw new ToolException($"Timed out; still missing {Missing(missing, state.Have)}.");
                         if (!state.Running)
                         {
