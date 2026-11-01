@@ -204,35 +204,36 @@ internal static class FcChestTools
         if (!await Game.Run(() => GameWindows.Ready("FreeCompanyChest")).ConfigureAwait(false)) return failed;
         foreach (var page in pages)
         {
-            var before = await Game.Run(() => PageContents(page)).ConfigureAwait(false);
+            // While a tab loads, the window disables the other tabs: wait for them, then click, then wait until it has loaded.
+            await GameWindows.WaitFor(TabsIdle, TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
             if (!await Game.Run(() => SelectTab(page)).ConfigureAwait(false)) { failed.Add(page); continue; }
-            // The game answers within a moment; an unchanged tab can't be told apart from a slow answer, so wait a little either way.
-            var started = DateTime.UtcNow;
-            await GameWindows.WaitFor(() => PageContents(page) != before && DateTime.UtcNow - started > TimeSpan.FromMilliseconds(300),
-                TimeSpan.FromSeconds(1.5), ct).ConfigureAwait(false);
+            await Task.Delay(300, ct).ConfigureAwait(false);
+            await GameWindows.WaitFor(TabsIdle, TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
         }
         return failed;
     }
 
-    /// <summary>A fingerprint of a chest page's slots, to see when the game has sent it. Framework thread.</summary>
-    private static string PageContents(int page)
-    {
-        var sb = new System.Text.StringBuilder();
-        foreach (var item in Svc.Inventory.GetInventoryItems(ChestPages[page - 1]))
-            if (!item.IsEmpty) sb.Append(item.InventorySlot).Append(':').Append(item.ItemId).Append('x').Append(item.Quantity).Append(';');
-        return sb.ToString();
-    }
-
-    private static unsafe bool SelectTab(int page)
+    /// <summary>The chest window's item tab buttons, by page; null where the window doesn't show that tab. Framework thread.</summary>
+    private static unsafe FFXIVClientStructs.FFXIV.Component.GUI.AtkComponentButton* TabButton(int page)
     {
         var addon = GameWindows.Addon("FreeCompanyChest");
-        if (addon == null) return false;
+        if (addon == null) return null;
         var node = addon->GetNodeById(ChestTabs.TabNode(page));
-        if (node == null || (int)node->Type < 1000) return false;
+        if (node == null || (int)node->Type < 1000 || !node->IsVisible()) return null;
         var component = ((FFXIVClientStructs.FFXIV.Component.GUI.AtkComponentNode*)node)->Component;
-        if (component == null || component->GetComponentType() != FFXIVClientStructs.FFXIV.Component.GUI.ComponentType.RadioButton) return false;
-        return VentureTools.Click(addon, (FFXIVClientStructs.FFXIV.Component.GUI.AtkComponentButton*)component);
+        if (component == null || component->GetComponentType() != FFXIVClientStructs.FFXIV.Component.GUI.ComponentType.RadioButton) return null;
+        return (FFXIVClientStructs.FFXIV.Component.GUI.AtkComponentButton*)component;
     }
+
+    /// <summary>True when no tab is loading: every shown item tab can be clicked. Framework thread.</summary>
+    private static unsafe bool TabsIdle()
+    {
+        for (var page = 1; page <= ChestTabs.Pages; page++)
+            if (TabButton(page) is var b && b != null && !b->IsEnabled) return false;
+        return true;
+    }
+
+    private static unsafe bool SelectTab(int page) => VentureTools.Click(GameWindows.Addon("FreeCompanyChest"), TabButton(page));
 
     private sealed record Measurement(Dictionary<uint, long> Items, long BagTotal, uint PlayerGil);
 
