@@ -262,7 +262,7 @@ internal static class InventoryActionTools
         return false;
     }
 
-    private static async Task<bool> WaitForNoPendingOperation(TimeSpan timeout, CancellationToken ct)
+    internal static async Task<bool> WaitForNoPendingOperation(TimeSpan timeout, CancellationToken ct)
     {
         var deadline = DateTime.UtcNow + timeout;
         while (await Svc.Framework.RunOnFrameworkThread(HasPendingOperation).ConfigureAwait(false))

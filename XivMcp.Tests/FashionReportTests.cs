@@ -44,6 +44,25 @@ public class GearSlotTests
     }
 
     [Fact]
+    public void A_second_copy_of_a_ring_takes_the_ring_slot_without_it()
+    {
+        // Both ring slots wear old rings; the first Star Tech ring went into the left one. The second replaces the right one.
+        var ring = Category((11, 1), (12, 1));
+        Assert.Equal(GearSlots.RingRight, GearSlots.Target(ring, occupied: _ => true, holds: s => s == GearSlots.RingLeft));
+        Assert.Equal(GearSlots.RingLeft, GearSlots.Target(ring, occupied: _ => true, holds: s => s == GearSlots.RingRight));
+        // Both slots wear it already: nowhere left to put a third.
+        Assert.Null(GearSlots.Target(ring, occupied: _ => true, holds: _ => true));
+    }
+
+    [Fact]
+    public void Only_rings_can_be_worn_twice()
+    {
+        Assert.Equal(2, GearSlots.CopiesWearable(Category((11, 1), (12, 1))));
+        Assert.Equal(1, GearSlots.CopiesWearable(Category((3, 1))));
+        Assert.Equal(1, GearSlots.CopiesWearable(Category((0, 1), (1, -1))));
+    }
+
+    [Fact]
     public void Items_that_are_not_gear_have_no_slot()
     {
         Assert.Null(GearSlots.Target(Category()));

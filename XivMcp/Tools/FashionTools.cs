@@ -48,8 +48,8 @@ internal static class FashionTools
         yield return new McpTool
         {
             Name = "equip_items",
-            Description = "Puts on pieces of gear from the bags or the armoury chest, each into its slot (rings into a free ring slot), as if the " +
-                          "player equipped them. Checks that the current job and level can wear each one. Out of combat only. Requires 'Items & " +
+            Description = "Puts on pieces of gear from the bags or the armoury chest, each into its slot (rings into a free ring slot; name a ring " +
+                          "twice to wear it on both hands), as if the player equipped them, one after another as the server confirms each. Checks that the current job and level can wear each one. Out of combat only. Requires 'Items & " +
                           "retainers' in /xivmcp.",
             InputSchema = """
                 {
@@ -65,7 +65,13 @@ internal static class FashionTools
             {
                 var items = (args.Node("items")?.AsArray() ?? throw new ToolException("'items' is required.")).Select(n => n?.ToString() ?? "").ToList();
                 var done = new List<object>();
-                foreach (var item in items) done.Add(await Equip(item, ct).ConfigureAwait(false));
+                var asked = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                foreach (var item in items)
+                {
+                    // Naming a ring twice puts on two copies, one per hand.
+                    asked[item.Trim()] = asked.GetValueOrDefault(item.Trim()) + 1;
+                    done.Add(await Equip(item, ct, asked[item.Trim()]).ConfigureAwait(false));
+                }
                 return new { equipped = done };
             },
         };
@@ -415,27 +421,39 @@ internal static class FashionTools
 
     // ---------------------------------------------------------------- equipping
 
-    private static async Task<object> Equip(string query, CancellationToken ct)
+    /// <summary>
+    /// Puts on an item; <paramref name="copies"/> is how many of it should be worn afterwards (2 for a ring named twice). Waits for
+    /// the server to confirm the earlier inventory change first: a move sent while one is pending is dropped by the game.
+    /// </summary>
+    private static async Task<object> Equip(string query, CancellationToken ct, int copies = 1)
     {
-        var (itemId, name, target) = await Game.RunLoggedIn(() => PrepareEquip(query)).ConfigureAwait(false);
+        if (!await InventoryActionTools.WaitForNoPendingOperation(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
+            throw new ToolException("The game is still busy with an earlier inventory change.");
+        var (itemId, name, target, wanted) = await Game.RunLoggedIn(() => PrepareEquip(query, copies)).ConfigureAwait(false);
         if (target is null) return new { item = name, already = true };
-        if (!await WaitFor(() => IsEquipped(itemId), TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
+        if (!await WaitFor(() => WornCount(itemId) >= wanted, TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
             throw new ToolException($"{name} was not put on (the game may have refused it).");
+        await InventoryActionTools.WaitForNoPendingOperation(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
         return new { item = name, slot = target };
     }
 
-    /// <summary>Checks the item and moves it into its slot; returns the slot (null if it is worn already). Framework thread.</summary>
-    private static unsafe (uint ItemId, string Name, int? Slot) PrepareEquip(string query)
+    /// <summary>
+    /// Checks the item and moves it into its slot; returns the slot (null if enough copies are worn already) and how many copies
+    /// should be worn. Framework thread.
+    /// </summary>
+    private static unsafe (uint ItemId, string Name, int? Slot, int Wanted) PrepareEquip(string query, int copies)
     {
         var item = ResolveItem(query);
         var name = item.Name.ExtractText();
-        if (IsEquipped(item.RowId)) return (item.RowId, name, null);
-        if (Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InCombat]) throw new ToolException("Can't change gear during combat.");
         var category = item.EquipSlotCategory.ValueNullable ?? throw new ToolException($"{name} is not gear.");
         var flags = new[] { category.MainHand, category.OffHand, category.Head, category.Body, category.Gloves, category.Waist, category.Legs,
                             category.Feet, category.Ears, category.Neck, category.Wrists, category.FingerL, category.FingerR, category.SoulCrystal };
+        var wanted = Math.Clamp(copies, 1, GearSlots.CopiesWearable(flags));
+        if (WornCount(item.RowId) >= wanted) return (item.RowId, name, null, wanted);
+        if (Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InCombat]) throw new ToolException("Can't change gear during combat.");
         var equipped = InventoryManager.Instance()->GetInventoryContainer(InventoryType.EquippedItems);
-        var slot = GearSlots.Target(flags, s => equipped->GetInventorySlot(s)->ItemId != 0) ?? throw new ToolException($"{name} is not gear.");
+        var slot = GearSlots.Target(flags, s => equipped->GetInventorySlot(s)->ItemId != 0, s => equipped->GetInventorySlot(s)->ItemId == item.RowId)
+            ?? throw new ToolException($"{name} is not gear.");
 
         var player = Svc.Objects.LocalPlayer ?? throw new ToolException("Not logged in.");
         if (item.LevelEquip > player.Level) throw new ToolException($"{name} needs level {item.LevelEquip}; you are {player.Level}.");
@@ -445,7 +463,16 @@ internal static class FashionTools
 
         var from = Find(item.RowId) ?? throw new ToolException($"You don't carry {name} (bags or armoury chest).");
         InventoryManager.Instance()->MoveItemSlot(from.Container, (ushort)from.Slot, InventoryType.EquippedItems, (ushort)slot, true);
-        return (item.RowId, name, slot);
+        return (item.RowId, name, slot, wanted);
+    }
+
+    private static unsafe int WornCount(uint itemId)
+    {
+        var equipped = InventoryManager.Instance()->GetInventoryContainer(InventoryType.EquippedItems);
+        var count = 0;
+        for (var i = 0; equipped != null && i < equipped->Size; i++)
+            if (equipped->GetInventorySlot(i)->ItemId == itemId) count++;
+        return count;
     }
 
     // ---------------------------------------------------------------- glamour dresser and armoire

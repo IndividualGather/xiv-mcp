@@ -14,17 +14,27 @@ public static class GearSlots
     /// <summary>
     /// The slot an item goes in, from its EquipSlotCategory fields in sheet order (main hand … soul crystal; 1 = goes there, -1 =
     /// blocks it): the first field set to 1, which is the main slot of two-handed weapons and pieces covering several slots. Rings
-    /// take the right ring slot unless it is <paramref name="occupied"/>. Null for items that aren't gear.
+    /// take the right ring slot unless it is <paramref name="occupied"/>, and never the slot that <paramref name="holds"/> the same
+    /// ring already (a second copy replaces the other ring; null when both wear it). Null for items that aren't gear.
     /// </summary>
-    public static int? Target(IReadOnlyList<sbyte> category, Func<int, bool>? occupied = null)
+    public static int? Target(IReadOnlyList<sbyte> category, Func<int, bool>? occupied = null, Func<int, bool>? holds = null)
     {
         // The sheet lists the left ring before the right; the container has the right ring at 11.
-        if (category.Count > 12 && category[11] == 1 && category[12] == 1)
-            return occupied?.Invoke(RingRight) == true ? RingLeft : RingRight;
+        if (IsRing(category))
+        {
+            var free = new[] { RingRight, RingLeft }.Where(s => holds?.Invoke(s) != true).ToList();
+            if (free.Count == 0) return null;
+            return free.FirstOrDefault(s => occupied?.Invoke(s) != true, free[0]);
+        }
         for (var field = 0; field < category.Count && field < 14; field++)
             if (category[field] == 1) return field switch { 11 => RingLeft, 12 => RingRight, _ => field };
         return null;
     }
+
+    /// <summary>How many copies of an item can be worn at once: two of a ring (one per hand), one of anything else.</summary>
+    public static int CopiesWearable(IReadOnlyList<sbyte> category) => IsRing(category) ? 2 : 1;
+
+    private static bool IsRing(IReadOnlyList<sbyte> category) => category.Count > 12 && category[11] == 1 && category[12] == 1;
 
     /// <summary>A slot as fashion report guides name it ("weapon", "head", …, "ring").</summary>
     public static int FromName(string name) => name.Trim().ToLowerInvariant() switch
