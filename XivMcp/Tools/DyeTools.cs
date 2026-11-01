@@ -76,11 +76,13 @@ internal static class DyeTools
             throw new ToolException("The dye window did not open.");
 
         // 2. The channel, the color, Apply; then the confirmation.
-        await Game.Run(() => { Fire("ColorantColoring", channel == 2 ? [3] : [4, 0]); return true; }).ConfigureAwait(false);
+        // A color outside the open tab is ignored (the window keeps the color picked last), so the tab comes first.
+        if (channel == 2) { await Game.Run(() => { Fire("ColorantColoring", [3]); return true; }).ConfigureAwait(false); await Task.Delay(400, ct).ConfigureAwait(false); }
+        await Game.Run(() => { Fire("ColorantColoring", XivMcp.Gear.DyeWindow.PickTab(plan.Shade)); return true; }).ConfigureAwait(false);
         await Task.Delay(400, ct).ConfigureAwait(false);
-        await Game.Run(() => { Fire("ColorantColoring", [5, (int)plan.StainId, (int)plan.StainId, 0]); return true; }).ConfigureAwait(false);
+        await Game.Run(() => { Fire("ColorantColoring", XivMcp.Gear.DyeWindow.PickColor(plan.StainId, plan.SubOrder)); return true; }).ConfigureAwait(false);
         await Task.Delay(400, ct).ConfigureAwait(false);
-        await Game.Run(() => { Fire("ColorantColoring", [0]); return true; }).ConfigureAwait(false);
+        await Game.Run(() => { Fire("ColorantColoring", XivMcp.Gear.DyeWindow.Apply); return true; }).ConfigureAwait(false);
         if (!await WaitFor(() => RetainerUi.Ready("MiragePrismMiragePlateConfirm"), TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
         {
             await Game.Run(CloseDyeWindow).ConfigureAwait(false);
@@ -95,7 +97,7 @@ internal static class DyeTools
         return new { item = plan.ItemName, dye = plan.StainName, channel, changed = true, used = plan.DyeItemName };
     }
 
-    private sealed record DyePlan(InventoryType Container, int Slot, uint ItemId, string ItemName, uint StainId, string StainName, string DyeItemName, bool AlreadyDyed);
+    private sealed record DyePlan(InventoryType Container, int Slot, uint ItemId, string ItemName, uint StainId, int Shade, int SubOrder, string StainName, string DyeItemName, bool AlreadyDyed);
 
     /// <summary>Finds the item and the color, and checks the channel and the dye item. Framework thread.</summary>
     private static unsafe DyePlan Plan(string itemQuery, string dyeQuery, int channel)
@@ -125,6 +127,8 @@ internal static class DyeTools
         try { stain = NameMatch.Single(Svc.Data.GetExcelSheet<Stain>().Where(s => s.RowId != 0 && !s.Name.IsEmpty), dyeQuery, s => s.Name.ExtractText()); }
         catch (ArgumentException ex) { throw new ToolException($"{ex.Message} (dye colors as the game names them, e.g. Soot Black)"); }
         var stainName = stain.Name.ExtractText();
+        try { XivMcp.Gear.DyeWindow.PickTab(stain.Shade); }
+        catch (ArgumentOutOfRangeException) { throw new ToolException($"{stainName} isn't in a dye window tab XIV MCP knows."); }
         var current = im->GetInventoryContainer(where)->GetInventorySlot(index)->GetStain(channel - 1);
         var dyeItems = stain.Item.Where(i => i.RowId != 0).Select(i => i.RowId).ToList();
         var have = dyeItems.FirstOrDefault(i => im->GetInventoryItemCount(i) > 0);
@@ -134,7 +138,7 @@ internal static class DyeTools
             throw new ToolException($"Dyeing {stainName} needs {(needed ?? "a dye")} in your bags.");
         }
         var dyeName = have != 0 ? items.GetRowOrDefault(have)?.Name.ExtractText() ?? "" : "";
-        return new DyePlan(where, index, item.RowId, name, stain.RowId, stainName, dyeName, current == stain.RowId);
+        return new DyePlan(where, index, item.RowId, name, stain.RowId, stain.Shade, stain.SubOrder, stainName, dyeName, current == stain.RowId);
     }
 
     private static unsafe byte CurrentStain(InventoryType container, int slot, uint itemId, int channel)
