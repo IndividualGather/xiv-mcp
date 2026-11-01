@@ -60,8 +60,15 @@ internal static class Gearsets
         };
     }
 
-    /// <summary>Equips a gearset and waits until the game has switched to its job.</summary>
-    public static async Task<Set> Switch(string query, CancellationToken ct)
+    /// <summary>Addon rows of the game's "… registered to this gear set could not be found … Replace it with …?" prompt.</summary>
+    private static readonly uint[] ReplaceMissingPrompts = [4384, 4385];
+
+    /// <summary>
+    /// Equips a gearset and waits until the game has switched to its job. When an item of the set is missing, the game asks
+    /// whether to replace it with another one it found: <paramref name="replaceMissing"/> answers Yes (the default, like the
+    /// player usually does) or No; what was asked lands in <paramref name="steps"/>. Any other prompt stops with its text.
+    /// </summary>
+    public static async Task<Set> Switch(string query, CancellationToken ct, bool replaceMissing = true, List<string>? steps = null)
     {
         var set = await Game.RunLoggedIn(() =>
         {
@@ -71,12 +78,27 @@ internal static class Gearsets
         }).ConfigureAwait(false);
         if (set.Current && await Game.Run(CurrentJob).ConfigureAwait(false) == set.JobId) return set;
 
-        var result = await Game.Run(() => { unsafe { return RaptureGearsetModule.Instance()->EquipGearset(set.Number - 1); } }).ConfigureAwait(false);
-        if (result < 0) throw new ToolException($"The game refused to equip gearset {set.Number} ({set.Name}).");
+        var templates = await Game.Run(() => ReplaceMissingPrompts.Select(GameWindows.TemplatePieces).ToList()).ConfigureAwait(false);
+        bool AsksToReplace(string? p) => p is not null && templates.Any(t => Ui.PromptTemplate.Matches(p, t));
+        // An earlier attempt may have left the prompt open: answering it finishes that switch instead of starting another.
+        if (!AsksToReplace(await Game.Run(GameWindows.YesNoPrompt).ConfigureAwait(false)))
+        {
+            var result = await Game.Run(() => { unsafe { return RaptureGearsetModule.Instance()->EquipGearset(set.Number - 1); } }).ConfigureAwait(false);
+            if (result < 0) throw new ToolException($"The game refused to equip gearset {set.Number} ({set.Name}).");
+        }
+        var answered = 0;
         for (var i = 0; i < 40; i++)
         {
-            await Task.Delay(250, ct).ConfigureAwait(false);
+            if (i > 0) await Task.Delay(250, ct).ConfigureAwait(false);
             if (await Game.Run(CurrentJob).ConfigureAwait(false) == set.JobId) return set with { Current = true };
+            var prompt = await Game.Run(GameWindows.YesNoPrompt).ConfigureAwait(false);
+            if (prompt is null) continue;
+            if (!AsksToReplace(prompt))
+                throw new ToolException($"Equipping gearset {set.Number} ({set.Name}) shows a prompt: \"{prompt}\". Answer it with select_menu_option (\"Yes\" or \"No\").");
+            if (++answered > 14) throw new ToolException($"The game keeps asking \"{prompt}\" while equipping gearset {set.Number} ({set.Name}).");
+            await Game.Run(() => { GameWindows.AnswerYesNo(replaceMissing); return true; }).ConfigureAwait(false);
+            steps?.Add($"The game asked: \"{prompt}\" Answered {(replaceMissing ? "Yes" : "No")}.");
+            i = 0; // the job changes after the answer (one prompt per missing item at most)
         }
         throw new ToolException($"Equipped gearset {set.Number} ({set.Name}), but the job did not change to {set.Job}.");
     }

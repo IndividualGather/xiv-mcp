@@ -20,6 +20,45 @@ internal static class GameWindows
         .Select(r => Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Addon>().GetRowOrDefault(r)?.Text.ExtractText().Trim())
         .Where(t => !string.IsNullOrEmpty(t)).Select(t => t!).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// The fixed text pieces of an Addon sheet row, in the client's language: the parts between its placeholders (item names,
+    /// numbers). Match a prompt against them with <see cref="Ui.PromptTemplate"/>.
+    /// </summary>
+    public static IReadOnlyList<string> TemplatePieces(uint row)
+    {
+        var pieces = new List<string> { "" };
+        if (Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Addon>().GetRowOrDefault(row) is not { } addon) return pieces;
+        foreach (var payload in addon.Text)
+        {
+            if (payload.Type == Lumina.Text.ReadOnly.ReadOnlySePayloadType.Text)
+                pieces[^1] += System.Text.Encoding.UTF8.GetString(payload.Body.Span);
+            else if (pieces[^1].Length > 0)
+                pieces.Add("");
+        }
+        return pieces;
+    }
+
+    /// <summary>The text of the Yes/No prompt that is open and ready, or null. Framework thread.</summary>
+    public static unsafe string? YesNoPrompt()
+    {
+        if (!RetainerUi.Ready("SelectYesno")) return null;
+        var yesno = (FFXIVClientStructs.FFXIV.Client.UI.AddonSelectYesno*)Addon("SelectYesno");
+        if (yesno == null || yesno->PromptText == null) return "";
+        return Dalamud.Game.Text.SeStringHandling.SeString.Parse(yesno->PromptText->NodeText).TextValue;
+    }
+
+    /// <summary>Answers the open Yes/No prompt like a click on Yes or No. Framework thread.</summary>
+    public static unsafe void AnswerYesNo(bool yes)
+    {
+        if (!RetainerUi.Ready("SelectYesno")) throw new ToolException("No Yes/No prompt is open.");
+        var addon = Addon("SelectYesno");
+        var value = stackalloc AtkValue[1];
+        value[0] = default;
+        value[0].Type = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.Int;
+        value[0].Int = yes ? 0 : 1;
+        addon->FireCallback(1, value, true);
+    }
+
     public static bool Ready(string addon) => RetainerUi.Ready(addon);
 
     public static unsafe AtkUnitBase* Addon(string name) => (AtkUnitBase*)RetainerUi.Ptr(name).Address;

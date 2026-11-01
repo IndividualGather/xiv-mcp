@@ -317,10 +317,12 @@ internal static class InteractionTools
         {
             Name = "get_menu",
             Description = "Shows the choice menu the game currently displays after an interaction (e.g. the voyage control panel's " +
-                          "\"Submersible management\" / \"Airship management\", or an NPC's options), and whether a dialogue text box is waiting for a click.",
+                          "\"Submersible management\" / \"Airship management\", or an NPC's options), the question of an open Yes/No " +
+                          "prompt, and whether a dialogue text box is waiting for a click.",
             Handler = (_, _) => Game.RunLoggedIn<object?>(() => new
             {
                 menu = ShopTools.MenuEntries(out _)?.Select((text, index) => new { index, text }).ToList(),
+                yesNoPrompt = GameWindows.YesNoPrompt(),
                 dialogueWaiting = RetainerUi.Ready("Talk"),
                 openWindows = VisibleAddons(),
             }),
@@ -330,7 +332,8 @@ internal static class InteractionTools
         {
             Name = "select_menu_option",
             Description = "Selects an entry of the currently open choice menu (see get_menu) by its text or index, like clicking it, " +
-                          "or advances a waiting dialogue text box (advance_dialogue=true). Requires 'Game & navigation' in /xivmcp.",
+                          "answers an open Yes/No prompt (option \"Yes\" or \"No\"), or advances a waiting dialogue text box " +
+                          "(advance_dialogue=true). Requires 'Game & navigation' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
@@ -358,6 +361,20 @@ internal static class InteractionTools
 
                 var option = args.String("option") ?? throw new ToolException("Give 'option' (text or index) or advance_dialogue=true.");
                 var before = await Svc.Framework.RunOnFrameworkThread(VisibleAddons).ConfigureAwait(false);
+                if (option.Trim().ToLowerInvariant() is "yes" or "no"
+                    && await Game.RunLoggedIn(GameWindows.YesNoPrompt).ConfigureAwait(false) is { } prompt)
+                {
+                    var yes = option.Trim().Equals("yes", StringComparison.OrdinalIgnoreCase);
+                    await Game.Run(() => { GameWindows.AnswerYesNo(yes); return true; }).ConfigureAwait(false);
+                    await WaitFor(() => !VisibleAddons().SequenceEqual(before), TimeSpan.FromSeconds(3), ct).ConfigureAwait(false);
+                    await Task.Delay(300, ct).ConfigureAwait(false);
+                    return await Svc.Framework.RunOnFrameworkThread(() => (object?)new
+                    {
+                        prompt,
+                        answered = yes ? "Yes" : "No",
+                        openWindows = VisibleAddons(),
+                    }).ConfigureAwait(false);
+                }
                 var selected = await Game.RunLoggedIn(() =>
                 {
                     var entries = ShopTools.MenuEntries(out var menuAddon) ?? throw new ToolException("No menu is open. Use interact_with_object first.");

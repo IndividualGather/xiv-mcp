@@ -39,12 +39,16 @@ internal static class GearsetTools
         {
             Name = "switch_gearset",
             Description = "Changes job by equipping a gearset, like clicking it in the Gear Set list: give its number, name or a job " +
-                          "(\"WAR\", \"Warrior\"; the highest item level set of that job). Not in combat, while crafting or gathering. " +
-                          "Needs 'Game & navigation' in /xivmcp.",
+                          "(\"WAR\", \"Warrior\"; the highest item level set of that job). When an item of the set is missing, the game " +
+                          "asks whether to replace it with another it found; replace_missing answers that (default Yes). Not in combat, " +
+                          "while crafting or gathering. Needs 'Game & navigation' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
-                  "properties": { "gearset": { "type": "string", "description": "Gearset number, name or job." } },
+                  "properties": {
+                    "gearset": { "type": "string", "description": "Gearset number, name or job." },
+                    "replace_missing": { "type": "boolean", "description": "Answer Yes when the game offers to replace a missing item of the set (default true)." }
+                  },
                   "required": ["gearset"]
                 }
                 """,
@@ -53,11 +57,14 @@ internal static class GearsetTools
             {
                 if (!config.AllowGameNavigation)
                     throw new ToolException("Switching gearsets is disabled. Enable \"Game & navigation\" in the XIV MCP settings window (/xivmcp) in game.");
-                var set = await Gearsets.Switch(args.String("gearset") ?? throw new ToolException("Give 'gearset'."), ct).ConfigureAwait(false);
+                var steps = new List<string>();
+                var set = await Gearsets.Switch(args.String("gearset") ?? throw new ToolException("Give 'gearset'."), ct,
+                    args.Bool("replace_missing", true), steps).ConfigureAwait(false);
                 return new
                 {
                     equipped = set.Number, name = set.Name, job = set.Job, itemLevel = set.ItemLevel,
-                    warning = set.MissingItems > 0 ? $"{set.MissingItems} item(s) of this set are not in your inventory." : null,
+                    warning = set.MissingItems > 0 && steps.Count == 0 ? $"{set.MissingItems} item(s) of this set are not in your inventory." : null,
+                    steps = steps.Count > 0 ? steps : null,
                 };
             },
         };
