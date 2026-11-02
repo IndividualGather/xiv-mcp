@@ -17,6 +17,7 @@ namespace XivMcp.Tools;
 internal static class LongRunningTools
 {
     private const string TempGatherList = "MCP job";
+    private const string TempFallbackList = "MCP job fallback";
 
     public static IEnumerable<McpTool> Create(Configuration config)
     {
@@ -44,6 +45,7 @@ internal static class LongRunningTools
                   "properties": {
                     "items": { "type": "array", "items": { "type": "object", "properties": { "item": { "type": "string" }, "quantity": { "type": "integer" } }, "required": ["item", "quantity"] } },
                     "list": { "type": "string", "description": "Existing GatherBuddy list (name or index) instead of items." },
+                    "fallback": { "type": "array", "description": "Items GatherBuddy only gathers while nothing from 'items' can be (its fallback list), e.g. a fish between the windows of timed nodes. Quantity defaults to 9999.", "items": { "type": "object", "properties": { "item": { "type": "string" }, "quantity": { "type": "integer" } }, "required": ["item"] } },
                     "until": { "type": "array", "description": "Stop once the bags hold these instead of the gathered items' quantities.", "items": { "type": "object", "properties": { "item": { "type": "string" }, "quantity": { "type": "integer" } }, "required": ["item", "quantity"] } },
                     "restarts": { "type": "integer", "minimum": 0, "maximum": 200, "description": "How often to start GatherBuddy again when it switches itself off (default 20)." },
                     "session_minutes": { "type": "integer", "minimum": 1, "description": "Gather for at most this long, then stop without failing (done=false), e.g. before a break; a later gather_until step carries on." },
@@ -81,6 +83,17 @@ internal static class LongRunningTools
                         a => Items.Resolve(a.String("item") ?? throw new ToolException("Each 'until' entry needs 'item'.")).RowId,
                         a => a.Int("quantity", 1, 1, 99999))).ConfigureAwait(false);
 
+                // Fallback items go into a list of their own that GatherBuddy only works on while nothing from the main list can be
+                // gathered (e.g. a fish between the windows of timed nodes).
+                var fallback = new Dictionary<uint, int>();
+                if (args.Node("fallback") is JsonArray fallbackItems && fallbackItems.Count > 0)
+                    await Game.Run(() =>
+                    {
+                        foreach (var a in fallbackItems.OfType<JsonObject>().Select(o => new ToolArgs(o)))
+                            fallback[CraftGatherTools.ResolveGatherable(a.String("item") ?? throw new ToolException("Each 'fallback' entry needs 'item'."))] = a.Int("quantity", 9999, 1, 99999);
+                        return true;
+                    }).ConfigureAwait(false);
+
                 List<string> restore = [];
                 string? usedList = null;
                 await PluginTools.ModifyPluginJson(CraftGatherTools.GatherBuddy, CraftGatherTools.GatherListsFile, root =>
@@ -107,12 +120,27 @@ internal static class LongRunningTools
                         list["EnabledItems"] = new JsonObject(targets.Select(t => new KeyValuePair<string, JsonNode?>(t.Key.ToString(), JsonValue.Create(true))));
                     }
                     usedList = list["Name"]?.ToString();
-                    foreach (var other in lists.OfType<JsonObject>().Where(l => l != list && l["Enabled"]?.GetValue<bool>() == true))
+                    JsonObject? fallbackList = null;
+                    if (fallback.Count > 0)
+                    {
+                        fallbackList = lists.OfType<JsonObject>().FirstOrDefault(l => l["Name"]?.ToString() == TempFallbackList) ?? new JsonObject
+                        {
+                            ["PrefferedLocations"] = new JsonObject(), ["Name"] = TempFallbackList, ["Description"] = "Created by an XIV MCP job; removed when done.",
+                            ["FolderPath"] = "MCP", ["Order"] = lists.Count, ["RemoveCompletedItems"] = false,
+                        };
+                        if (!lists.Contains(fallbackList)) lists.Add(fallbackList);
+                        fallbackList["Fallback"] = true;
+                        fallbackList["ItemIds"] = new JsonArray(fallback.Keys.Select(k => (JsonNode)JsonValue.Create(k)).ToArray());
+                        fallbackList["Quantities"] = new JsonObject(fallback.Select(t => new KeyValuePair<string, JsonNode?>(t.Key.ToString(), JsonValue.Create(t.Value))));
+                        fallbackList["EnabledItems"] = new JsonObject(fallback.Select(t => new KeyValuePair<string, JsonNode?>(t.Key.ToString(), JsonValue.Create(true))));
+                    }
+                    foreach (var other in lists.OfType<JsonObject>().Where(l => l != list && l != fallbackList && l["Enabled"]?.GetValue<bool>() == true))
                     {
                         restore.Add(other["Name"]?.ToString() ?? "");
                         other["Enabled"] = false;
                     }
                     list["Enabled"] = true;
+                    if (fallbackList is not null) fallbackList["Enabled"] = true;
                     return root;
                 }).ConfigureAwait(false);
                 if (targets.Count == 0) throw new ToolException("Nothing to gather (the list has no enabled items).");
@@ -177,6 +205,7 @@ internal static class LongRunningTools
                                 else if (l["Name"]?.ToString() == usedList && listArg is not null) l["Enabled"] = false;
                             }
                             if (listArg is null && lists.OfType<JsonObject>().FirstOrDefault(l => l["Name"]?.ToString() == TempGatherList) is { } temp) lists.Remove(temp);
+                            if (lists.OfType<JsonObject>().FirstOrDefault(l => l["Name"]?.ToString() == TempFallbackList) is { } tempFallback) lists.Remove(tempFallback);
                             return root;
                         }).ConfigureAwait(false);
                     }

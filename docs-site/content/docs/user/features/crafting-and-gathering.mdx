@@ -14,7 +14,7 @@ Planning works on its own. Crafting and gathering go through **Artisan** and **G
 | `prepare_craft_plan` | Creates the Artisan list in the right order and works out each recipe's steps ahead of time with **Raphael** (the crafting solver built into Artisan), with the exact stats Artisan will use | Artisan |
 | `run_crafting_list` | Runs an Artisan list to the end and reports what was crafted | Artisan |
 | `get_gather_lists` / `set_gather_list` / `delete_gather_list` / `set_auto_gather` | GatherBuddy Reborn's auto-gather lists, and auto-gather on or off | GatherBuddy Reborn |
-| `gather_until` | Gathers until your bags hold the target quantities. Your other lists are paused and restored afterwards. It can also stop on something else in your bags, such as the aethersand that GatherBuddy reduces collectables into. If GatherBuddy turns itself off between timed node windows, it is started again. A session length ends the step without failing, so a job can take breaks between `gather_until` steps. | GatherBuddy Reborn |
+| `gather_until` | Gathers until your bags hold the target quantities. Your other lists are paused and restored afterwards. It can also stop on something else in your bags, such as the aethersand that GatherBuddy reduces collectables into. If GatherBuddy turns itself off between timed node windows, it is started again. A session length ends the step without failing, so a job can take breaks between `gather_until` steps. Fallback items, such as a fish, are only gathered while nothing else on the list can be, for example between timed node windows. | GatherBuddy Reborn |
 
 ## Filling the bags
 
