@@ -132,3 +132,29 @@ public class VoyageProgressTests
         Assert.Empty(VoyageProgress.Between(State(3, [], []), after).RankUps);
     }
 }
+
+public class VesselStateTests
+{
+    [Fact]
+    public void A_vessel_that_is_back_is_collected_and_redeployed()
+    {
+        Assert.True(VesselState.ToCollect(onVoyage: false, hasReturnTime: true));
+        Assert.True(VesselState.ToRedeploy(onVoyage: false, hasReturnTime: true, previousPoints: 2));
+    }
+
+    [Fact]
+    public void A_collected_vessel_keeps_its_last_route_and_is_redeployed()
+    {
+        // Finishing the voyage clears its return time, but the previous voyage log stays.
+        Assert.False(VesselState.ToCollect(onVoyage: false, hasReturnTime: false));
+        Assert.True(VesselState.ToRedeploy(onVoyage: false, hasReturnTime: false, previousPoints: 3));
+    }
+
+    [Fact]
+    public void A_vessel_out_on_a_voyage_or_never_sent_is_left_alone()
+    {
+        Assert.False(VesselState.ToCollect(onVoyage: true, hasReturnTime: true));
+        Assert.False(VesselState.ToRedeploy(onVoyage: true, hasReturnTime: true, previousPoints: 2));
+        Assert.False(VesselState.ToRedeploy(onVoyage: false, hasReturnTime: false, previousPoints: 0));
+    }
+}

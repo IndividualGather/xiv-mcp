@@ -183,7 +183,7 @@ internal static class SubmarineTools
                           "are read on the sea of its last voyage, so name a point to change seas) or id (up to 5, one sea, " +
                           "unlocked and within its rank; get_submersibles lists the sectors). A submersible that is back is first " +
                           "finalized (its loot is collected), and parts below 'repair_below' percent are repaired first (default 20; 0: " +
-                          "never). Without 'submersible', every submersible that is back is redeployed on its previous route. Uses " +
+                          "never). Without 'submersible', every submersible that is back or was just collected is redeployed on its previous route. Uses " +
                           "Ceruleum Tanks as fuel. The character must stand at the voyage control panel (navigate_to destination " +
                           "workshop). The route is checked after the voyage is finished, against the rank and sectors it brought; the result " +
                           "lists rank-ups and new sectors. To choose a new route with those in mind, run collect_submersible first. " +
@@ -192,7 +192,7 @@ internal static class SubmarineTools
                 {
                   "type": "object",
                   "properties": {
-                    "submersible": { "type": "string", "description": "The submersible's name (default: every one that is back)." },
+                    "submersible": { "type": "string", "description": "The submersible's name (default: every one that is back or was just collected)." },
                     "route": {
                       "description": "\"previous\", or the points of a new route.",
                       "oneOf": [ { "type": "string", "enum": ["previous"] }, { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 5 } ]
@@ -214,7 +214,7 @@ internal static class SubmarineTools
                 try
                 {
                     await LoadVessels(ct).ConfigureAwait(false);
-                    var vessels = await Game.Run(() => name is null ? Returned() : [FindVessel(name)]).ConfigureAwait(false);
+                    var vessels = await Game.Run(() => name is null ? Redeployable() : [FindVessel(name)]).ConfigureAwait(false);
                     if (vessels.Count == 0) throw await Game.Run(NoneReturned).ConfigureAwait(false);
                     var before = await Game.Run(Fleet).ConfigureAwait(false);
                     var results = new List<object>();
@@ -347,8 +347,15 @@ internal static class SubmarineTools
                ?? throw new ToolException($"No submersible named '{name}'. The free company has: {string.Join(", ", all.Select(v => v.Name))}.");
     }
 
-    /// <summary>The submersibles that are back and have been out (a new one without a previous route is left alone).</summary>
-    private static List<Vessel> Returned() => Vessels().Where(v => !v.OnVoyage && v.Returns != DateTime.MinValue).ToList();
+    /// <summary>The submersibles that are back from a voyage that wasn't finished at the panel yet.</summary>
+    private static List<Vessel> Returned() => Vessels().Where(v => VesselState.ToCollect(v.OnVoyage, v.Returns != DateTime.MinValue)).ToList();
+
+    /// <summary>
+    /// The submersibles to send out on their previous route: back, or collected already (finishing a voyage clears its return time);
+    /// one that was never sent has no route and is left alone.
+    /// </summary>
+    private static List<Vessel> Redeployable() =>
+        Vessels().Where(v => VesselState.ToRedeploy(v.OnVoyage, v.Returns != DateTime.MinValue, v.Points.Length)).ToList();
 
     /// <summary>Thrown when no submersible is back; names the idle ones (voyage finished already, or never sent), which only go out by name.</summary>
     private static ToolException NoneReturned()

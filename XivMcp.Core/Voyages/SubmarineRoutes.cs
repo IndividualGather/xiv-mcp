@@ -92,3 +92,17 @@ public static class VesselRepair
             ? (used, available) : null;
     }
 }
+
+/// <summary>Which submersibles the panel tools act on when none is named.</summary>
+public static class VesselState
+{
+    /// <summary>Back from a voyage that hasn't been finished at the panel yet (its loot waits).</summary>
+    public static bool ToCollect(bool onVoyage, bool hasReturnTime) => !onVoyage && hasReturnTime;
+
+    /// <summary>
+    /// Not out, and with a route to repeat: back from a voyage, or already collected (finishing the voyage clears the return time,
+    /// the previous voyage log stays). A submersible that was never sent has no route to repeat.
+    /// </summary>
+    public static bool ToRedeploy(bool onVoyage, bool hasReturnTime, int previousPoints) =>
+        !onVoyage && (hasReturnTime || previousPoints > 0);
+}
