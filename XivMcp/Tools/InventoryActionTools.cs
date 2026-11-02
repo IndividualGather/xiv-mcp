@@ -169,6 +169,7 @@ internal static class InventoryActionTools
                           "item_id": { "type": "integer", "description": "Alternative to from_slot: move the first stack of this item." },
                           "quantity": { "type": "integer", "minimum": 1, "description": "Move only this many of the stack (default: the whole stack). Not for crystals." },
                           "hq": { "type": "boolean", "description": "With item_id: only HQ (true) or only NQ (false) stacks." },
+                          "if_at_least": { "type": "integer", "minimum": 1, "description": "Only move when the source stack holds at least this many; otherwise the move is skipped (not failed). E.g. crystals near the cap, as a job step." },
                           "to_container": { "type": "string" },
                           "to_slot": { "type": "integer", "description": "0-based target slot; omit for the first empty slot." }
                         },
@@ -209,14 +210,14 @@ internal static class InventoryActionTools
                             await Task.Delay(pause, ct).ConfigureAwait(false);
                         }
                     }
-                    var moved = results.Cast<MoveResult>().Count(r => r.Ok);
+                    var moved = results.Cast<MoveResult>().Count(r => r.Ok && r.Status != "skipped");
                     Svc.Log.Information($"[MCP] Moved {moved}/{requests.Count} item(s)");
                     return new
                     {
                         requested = requests.Count,
                         moved,
                         failed = results.Cast<MoveResult>().Count(r => !r.Ok),
-                        skipped = requests.Count - results.Count,
+                        skipped = requests.Count - results.Count + results.Cast<MoveResult>().Count(r => r.Status == "skipped"),
                         seconds = Math.Round(sw.Elapsed.TotalSeconds, 1),
                         pauseBetweenMoves = config.MoveDelayDescription,
                         pausesMs = pauses,
@@ -354,7 +355,10 @@ internal static class InventoryActionTools
         return string.IsNullOrEmpty(why) ? $"the game refused it (action status {status})" : why;
     }
 
-    internal sealed record MoveRequest(int Index, GameInventoryType? From, int? FromSlot, uint? ItemId, bool? Hq, GameInventoryType To, int? ToSlot, int? Quantity = null)
+    /// <summary>A move whose 'if_at_least' isn't met: reported as skipped, not as a failure.</summary>
+    private sealed class SkipMove(string message) : Exception(message);
+
+    internal sealed record MoveRequest(int Index, GameInventoryType? From, int? FromSlot, uint? ItemId, bool? Hq, GameInventoryType To, int? ToSlot, int? Quantity = null, int? IfAtLeast = null)
     {
         public static MoveRequest Parse(JsonObject? m, int index)
         {
@@ -369,7 +373,8 @@ internal static class InventoryActionTools
             var hq = m.ContainsKey("hq") ? a.Bool("hq", false) : (bool?)null;
             var toSlot = m.ContainsKey("to_slot") ? a.Int("to_slot", -1) : (int?)null;
             var quantity = m.ContainsKey("quantity") ? a.Int("quantity", 1, 1, 999_999) : (int?)null;
-            return new MoveRequest(index, from, fromSlot, itemId, hq, to, toSlot, quantity);
+            var ifAtLeast = m.ContainsKey("if_at_least") ? a.Int("if_at_least", 1, 1, 999_999) : (int?)null;
+            return new MoveRequest(index, from, fromSlot, itemId, hq, to, toSlot, quantity, ifAtLeast);
         }
     }
 
@@ -439,6 +444,8 @@ internal static class InventoryActionTools
                 EnsureContainerUsable(to);
 
                 var src = Slot(from, fromSlot);
+                if (req.IfAtLeast is { } least && (src.IsEmpty || src.Quantity < least))
+                    throw new SkipMove($"{(src.IsEmpty ? 0 : src.Quantity)} there, fewer than {least}");
                 if (src.IsEmpty) throw new ToolException($"{from}[{fromSlot}] is empty.");
 
                 var dstItems = Svc.Inventory.GetInventoryItems(to);
@@ -461,6 +468,10 @@ internal static class InventoryActionTools
                 return ((GameInventoryType, int, GameInventoryType, int, uint, int, uint, int, string?)?)
                     (from, fromSlot, to, toSlot, src.ItemId, src.Quantity, dst.ItemId, dst.Quantity, InventoryTools.ItemName(src.BaseItemId));
             }).ConfigureAwait(false);
+        }
+        catch (SkipMove skip)
+        {
+            return new MoveResult(req.Index, true, "skipped", null, null, null, skip.Message);
         }
         catch (ToolException ex)
         {
