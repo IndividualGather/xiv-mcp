@@ -35,7 +35,7 @@ internal static class QuestionableTools
         yield return new McpTool
         {
             Name = "get_questing_status",
-            Description = "What Questionable is doing: whether it runs, its current quest, its priority list, the next main scenario quest, " +
+            Description = "What Questionable is doing: whether it runs, the task it is on and the ones queued after it, its current quest, its priority list, the next main scenario quest, " +
                           "the allied society (beast tribe) allowances left today, and the reputation with each allied society.",
             Handler = (_, _) => Game.RunLoggedIn<object?>(Status),
         };
@@ -325,7 +325,8 @@ internal static class QuestionableTools
                     if (s.Running && stall.Stalled(DateTime.UtcNow, s.Position, s.Busy))
                     {
                         if (++restarts > MaxRestarts)
-                            throw new ToolException($"Questionable made no progress on {first.Name} after {MaxRestarts} restarts." + chat.Said);
+                            throw new ToolException($"Questionable made no progress on {first.Name} after {MaxRestarts} restarts." + chat.Said +
+                                                    await Game.Run(StuckOn).ConfigureAwait(false));
                         var again = s.Current is { Length: > 0 } cur && ids.Contains(cur) ? cur : first.QuestionableId;
                         Svc.Log.Information($"[MCP] Questionable made no progress for {StallLimit.TotalMinutes:0} minutes; restarting it on quest {again} ({restarts}/{MaxRestarts}).");
                         await StopAfterFight(ct).ConfigureAwait(false);
@@ -455,19 +456,11 @@ internal static class QuestionableTools
     /// </summary>
     private static bool MarkAcceptOnly(IReadOnlyList<QuestInfo> quests)
     {
-        const System.Reflection.BindingFlags any = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
         try
         {
-            var local = DalamudInternals.Find(PluginId);
-            // Dalamud keeps it in LocalPlugin's private "instance" field (typed object); dev plugins derive from LocalPlugin.
-            var plugin = PluginInstance(local)
-                         ?? throw new InvalidOperationException("no plugin instance");
-            var services = plugin.GetType().GetField("_serviceProvider", any)?.GetValue(plugin) as IServiceProvider
-                           ?? throw new InvalidOperationException("no service provider");
-            var controllerType = plugin.GetType().Assembly.GetType("Questionable.Controller.QuestController") ?? throw new InvalidOperationException("no QuestController");
-            var controller = services.GetService(controllerType) ?? throw new InvalidOperationException("QuestController not registered");
-            var priority = controllerType.GetProperty("PriorityManager", any)?.GetValue(controller) ?? throw new InvalidOperationException("no PriorityManager");
-            var mark = priority.GetType().GetMethods(any).FirstOrDefault(m => m.Name == "MarkAcceptOnly" && m.GetParameters().Length == 1)
+            var controller = QuestController();
+            var priority = controller.GetType().GetProperty("PriorityManager", Any)?.GetValue(controller) ?? throw new InvalidOperationException("no PriorityManager");
+            var mark = priority.GetType().GetMethods(Any).FirstOrDefault(m => m.Name == "MarkAcceptOnly" && m.GetParameters().Length == 1)
                        ?? throw new InvalidOperationException("no MarkAcceptOnly");
             var elementId = mark.GetParameters()[0].ParameterType;
             var fromString = elementId.GetMethod("FromString", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static, [typeof(string)])
@@ -479,6 +472,65 @@ internal static class QuestionableTools
         {
             Svc.Log.Warning($"[MCP] Questionable's accept-only flag is out of reach ({e.Message}); quests are accepted one after another.");
             return false;
+        }
+    }
+
+    private const System.Reflection.BindingFlags Any =
+        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+
+    /// <summary>Questionable's QuestController, from its service provider (no IPC covers the task queue or accept-only flags).</summary>
+    private static object QuestController()
+    {
+        var local = DalamudInternals.Find(PluginId);
+        // Dalamud keeps it in LocalPlugin's private "instance" field (typed object); dev plugins derive from LocalPlugin.
+        var plugin = PluginInstance(local) ?? throw new InvalidOperationException("no plugin instance");
+        var services = plugin.GetType().GetField("_serviceProvider", Any)?.GetValue(plugin) as IServiceProvider
+                       ?? throw new InvalidOperationException("no service provider");
+        var controllerType = plugin.GetType().Assembly.GetType("Questionable.Controller.QuestController") ?? throw new InvalidOperationException("no QuestController");
+        return services.GetService(controllerType) ?? throw new InvalidOperationException("QuestController not registered");
+    }
+
+    /// <summary>
+    /// The task Questionable is running and the ones queued after it, as its window would show them if it listed the running one too
+    /// (its "Remaining tasks" leave it out). Null when out of reach.
+    /// </summary>
+    private static object? Tasks()
+    {
+        try
+        {
+            var controller = QuestController();
+            var queue = controller.GetType().GetProperty("TaskQueue", Any)?.GetValue(controller) ?? throw new InvalidOperationException("no TaskQueue");
+            var executor = queue.GetType().GetProperty("CurrentTaskExecutor", Any)?.GetValue(queue);
+            var task = executor?.GetType().GetProperty("CurrentTask", Any)?.GetValue(executor);
+            var remaining = (queue.GetType().GetProperty("RemainingTasks", Any)?.GetValue(queue) as System.Collections.IEnumerable)?.Cast<object>()
+                            .Select(t => t.ToString()).Take(10).ToList();
+            var occupied = controller.GetType().GetField("_gameFunctions", Any)?.GetValue(controller) is { } gf
+                           ? gf.GetType().GetMethod("IsOccupied", Any, Type.EmptyTypes)?.Invoke(gf, null) as bool?
+                           : null;
+            return new { current = task?.ToString(), currentType = task?.GetType().FullName, remaining, occupied };
+        }
+        catch (Exception e)
+        {
+            return new { error = e.Message };
+        }
+    }
+
+    /// <summary>" It was stuck on task X (next: …)." for an error message, or nothing when the task is out of reach.</summary>
+    private static string StuckOn()
+    {
+        try
+        {
+            var controller = QuestController();
+            var queue = controller.GetType().GetProperty("TaskQueue", Any)?.GetValue(controller);
+            var executor = queue?.GetType().GetProperty("CurrentTaskExecutor", Any)?.GetValue(queue);
+            var task = executor?.GetType().GetProperty("CurrentTask", Any)?.GetValue(executor);
+            var next = (queue?.GetType().GetProperty("RemainingTasks", Any)?.GetValue(queue) as System.Collections.IEnumerable)?.Cast<object>().FirstOrDefault();
+            return task is null ? next is null ? "" : $" It had no task running (next: {next})."
+                                : $" It was stuck on its task {task}" + (next is null ? "." : $" (next: {next}).");
+        }
+        catch
+        {
+            return "";
         }
     }
 
@@ -690,7 +742,8 @@ internal static class QuestionableTools
         {
             loaded = true,
             running = IsRunning(),
-            currentQuest = current is { Length: > 0 } && ushort.TryParse(current, out var c) && Find(c + 65536u) is { } cq ? Describe(cq) : current,
+            tasks = Tasks(),
+            currentQuest =current is { Length: > 0 } && ushort.TryParse(current, out var c) && Find(c + 65536u) is { } cq ? Describe(cq) : current,
             priorityList = priority.Select(p => ushort.TryParse(p, out var n) && Find(n + 65536u) is { } q ? q.Name : p),
             nextMainScenarioQuest = NextMainScenarioQuest() is { } msq ? Describe(msq) : null,
             alliedSocietyAllowances = Allowances(),
