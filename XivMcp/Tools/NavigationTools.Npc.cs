@@ -64,21 +64,12 @@ internal static partial class NavigationTools
             return await WalkTo(spot.Name, o => o.BaseId == spot.NpcId, steps, ct).ConfigureAwait(false)
                    ?? throw new ToolException($"You are where {spot.Name} should be, but the NPC is not there (it may only appear during a quest or event).");
         }
-        await WaitForMesh(ct).ConfigureAwait(false);
-        var target = await Game.Run(() => spot.ExactHeight ? spot.Position
-            : Ipc<Vector3, bool, float, Vector3?>("vnavmesh.Query.Mesh.PointOnFloor", spot.Position with { Y = 1024 }, false, 5f) ?? spot.Position).ConfigureAwait(false);
-        if (!await StartPath(target, 3f, steps, ct).ConfigureAwait(false))
-            throw new ToolException($"vnavmesh could not find a path to {spot.Name}.");
-        steps.Add($"vnavmesh: walking towards {spot.Name}.");
-        phase = $"walking to {spot.Name}";
-        await Task.Delay(500, ct).ConfigureAwait(false);
-        while (await Game.Run(() => PathRunning).ConfigureAwait(false))
-        {
-            // Stop as soon as the NPC is close; the final approach uses its real position.
-            if (await Game.Run(() => Svc.Objects.Any(o => o.BaseId == spot.NpcId && Game.DistanceToPlayer(o.Position) < 20)).ConfigureAwait(false)) break;
-            await Task.Delay(250, ct).ConfigureAwait(false);
-        }
-        await Game.Run(() => { StopMoving(); return true; }).ConfigureAwait(false);
+        // Map coordinates carry no height: walk to the nearest reachable point at the player's height (the highest floor there can be
+        // a roof in a city with several levels), and stop as soon as the NPC is close; the final approach uses its real position.
+        if (spot.ExactHeight)
+            await WalkTowardsExact(spot.Position, spot.Name, () => Svc.Objects.Any(o => o.BaseId == spot.NpcId && Game.DistanceToPlayer(o.Position) < 20), steps, ct).ConfigureAwait(false);
+        else
+            await WalkTowards(spot.Position, spot.Name, () => Svc.Objects.Any(o => o.BaseId == spot.NpcId && Game.DistanceToPlayer(o.Position) < 20), steps, ct).ConfigureAwait(false);
         return await WalkTo(spot.Name, o => o.BaseId == spot.NpcId, steps, ct).ConfigureAwait(false)
                ?? throw new ToolException($"Arrived where {spot.Name} should be, but the NPC isn't there (it may only appear during a quest or event).");
     }
@@ -188,13 +179,32 @@ internal static partial class NavigationTools
         var target = await Game.Run(() =>
             Ipc<Vector3, float, float, Vector3?>("vnavmesh.Query.Mesh.NearestPointReachable", position with { Y = PlayerHeight() }, 10f, 60f)
             ?? position).ConfigureAwait(false);
+        await WalkTowardsExact(target, label, seen, steps, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Walks to a point whose height is known until the path ends or <paramref name="seen"/> is true; stops when the walk no longer
+    /// gets closer (running into a wall keeps the path "running").
+    /// </summary>
+    private static async Task WalkTowardsExact(Vector3 target, string label, Func<bool> seen, List<string> steps, CancellationToken ct)
+    {
+        await WaitForMesh(ct).ConfigureAwait(false);
         if (!await StartPath(target, 3f, steps, ct).ConfigureAwait(false))
             throw new ToolException($"vnavmesh could not find a path to {label}.");
         steps.Add($"vnavmesh: walking towards {label}.");
         phase = $"walking to {label}";
         await Task.Delay(500, ct).ConfigureAwait(false);
+        var approach = new Maps.Approach(TimeSpan.FromSeconds(4));
         while (await Game.Run(() => PathRunning && !seen()).ConfigureAwait(false))
+        {
+            var distance = await Game.Run(() => Svc.Objects.LocalPlayer is { } p ? Flat(p.Position, target) : float.MaxValue).ConfigureAwait(false);
+            if (approach.Stalled(distance, DateTime.UtcNow))
+            {
+                await Game.Run(() => { StopMoving(); return true; }).ConfigureAwait(false);
+                throw new ToolException($"Stuck on the way to {label} ({distance:0} yalms away): the path runs into an obstacle.");
+            }
             await Task.Delay(250, ct).ConfigureAwait(false);
+        }
         await Game.Run(() => { StopMoving(); return true; }).ConfigureAwait(false);
     }
 
