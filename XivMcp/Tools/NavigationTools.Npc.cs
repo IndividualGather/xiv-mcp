@@ -141,10 +141,14 @@ internal static partial class NavigationTools
     {
         foreach (var level in a.Level)
             if (level.RowId != 0 && level.ValueNullable is { } l) return new Vector3(l.X, l.Y, l.Z);
-        // Main aetherytes often have no Level row; their map marker gives the position.
-        var found = Svc.Data.GetSubrowExcelSheet<MapMarker>().SelectMany(m => m)
-            .Where(m => m.DataType == 3 && m.DataKey.RowId == a.RowId).Select(m => (MapMarker?)m).FirstOrDefault();
-        if (found is { } marker && a.Map.ValueNullable is { } map)
+        // Aetherytes and aethernet shards often have no Level row; their map marker gives the position (data type 3 for an
+        // aetheryte, 4 for a shard). Shards have no map of their own: their marker is on the zone's map.
+        if ((a.Map.ValueNullable ?? a.Territory.ValueNullable?.Map.ValueNullable) is not { } map) return null;
+        var found = Svc.Data.GetSubrowExcelSheet<MapMarker>().GetRowOrDefault(map.MapMarkerRange)?
+            .Where(m => m.DataType is 3 or 4 && m.DataKey.RowId == a.RowId).Select(m => (MapMarker?)m).FirstOrDefault()
+            ?? Svc.Data.GetSubrowExcelSheet<MapMarker>().SelectMany(m => m)
+                .Where(m => m.DataType is 3 or 4 && m.DataKey.RowId == a.RowId).Select(m => (MapMarker?)m).FirstOrDefault();
+        if (found is { } marker)
         {
             // MapMarker X/Y are map pixels (0-2048).
             var scale = map.SizeFactor / 100f;
