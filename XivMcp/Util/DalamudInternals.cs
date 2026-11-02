@@ -143,9 +143,14 @@ internal static class DalamudInternals
     public static async Task RefreshRepositories()
     {
         var pm = PluginManager;
-        var reload = pm.GetType().GetMethods(Any).FirstOrDefault(m => m.Name == "ReloadPluginMastersAsync" && m.GetParameters().Length == 1)
-                     ?? throw new ToolException("Dalamud's ReloadPluginMastersAsync was not found — this Dalamud version is not supported for updating plugins.");
-        await ((Task)reload.Invoke(pm, [true])!).ConfigureAwait(false);
+        var methods = pm.GetType().GetMethods(Any);
+        // Current Dalamud: ReloadAllReposAsync(); older ones: ReloadPluginMastersAsync(bool notify).
+        if (methods.FirstOrDefault(m => m.Name == "ReloadAllReposAsync" && m.GetParameters().Length == 0) is { } reloadAll)
+            await ((Task)reloadAll.Invoke(pm, [])!).ConfigureAwait(false);
+        else if (methods.FirstOrDefault(m => m.Name == "ReloadPluginMastersAsync" && m.GetParameters().Length == 1) is { } reload)
+            await ((Task)reload.Invoke(pm, [true])!).ConfigureAwait(false);
+        else
+            throw new ToolException("Dalamud's repository reload was not found — this Dalamud version is not supported for updating plugins.");
     }
 
     /// <summary>The updates Dalamud found for installed plugins (its AvailablePluginUpdate records).</summary>
