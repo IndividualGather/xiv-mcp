@@ -148,8 +148,29 @@ internal static class AutoDutyBridge
         Member(null, T(asm, "AutoDuty.Configurations.ConfigurationMain"), "Instance") ?? throw new ToolException("AutoDuty's profiles are not available.");
 
     private static object? Call(object target, string method, params object?[] args) =>
-        (target.GetType().GetMethods(All).FirstOrDefault(m => m.Name == method && m.GetParameters().Length == args.Length)
-         ?? throw new ToolException($"AutoDuty has no {method}; this AutoDuty version is not supported.")).Invoke(target, args);
+        (Find(target, method, args) ?? throw new ToolException($"AutoDuty has no {method}; this AutoDuty version is not supported.")).Invoke(target, args);
+
+    /// <summary>The overload whose parameters take these arguments (AutoDuty 0.0.0.396 has SetProfile(string) and SetProfile(Guid)).</summary>
+    private static System.Reflection.MethodInfo? Find(object target, string method, object?[] args) =>
+        target.GetType().GetMethods(All).FirstOrDefault(m =>
+        {
+            var ps = m.GetParameters();
+            return m.Name == method && ps.Length == args.Length
+                   && ps.Zip(args).All(x => x.Second is null ? !x.First.ParameterType.IsValueType : x.First.ParameterType.IsInstanceOfType(x.Second));
+        });
+
+    /// <summary>Calls the first overload of <paramref name="method"/> that takes one of the argument lists, in the order given.</summary>
+    private static object? CallFirst(object target, string method, params object?[][] argLists)
+    {
+        foreach (var args in argLists)
+            if (Find(target, method, args) is { } m)
+                return m.Invoke(target, args);
+        throw new ToolException($"AutoDuty has no {method}; this AutoDuty version is not supported.");
+    }
+
+    /// <summary>A profile's name: AutoDuty's character map holds names in older versions and the profile itself since 0.0.0.396.</summary>
+    private static string? ProfileName(object? entry) =>
+        entry as string ?? (entry is null ? null : Member(entry, entry.GetType(), "Name") as string);
 
     private static object Need(object? value, string what) => value ?? throw new ToolException($"AutoDuty's {what} was not found; this AutoDuty version is not supported.");
 
@@ -174,7 +195,10 @@ internal static class AutoDutyBridge
         if (Member(main, t, "profileData") is { } data) data.GetType().GetMethod("Remove")!.Invoke(data, [profile]);
         if (Member(main, t, "profileByName") is IDictionary byName) byName.Remove(name);
         if (Member(main, t, "profileByCID") is IDictionary byCid)
-            foreach (var key in byCid.Keys.Cast<object>().Where(k => byCid[k] as string == name).ToList()) byCid.Remove(key);
+            foreach (var key in byCid.Keys.Cast<object>().Where(k => ProfileName(byCid[k]) == name).ToList()) byCid.Remove(key);
+        // Since 0.0.0.396 profiles are also indexed by a GUID.
+        if (Member(main, t, "profileByGuid") is IDictionary byGuid)
+            foreach (var key in byGuid.Keys.Cast<object>().Where(k => ReferenceEquals(byGuid[k], profile)).ToList()) byGuid.Remove(key);
     }
 
     /// <summary>
@@ -190,16 +214,23 @@ internal static class AutoDutyBridge
 
         var previous = (string)Need(Member(main, t, "ActiveProfileName"), "active profile");
         string? characterDefault = null;
-        if (Member(main, t, "profileByCID") is IDictionary byCid && byCid.Contains(Svc.PlayerState.ContentId)) characterDefault = byCid[Svc.PlayerState.ContentId] as string;
+        if (Member(main, t, "profileByCID") is IDictionary byCid && byCid.Contains(Svc.PlayerState.ContentId)) characterDefault = ProfileName(byCid[Svc.PlayerState.ContentId]);
         var source = XivMcp.Duties.AutoDutyProfiles.Source(characterDefault, Member(main, t, "DefaultConfigName") as string, previous, ProfileNames(main).ToList());
 
         // Copy with AutoDuty's own duplicate (its serializer does the deep copy), then register the copy under XIV MCP's name.
         if (Call(main, "SetProfile", source) is false) throw new ToolException($"AutoDuty could not switch to its profile '{source}'.");
+        // The copy is the one profile name that is new afterwards (whether AutoDuty switches to it differs between versions); never
+        // take the active profile for it, which could be the player's own.
+        var namesBefore = ProfileNames(main).ToHashSet();
         Call(main, "DuplicateCurrentProfile");
-        var duplicate = (string)Need(Member(main, t, "ActiveProfileName"), "active profile");
+        var added = ProfileNames(main).Where(n => !namesBefore.Contains(n)).ToList();
+        if (added.Count != 1) throw new ToolException("AutoDuty did not create exactly one copy of the profile; this AutoDuty version is not supported.");
+        var duplicate = added[0];
         var config = Need(Member(Need(Call(main, "GetProfile", duplicate), "copied profile"), Need(Call(main, "GetProfile", duplicate), "copied profile").GetType(), "Config"), "copied settings");
         Forget(main, duplicate);
-        Call(main, "CreateProfile", XivMcp.Duties.AutoDutyProfiles.Temporary, config);
+        // Since 0.0.0.396 CreateProfile also takes whether to switch to the new profile.
+        CallFirst(main, "CreateProfile", [XivMcp.Duties.AutoDutyProfiles.Temporary, config, true], [XivMcp.Duties.AutoDutyProfiles.Temporary, config]);
+        if (Member(main, t, "ActiveProfileName") as string != XivMcp.Duties.AutoDutyProfiles.Temporary) Call(main, "SetProfile", XivMcp.Duties.AutoDutyProfiles.Temporary);
 
         try
         {
