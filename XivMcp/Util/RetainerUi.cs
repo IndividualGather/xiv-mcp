@@ -33,6 +33,12 @@ internal static class RetainerUi
 
     public static bool RetainerListOpen => Ready("RetainerList");
 
+    /// <summary>The game has the retainer data (names, order) that the retainer list shows. Framework thread.</summary>
+    public static unsafe bool RetainerDataReady => RetainerManager.Instance() is var rm && rm != null && rm->IsReady;
+
+    /// <summary>The retainer list is shown and its retainers are known. Framework thread.</summary>
+    public static bool RetainerListReady() => RetainerListOpen && RetainerDataReady;
+
     public static bool InventoryOpen => Array.Exists(InventoryAddons, Ready);
 
     public static bool InventoryOpenFor(string retainer) => InventoryOpen && ActiveRetainerName == retainer;
@@ -71,6 +77,10 @@ internal static class RetainerUi
 
     private static async Task Open(string name, bool menuOnly, CancellationToken ct)
     {
+        // Right after using the bell the list (and the retainer data) can still be on its way.
+        var waitUntil = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < waitUntil && await Svc.Framework.RunOnFrameworkThread(() => AtBell && !RetainerDataReady).ConfigureAwait(false))
+            await Task.Delay(200, ct).ConfigureAwait(false);
         var target = await Svc.Framework.RunOnFrameworkThread(() => ResolveSortedIndex(name)).ConfigureAwait(false);
         var current = await Svc.Framework.RunOnFrameworkThread(() => ActiveRetainerName).ConfigureAwait(false);
         if (current is not null && !current.Equals(target.Name, StringComparison.Ordinal))

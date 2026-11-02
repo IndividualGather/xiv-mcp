@@ -213,6 +213,10 @@ internal static class InteractionTools
                     reacted = await WaitFor(Reacted, TimeSpan.FromSeconds(3), ct).ConfigureAwait(false);
                 }
                 await Task.Delay(300, ct).ConfigureAwait(false);
+                // At a bell the game reports the player "at the bell" before the retainer list is shown and the retainer data has
+                // arrived; a following open_retainer would find no retainers. Wait for the list.
+                if (reacted && target.IsBell)
+                    await WaitFor(RetainerUi.RetainerListReady, TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
                 if (!reacted)
                     throw new ToolException($"The game did not react to interacting with {target.Name} ({target.Distance:0.#} yalms away, result {target.Result}). " +
                                             "It is most likely out of interaction range or line of sight; move closer (within ~3 yalms is safe) and retry.");
