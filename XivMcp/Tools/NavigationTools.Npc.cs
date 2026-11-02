@@ -81,6 +81,7 @@ internal static partial class NavigationTools
     internal static async Task TravelNear(NpcSpot spot, List<string> steps, CancellationToken ct)
     {
         var plan = await Game.Run(() => PlanTeleport(spot)).ConfigureAwait(false);
+        if (plan is null) steps.Add(await Game.Run(() => WalkReason(spot)).ConfigureAwait(false));
         if (plan is not null && !LifestreamLoaded)
             await GuideTeleport(plan.Value.AetheryteId, plan.Value.Shard, spot.Territory, steps, ct).ConfigureAwait(false);
         else if (plan is not null)
@@ -112,6 +113,20 @@ internal static partial class NavigationTools
             if (DateTime.UtcNow - waited > TimeSpan.FromSeconds(90)) throw new ToolException("vnavmesh did not finish building the navmesh for this zone.");
             await Task.Delay(500, ct).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>Why travel walks instead of teleporting: how far the player is, and the nearest aetheryte or shard with a known position.</summary>
+    private static string WalkReason(NpcSpot spot)
+    {
+        var known = Svc.Data.GetExcelSheet<Aetheryte>()
+            .Where(a => a.Territory.RowId == spot.Territory && (a.IsAetheryte || a.AethernetName.RowId != 0))
+            .Select(a => (Name: a.IsAetheryte ? Excel.Name(a.PlaceName) : Excel.Name(a.AethernetName), Pos: AetherytePosition(a)))
+            .ToList();
+        var located = known.Where(k => k.Pos is not null).Select(k => (k.Name, Distance: Flat(k.Pos!.Value, spot.Position))).OrderBy(k => k.Distance).ToList();
+        var player = Svc.Objects.LocalPlayer is { } p ? Flat(p.Position, spot.Position) : float.NaN;
+        return $"Walking: {player:0} yalms to {spot.Name}; " + (located.Count == 0
+            ? $"none of the zone's {known.Count} aetherytes/shards has a known position."
+            : $"nearest is {located[0].Name} ({located[0].Distance:0} yalms from it; {located.Count} of {known.Count} located).");
     }
 
     /// <summary>
