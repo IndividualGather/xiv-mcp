@@ -146,7 +146,10 @@ internal static partial class NavigationTools
         // plain markers named after the shard (in Solution Nine: data type 0, the aethernet icon, the shard's place name).
         if ((a.Map.ValueNullable ?? a.Territory.ValueNullable?.Map.ValueNullable) is not { } map) return null;
         bool Points(MapMarker m) => m.DataType is 3 or 4 && m.DataKey.RowId == a.RowId;
-        bool Named(MapMarker m) => !a.IsAetheryte && a.AethernetName.RowId != 0 && m.PlaceNameSubtext.RowId == a.AethernetName.RowId;
+        // The marker's place name is a different PlaceName row with the same text (e.g. "Nexus Arcade" 4647 vs the shard's 4738).
+        var shardName = a.IsAetheryte ? null : Excel.Name(a.AethernetName);
+        bool Named(MapMarker m) => !string.IsNullOrEmpty(shardName) && m.PlaceNameSubtext.RowId != 0
+                                   && string.Equals(Excel.Name(m.PlaceNameSubtext), shardName, StringComparison.OrdinalIgnoreCase);
         var onMap = Svc.Data.GetSubrowExcelSheet<MapMarker>().GetRowOrDefault(map.MapMarkerRange);
         var found = onMap?.Where(Points).Select(m => (MapMarker?)m).FirstOrDefault()
                     ?? onMap?.Where(Named).Select(m => (MapMarker?)m).FirstOrDefault()
