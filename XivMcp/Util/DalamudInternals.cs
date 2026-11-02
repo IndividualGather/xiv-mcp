@@ -136,6 +136,55 @@ internal static class DalamudInternals
 
     public static Guid WorkingId(object plugin) => (Guid)Prop(plugin, "EffectiveWorkingPluginId")!;
 
+    private static object? Member(object target, string name) =>
+        Prop(target, name) ?? target.GetType().GetField(name, Any)?.GetValue(target);
+
+    /// <summary>Fetches every plugin repository again, like opening the plugin installer, so the update list is current.</summary>
+    public static async Task RefreshRepositories()
+    {
+        var pm = PluginManager;
+        var reload = pm.GetType().GetMethods(Any).FirstOrDefault(m => m.Name == "ReloadPluginMastersAsync" && m.GetParameters().Length == 1)
+                     ?? throw new ToolException("Dalamud's ReloadPluginMastersAsync was not found — this Dalamud version is not supported for updating plugins.");
+        await ((Task)reload.Invoke(pm, [true])!).ConfigureAwait(false);
+    }
+
+    /// <summary>The updates Dalamud found for installed plugins (its AvailablePluginUpdate records).</summary>
+    public static List<object> AvailableUpdates() =>
+        ((IEnumerable)(Prop(PluginManager, "UpdatablePlugins") ?? throw new ToolException("Dalamud's update list was not found.")))
+        .Cast<object>().ToList();
+
+    public static object UpdatedPlugin(object update) => Member(update, "InstalledPlugin") ?? throw new ToolException("Dalamud's update record has no plugin.");
+
+    /// <summary>The version an update installs (the testing version when the player uses testing builds of that plugin).</summary>
+    public static string? UpdateVersion(object update) =>
+        Member(update, "UpdateManifest") is { } manifest
+            ? Member(manifest, Member(update, "UseTesting") is true ? "TestingAssemblyVersion" : "AssemblyVersion")?.ToString()
+            : null;
+
+    /// <summary>Installs these updates like the installer's "Update" button: each plugin is unloaded, replaced and loaded again.</summary>
+    public static async Task<List<(string Plugin, string Status, string? Version)>> Update(IReadOnlyList<object> updates)
+    {
+        if (updates.Count == 0) return [];
+        var pm = PluginManager;
+        var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(updates[0].GetType()))!;
+        foreach (var u in updates) list.Add(u);
+        var update = pm.GetType().GetMethods(Any).FirstOrDefault(m => m.Name == "UpdatePluginsAsync")
+                     ?? throw new ToolException("Dalamud's UpdatePluginsAsync was not found — this Dalamud version is not supported for updating plugins.");
+        object?[] args = update.GetParameters().Length switch
+        {
+            4 => [list, false, false, null],
+            3 => [list, false, false],
+            _ => [list, false],
+        };
+        var task = (Task)update.Invoke(pm, args)!;
+        await task.ConfigureAwait(false);
+        var results = (IEnumerable)task.GetType().GetProperty("Result")!.GetValue(task)!;
+        return results.Cast<object>().Select(s => (
+            Plugin: (Member(s, "Name") ?? Member(s, "InternalName"))?.ToString() ?? "?",
+            Status: Member(s, "Status")?.ToString() ?? "?",
+            Version: Member(s, "Version")?.ToString())).ToList();
+    }
+
     /// <summary>The plugin collections (Dalamud's profiles), each with the plugins it turns on.</summary>
     public static List<(object Profile, XivMcp.Integrations.PluginCollection Info)> Collections() =>
         ((IEnumerable)Prop(ProfileManager, "Profiles")!).Cast<object>()

@@ -157,6 +157,82 @@ internal static class PluginTools
 
         yield return new McpTool
         {
+            Name = "update_plugins",
+            Description = "Updates installed Dalamud plugins like the plugin installer's Update button: fetches the plugin repositories again, then " +
+                          "replaces each plugin that has a newer version (all, or only those named). check_only=true just lists the available " +
+                          "updates. XIV MCP updates itself last, a few seconds after answering: the connection drops while it reloads (reconnect " +
+                          "afterwards), and background jobs come back paused. Refused while a job step acts in game. Asks in game first unless " +
+                          "plugins may be toggled without asking. Requires 'Plugin management' in /xivmcp.",
+            InputSchema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "plugins": { "type": "array", "items": { "type": "string" }, "description": "Only these plugins (internal or display names); default all." },
+                    "check_only": { "type": "boolean", "description": "Only list the available updates (default false)." }
+                  }
+                }
+                """,
+            ReadOnly = false,
+            Handler = async (args, ct) =>
+            {
+                RequireEnabled();
+                var checkOnly = args.Bool("check_only", false);
+                if (!checkOnly && JobManager.Instance?.ActingStepRunning == true)
+                    throw new ToolException("A background job step is acting in game right now; updating its plugins mid-step would break it. Pause the job first.");
+                await DalamudInternals.RefreshRepositories().ConfigureAwait(false);
+                var wanted = args.StringList("plugins").Select(XivMcp.Api.PluginNames.Clean).ToList();
+                var updates = DalamudInternals.AvailableUpdates()
+                    .Where(u => wanted.Count == 0 || wanted.Any(w =>
+                    {
+                        var p = DalamudInternals.UpdatedPlugin(u);
+                        return DalamudInternals.InternalName(p).Equals(w, StringComparison.OrdinalIgnoreCase) || DalamudInternals.Name(p).Equals(w, StringComparison.OrdinalIgnoreCase);
+                    }))
+                    .ToList();
+                var available = updates.Select(u =>
+                {
+                    var p = DalamudInternals.UpdatedPlugin(u);
+                    return new { plugin = DalamudInternals.InternalName(p), name = DalamudInternals.Name(p), installed = DalamudInternals.Prop(p, "EffectiveVersion")?.ToString(), update = DalamudInternals.UpdateVersion(u) };
+                }).ToList();
+                if (checkOnly || updates.Count == 0)
+                    return new { available, updated = Array.Empty<object>(), note = updates.Count == 0 ? "Everything is up to date." : null };
+
+                if (!config.TogglePluginsWithoutAsking)
+                    await Consent.Require($"Update {updates.Count} plugin(s)?",
+                        [$"Asked by {args.Caller?.Name ?? "your AI assistant"}.", string.Join(", ", available.Select(a => $"{a.name} {a.installed} → {a.update}"))],
+                        TimeSpan.FromMinutes(2), default).ConfigureAwait(false);
+
+                bool IsSelf(object u) => DalamudInternals.InternalName(DalamudInternals.UpdatedPlugin(u)).Equals(Svc.PluginInterface.InternalName, StringComparison.OrdinalIgnoreCase);
+                var self = updates.Where(IsSelf).ToList();
+                var others = updates.Where(u => !IsSelf(u)).ToList();
+
+                List<(string Plugin, string Status, string? Version)> results;
+                await Gate.WaitAsync().ConfigureAwait(false);
+                try { results = await DalamudInternals.Update(others).ConfigureAwait(false); }
+                finally { Gate.Release(); }
+                Svc.Log.Information($"[MCP] Updated plugins: {string.Join(", ", results.Select(r => $"{r.Plugin} {r.Status}"))}");
+
+                // Updating XIV MCP unloads the plugin that is answering: do it once this answer is out.
+                if (self.Count > 0)
+                    _ = Task.Run(async () =>
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+                        try { await DalamudInternals.Update(self).ConfigureAwait(false); }
+                        catch (Exception ex) { Svc.Log.Warning(ex, "[MCP] Updating XIV MCP itself failed"); }
+                    });
+
+                return new
+                {
+                    available,
+                    updated = results.Select(r => new { plugin = r.Plugin, status = r.Status, version = r.Version }).ToList(),
+                    selfUpdate = self.Count > 0
+                        ? $"XIV MCP updates itself to {DalamudInternals.UpdateVersion(self[0])} in a few seconds: the connection drops while it reloads; reconnect afterwards. Running jobs come back paused."
+                        : null,
+                };
+            },
+        };
+
+        yield return new McpTool
+        {
             Name = "list_plugin_collections",
             Description = "Lists the Dalamud plugin collections (set up in the plugin installer): name, whether each is on, the default collection " +
                           "(always on), and the plugins each turns on. Requires 'Plugin management' in /xivmcp.",

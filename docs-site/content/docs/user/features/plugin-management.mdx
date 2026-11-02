@@ -10,6 +10,7 @@ These tools are in the **Plugin management** module, which is denied by default,
 |---|---|
 | `list_plugins` | Installed plugins with internal name, version, load state and flags (module **Game data**, so reading it is allowed by default even while *Plugin management* is denied) |
 | `set_plugin_enabled` / `reload_plugin` | Turns a plugin on or off, or reloads it, like the installer's switch |
+| `update_plugins` | Checks the plugin repositories and updates your plugins (all, or the ones you name), like the installer's Update button. XIV MCP updates itself last, a few seconds after answering, so your assistant reconnects afterwards. Running jobs come back paused. It refuses while a job step is acting in game |
 | `list_plugin_collections` | Your plugin collections, whether each is on, and the plugins each turns on |
 | `set_plugin_collection_enabled` | Turns a collection on or off, like its switch in the installer: its plugins load, and those no enabled collection wants unload |
 | `list_plugin_config_files` / `get_plugin_config` / `set_plugin_config` | Lists, reads and changes plugin settings by path, with a dry run and type checks |
