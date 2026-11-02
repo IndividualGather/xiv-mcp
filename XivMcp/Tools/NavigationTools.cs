@@ -20,6 +20,9 @@ namespace XivMcp.Tools;
 internal static partial class NavigationTools
 {
     private const float ArriveRange = 2.5f;
+
+    /// <summary>Close enough to talk to an NPC or use an object (the game allows a little more).</summary>
+    private const float TalkRange = 6f;
     private const float LocalSearchRange = 120f;
 
     /// <summary>The one running navigation (so stop_navigation and status can see it).</summary>
@@ -310,18 +313,32 @@ internal static partial class NavigationTools
                 if (DateTime.UtcNow - waited > TimeSpan.FromSeconds(90)) throw new ToolException("vnavmesh did not finish building the navmesh for this zone.");
                 await Task.Delay(500, ct).ConfigureAwait(false);
             }
-            if (!await StartPath(t.Position, ArriveRange, steps, ct).ConfigureAwait(false))
+            // NPCs often stand behind a counter: walk to the nearest reachable point next to them, not into the counter.
+            var goal = await Game.Run(() =>
+                Ipc<Vector3, float, float, Vector3?>("vnavmesh.Query.Mesh.NearestPointReachable", t.Position, TalkRange - 1, 5f) ?? t.Position).ConfigureAwait(false);
+            if (!await StartPath(goal, ArriveRange, steps, ct).ConfigureAwait(false))
                 throw new ToolException($"vnavmesh could not start a path to {t.Name}.");
             steps.Add($"vnavmesh: walking to {t.Name} ({t.Distance:0.#} yalms).");
             phase = $"walking to {t.Name}";
             await Task.Delay(500, ct).ConfigureAwait(false);
+            var approach = new Maps.Approach(TimeSpan.FromSeconds(3));
             while (await Game.Run(() => PathRunning).ConfigureAwait(false))
+            {
+                // Running into a wall keeps the path "running" without getting any closer: stop then.
+                var distance = await Game.Run(() => Game.DistanceToPlayer(t.Position) ?? float.MaxValue).ConfigureAwait(false);
+                if (approach.Stalled(distance, DateTime.UtcNow))
+                {
+                    await Game.Run(() => { StopMoving(); return true; }).ConfigureAwait(false);
+                    steps.Add($"vnavmesh: stopped, no longer getting closer ({distance:0.#} yalms away).");
+                    break;
+                }
                 await Task.Delay(250, ct).ConfigureAwait(false);
+            }
         }
 
         await GetOffMount(steps, ct).ConfigureAwait(false);
         var final = await Game.Run(() => Svc.Objects.LocalPlayer is { } p ? Vector3.Distance(p.Position, t.Position) : float.MaxValue).ConfigureAwait(false);
-        if (final > ArriveRange + 2) throw new ToolException($"Stopped {final:0.#} yalms from {t.Name}; the path may be blocked.");
+        if (final > TalkRange) throw new ToolException($"Stopped {final:0.#} yalms from {t.Name}; the path may be blocked.");
         steps.Add($"At {t.Name} ({final:0.#} yalms).");
         return new { name = t.Name, distance = MathF.Round(final, 1), zone = await Game.Run(ZoneName).ConfigureAwait(false), next = $"interact_with_object \"{t.Name}\"" };
     }
