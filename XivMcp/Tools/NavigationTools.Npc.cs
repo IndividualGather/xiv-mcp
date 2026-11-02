@@ -141,13 +141,16 @@ internal static partial class NavigationTools
     {
         foreach (var level in a.Level)
             if (level.RowId != 0 && level.ValueNullable is { } l) return new Vector3(l.X, l.Y, l.Z);
-        // Aetherytes and aethernet shards often have no Level row; their map marker gives the position (data type 3 for an
-        // aetheryte, 4 for a shard). Shards have no map of their own: their marker is on the zone's map.
+        // Aetherytes and aethernet shards often have no Level row; their map marker gives the position. Shards have no map of
+        // their own: their marker is on the zone's map. Aetheryte markers point at the aetheryte (data type 3); shard markers are
+        // plain markers named after the shard (in Solution Nine: data type 0, the aethernet icon, the shard's place name).
         if ((a.Map.ValueNullable ?? a.Territory.ValueNullable?.Map.ValueNullable) is not { } map) return null;
-        var found = Svc.Data.GetSubrowExcelSheet<MapMarker>().GetRowOrDefault(map.MapMarkerRange)?
-            .Where(m => m.DataType is 3 or 4 && m.DataKey.RowId == a.RowId).Select(m => (MapMarker?)m).FirstOrDefault()
-            ?? Svc.Data.GetSubrowExcelSheet<MapMarker>().SelectMany(m => m)
-                .Where(m => m.DataType is 3 or 4 && m.DataKey.RowId == a.RowId).Select(m => (MapMarker?)m).FirstOrDefault();
+        bool Points(MapMarker m) => m.DataType is 3 or 4 && m.DataKey.RowId == a.RowId;
+        bool Named(MapMarker m) => !a.IsAetheryte && a.AethernetName.RowId != 0 && m.PlaceNameSubtext.RowId == a.AethernetName.RowId;
+        var onMap = Svc.Data.GetSubrowExcelSheet<MapMarker>().GetRowOrDefault(map.MapMarkerRange);
+        var found = onMap?.Where(Points).Select(m => (MapMarker?)m).FirstOrDefault()
+                    ?? onMap?.Where(Named).Select(m => (MapMarker?)m).FirstOrDefault()
+                    ?? Svc.Data.GetSubrowExcelSheet<MapMarker>().SelectMany(m => m).Where(Points).Select(m => (MapMarker?)m).FirstOrDefault();
         if (found is { } marker)
         {
             // MapMarker X/Y are map pixels (0-2048).
@@ -201,6 +204,13 @@ internal static partial class NavigationTools
         var approach = new Maps.Approach(TimeSpan.FromSeconds(4));
         while (await Game.Run(() => PathRunning && !seen()).ConfigureAwait(false))
         {
+            // Computing a long path takes a while before the character moves: only judge progress while it walks.
+            if (!await Game.Run(() => PathWalking).ConfigureAwait(false))
+            {
+                approach = new Maps.Approach(TimeSpan.FromSeconds(4));
+                await Task.Delay(250, ct).ConfigureAwait(false);
+                continue;
+            }
             var distance = await Game.Run(() => Svc.Objects.LocalPlayer is { } p ? Flat(p.Position, target) : float.MaxValue).ConfigureAwait(false);
             if (approach.Stalled(distance, DateTime.UtcNow))
             {

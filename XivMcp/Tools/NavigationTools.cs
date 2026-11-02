@@ -324,8 +324,15 @@ internal static partial class NavigationTools
             var approach = new Maps.Approach(TimeSpan.FromSeconds(3));
             while (await Game.Run(() => PathRunning).ConfigureAwait(false))
             {
-                // Running into a wall keeps the path "running" without getting any closer: stop then.
-                var distance = await Game.Run(() => Game.DistanceToPlayer(t.Position) ?? float.MaxValue).ConfigureAwait(false);
+                // Running into a wall keeps the path "running" without getting any closer: stop then. Only judge while walking
+                // (computing the path takes a moment before the character moves).
+                if (!await Game.Run(() => PathWalking).ConfigureAwait(false))
+                {
+                    approach = new Maps.Approach(TimeSpan.FromSeconds(3));
+                    await Task.Delay(250, ct).ConfigureAwait(false);
+                    continue;
+                }
+                var distance =await Game.Run(() => Game.DistanceToPlayer(t.Position) ?? float.MaxValue).ConfigureAwait(false);
                 if (approach.Stalled(distance, DateTime.UtcNow))
                 {
                     await Game.Run(() => { StopMoving(); return true; }).ConfigureAwait(false);
