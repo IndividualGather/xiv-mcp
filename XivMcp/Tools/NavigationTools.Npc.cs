@@ -159,7 +159,8 @@ internal static partial class NavigationTools
         // Aetherytes and aethernet shards often have no Level row; their map marker gives the position. Shards have no map of
         // their own: their marker is on the zone's map. Aetheryte markers point at the aetheryte (data type 3); shard markers are
         // plain markers named after the shard (in Solution Nine: data type 0, the aethernet icon, the shard's place name).
-        if ((a.Map.ValueNullable ?? a.Territory.ValueNullable?.Map.ValueNullable) is not { } map) return null;
+        // A shard's Map is row 0, which exists (an empty default row): only take a map that is really set.
+        if ((a.Map.RowId != 0 ? a.Map.ValueNullable : a.Territory.ValueNullable?.Map.ValueNullable) is not { } map) return null;
         bool Points(MapMarker m) => m.DataType is 3 or 4 && m.DataKey.RowId == a.RowId;
         // The marker's place name is a different PlaceName row with the same text (e.g. "Nexus Arcade" 4647 vs the shard's 4738).
         var shardName = a.IsAetheryte ? null : Excel.Name(a.AethernetName);
