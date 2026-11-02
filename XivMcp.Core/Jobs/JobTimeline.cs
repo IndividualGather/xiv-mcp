@@ -45,12 +45,17 @@ public static class JobTimeline
         : $"{(int)t.TotalDays}d {t.Hours}h";
 
     /// <summary>
-    /// When a waiting call or step ends: the wait tool's "seconds" after it started, or its "until" time. Null for other tools, or
-    /// arguments that don't say.
+    /// When a waiting call or step ends: the wait tool's "seconds" after it started, or its "until" time; a gather_until session
+    /// its "session_minutes" after it started (it can end earlier, when the targets are reached). Null for other tools, or arguments
+    /// that don't say.
     /// </summary>
     public static DateTime? WaitEnds(string tool, System.Text.Json.Nodes.JsonObject? args, DateTime started)
     {
-        if (tool != "wait" || args is null) return null;
+        if (args is null) return null;
+        if (tool == "gather_until")
+            return args["session_minutes"] is { } m && double.TryParse(m.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var minutes)
+                ? started.AddMinutes(minutes) : null;
+        if (tool != "wait") return null;
         if (args["until"]?.ToString() is { } until)
             return DateTime.TryParse(until, System.Globalization.CultureInfo.InvariantCulture,
                        System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out var when)

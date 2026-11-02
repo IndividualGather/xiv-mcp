@@ -125,9 +125,22 @@ public class WaitTimeTests
     }
 
     [Fact]
+    public void A_gathering_session_ends_its_minutes_after_it_started()
+    {
+        var args = new System.Text.Json.Nodes.JsonObject { ["session_minutes"] = 52 };
+        Assert.Equal(T0.AddMinutes(52), JobTimeline.WaitEnds("gather_until", args, T0));
+    }
+
+    [Fact]
+    public void Gathering_without_a_session_has_no_end()
+    {
+        Assert.Null(JobTimeline.WaitEnds("gather_until", new System.Text.Json.Nodes.JsonObject { ["timeout_minutes"] = 60 }, T0));
+    }
+
+    [Fact]
     public void Other_tools_and_unreadable_waits_have_no_end()
     {
-        Assert.Null(JobTimeline.WaitEnds("gather_until", new System.Text.Json.Nodes.JsonObject { ["seconds"] = 90 }, T0));
+        Assert.Null(JobTimeline.WaitEnds("run_duty", new System.Text.Json.Nodes.JsonObject { ["seconds"] = 90 }, T0));
         Assert.Null(JobTimeline.WaitEnds("wait", new System.Text.Json.Nodes.JsonObject { ["until"] = "soon" }, T0));
         Assert.Null(JobTimeline.WaitEnds("wait", null, T0));
     }

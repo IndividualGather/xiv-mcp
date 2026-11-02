@@ -125,6 +125,7 @@ internal static class LongRunningTools
                     await Task.Delay(5000, ct).ConfigureAwait(false);
                     var goal = until ?? targets;
                     var restarts = 0;
+                    string? lastProgress = null;
                     while (true)
                     {
                         ct.ThrowIfCancellationRequested();
@@ -134,6 +135,12 @@ internal static class LongRunningTools
                             Status: CraftGatherTools.SafeString("GatherBuddyReborn.GetAutoGatherStatusText"),
                             Free: Items.FreeBagSlots())).ConfigureAwait(false);
                         var missing = goal.Where(t => state.Have[t.Key] < t.Value).ToList();
+                        var progress = string.Join(" · ", goal.Select(t => $"{Items.Name(t.Key)} {state.Have[t.Key]}/{t.Value}"));
+                        if (progress != lastProgress)
+                        {
+                            JobManager.Instance?.StepProgress("gather_until", progress);
+                            lastProgress = progress;
+                        }
                         if (missing.Count == 0)
                             return new { done = true, gathered = Describe(goal, state.Have), restarts, minutes = Math.Round((DateTime.UtcNow - started).TotalMinutes, 1) };
                         if (state.Free == 0) throw new ToolException($"Bags are full; still missing {Missing(missing, state.Have)}.");
