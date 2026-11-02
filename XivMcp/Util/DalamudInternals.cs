@@ -62,7 +62,8 @@ internal static class DalamudInternals
 
     public static object Find(string nameOrInternalName)
     {
-        var plugins = InstalledPlugins();
+        // Several installs can share an internal name (a dev build next to the released one): the loaded one first, then a released one.
+        var plugins = InstalledPlugins().OrderByDescending(IsLoaded).ThenBy(p => Prop(p, "IsDev") is true).ToList();
         var match = plugins.FirstOrDefault(p => InternalName(p).Equals(nameOrInternalName, StringComparison.OrdinalIgnoreCase))
                     ?? plugins.FirstOrDefault(p => Name(p).Equals(nameOrInternalName, StringComparison.OrdinalIgnoreCase));
         if (match is not null) return match;

@@ -126,3 +126,21 @@ public class PluginCollectionTests
         Assert.Null(PluginCollection.Refusal(mine, enable: false, [Default, mine], self: "XivMcp"));
     }
 }
+
+public class PluginInstallStateTests
+{
+    [Fact]
+    public void Two_installs_of_one_plugin_count_as_loaded_when_either_is()
+    {
+        // A dev build that fails to load next to the released one with the same internal name (a fork of vnavmesh, say).
+        Assert.Equal(PluginInstall.Loaded, PluginInstallState.Of([false, true]));
+        Assert.Equal(PluginInstall.Loaded, PluginInstallState.Of([true, false]));
+    }
+
+    [Fact]
+    public void Installed_but_none_loaded_is_off_and_none_installed_is_missing()
+    {
+        Assert.Equal(PluginInstall.Off, PluginInstallState.Of([false, false]));
+        Assert.Equal(PluginInstall.Missing, PluginInstallState.Of([]));
+    }
+}

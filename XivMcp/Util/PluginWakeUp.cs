@@ -51,8 +51,9 @@ internal sealed class PluginWakeUp : IDisposable
     private static PluginInstall State(string plugin)
     {
         if (XivMcp.Api.PluginNames.Same(plugin, Svc.PluginInterface.InternalName)) return PluginInstall.Missing;
-        var found = Svc.PluginInterface.InstalledPlugins.FirstOrDefault(p => p.InternalName.Equals(plugin, StringComparison.OrdinalIgnoreCase));
-        return found is null ? PluginInstall.Missing : found.IsLoaded ? PluginInstall.Loaded : PluginInstall.Off;
+        // A dev build can sit next to the released plugin with the same internal name: loaded if either is.
+        return PluginInstallState.Of(Svc.PluginInterface.InstalledPlugins
+                                        .Where(p => p.InternalName.Equals(plugin, StringComparison.OrdinalIgnoreCase)).Select(p => p.IsLoaded));
     }
 
     private async Task TurnOn(string tool, CancellationToken ct)

@@ -29,7 +29,7 @@ Turning a collection off unloads the plugins no other enabled collection wants, 
 
 ## How settings are changed
 
-Every change asks you in game first, even when **Plugin management** is set to *Allow*: enabling or disabling a plugin or a collection, reloading one, and changing settings (the approval lists each change). Turning on the plugins a task needs is the exception, once you have allowed it. Other plugins can run automation or commands, or protect you, so XIV MCP never changes them without you.
+Every change asks you in game first, even when **Plugin management** is set to *Allow*: enabling or disabling a plugin or a collection, reloading one, and changing settings (the approval lists each change). There are two exceptions, both off by default: turning on the plugins a task needs, and enabling or disabling plugins and collections once you tick **Turn plugins and collections on or off without asking** (also under Plugin management). Reloading a plugin and changing its settings always ask. Other plugins can run automation or commands, or protect you, so XIV MCP never changes them without you.
 
 Plugins keep their settings in memory and often save them when they shut down. So `set_plugin_config` unloads a loaded plugin, writes the change through Dalamud's own file storage, and loads the plugin again.
 

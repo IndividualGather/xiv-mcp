@@ -101,3 +101,19 @@ public sealed record PluginCollection(string Name, bool Enabled, bool IsDefault,
 
     private bool Wants(string plugin) => Plugins.Contains(plugin, StringComparer.OrdinalIgnoreCase);
 }
+
+/// <summary>A plugin's state from all its installs with one internal name (a dev build can sit next to the released one).</summary>
+public static class PluginInstallState
+{
+    /// <param name="loaded">Whether each install with that internal name is loaded.</param>
+    public static PluginInstall Of(IEnumerable<bool> loaded)
+    {
+        var any = false;
+        foreach (var l in loaded)
+        {
+            if (l) return PluginInstall.Loaded;
+            any = true;
+        }
+        return any ? PluginInstall.Off : PluginInstall.Missing;
+    }
+}

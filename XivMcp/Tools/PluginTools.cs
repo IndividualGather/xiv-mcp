@@ -86,8 +86,9 @@ internal static class PluginTools
                 var enabled = args.Bool("enabled", true);
                 var plugin = DalamudInternals.Find(XivMcp.Api.PluginNames.Clean(args.String("plugin") ?? throw new ToolException("'plugin' is required.")));
                 DalamudInternals.EnsureNotSelf(plugin);
-                // Turning plugins on or off can switch off protections of their own: the player decides each time.
-                await Consent.Require($"{(enabled ? "Enable" : "Disable")} the plugin {DalamudInternals.Name(plugin)}?",
+                // Turning plugins on or off can switch off protections of their own: the player decides each time, unless they allowed it for good.
+                if (!config.TogglePluginsWithoutAsking)
+                    await Consent.Require($"{(enabled ? "Enable" : "Disable")} the plugin {DalamudInternals.Name(plugin)}?",
                     [$"Asked by {args.Caller?.Name ?? "your AI assistant"}.", enabled ? "It loads now and on the next start." : "It unloads now and stays off."],
                     TimeSpan.FromMinutes(2), default).ConfigureAwait(false);
 
@@ -177,7 +178,7 @@ internal static class PluginTools
         {
             Name = "set_plugin_collection_enabled",
             Description = "Turns a Dalamud plugin collection on or off, exactly like its switch in the plugin installer: Dalamud then loads the " +
-                          "plugins it wants and unloads those no enabled collection wants. The player approves in game first. The default " +
+                          "plugins it wants and unloads those no enabled collection wants. The player approves in game first, unless they allowed toggling plugins without asking. The default " +
                           "collection is always on. Requires 'Plugin management' in /xivmcp.",
             InputSchema = """
                 {
@@ -203,9 +204,10 @@ internal static class PluginTools
                     throw new ToolException(refusal);
                 if (target.Enabled == enabled) return new { collection = target.Name, enabled, changed = false };
 
-                // A collection turns many plugins on or off at once, automation among them: the player decides each time.
+                // A collection turns many plugins on or off at once, automation among them: the player decides each time, unless allowed for good.
                 var shown = target.Plugins.Take(15).ToList();
-                await Consent.Require($"Turn {(enabled ? "on" : "off")} the plugin collection {target.Name}?",
+                if (!config.TogglePluginsWithoutAsking)
+                    await Consent.Require($"Turn {(enabled ? "on" : "off")} the plugin collection {target.Name}?",
                 [
                     $"Asked by {args.Caller?.Name ?? "your AI assistant"}.",
                     $"{(enabled ? "Loads" : "Unloads (unless another collection keeps them)")}: {string.Join(", ", shown)}{(target.Plugins.Count > shown.Count ? $" and {target.Plugins.Count - shown.Count} more" : "")}.",

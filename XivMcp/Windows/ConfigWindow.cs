@@ -359,6 +359,16 @@ internal sealed partial class ConfigWindow : Window
         Tooltip("When a task needs a plugin you have installed but turned off (custom deliveries need Satisfier, retainers AutoRetainer, " +
                 "quests Questionable, walking vnavmesh), XIV MCP turns it on for the task and off again a minute after the task is done. " +
                 "Your plugin collections are not changed. Chat says which plugin it turned on and off.");
+
+        var toggle = config.TogglePluginsWithoutAsking;
+        if (ImGui.Checkbox("Turn plugins and collections on or off without asking##toggle-without-asking", ref toggle))
+        {
+            config.TogglePluginsWithoutAsking = toggle;
+            config.Save();
+        }
+        Tooltip("Your AI assistant can enable and disable plugins, and plugin collections, without a prompt each time. Turning a plugin " +
+                "off can also turn off what it protects you from, so only switch this on if you are fine with that. Reloading a " +
+                "plugin and changing its settings still ask.");
     }
 
     /// <summary>Optional gil limit above which a gil purchase asks too.</summary>

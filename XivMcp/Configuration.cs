@@ -83,6 +83,12 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public bool TurnOnNeededPlugins { get; set; }
 
+    /// <summary>
+    /// Turning plugins and plugin collections on or off (set_plugin_enabled, set_plugin_collection_enabled) goes ahead without asking
+    /// each time. Off by default: switching it on is the player's approval for all of them.
+    /// </summary>
+    public bool TogglePluginsWithoutAsking { get; set; }
+
     /// <summary>Longer walks ride a mount (Mount Roulette) and fly where the zone allows it.</summary>
     public bool UseMountForWalks { get; set; } = true;
 
