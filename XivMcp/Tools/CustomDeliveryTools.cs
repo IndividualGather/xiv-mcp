@@ -206,6 +206,8 @@ internal static class CustomDeliveryTools
         {
             var freed = await Recovery.Run(ct).ConfigureAwait(false);
             actions.AddRange(freed.Actions);
+            // Dialogue clicked through in the client's cutscene is progress: only a cutscene that stands still for long gives up.
+            if (freed.Actions.Count > 0) watch.BlockedTooLong(false, DateTime.UtcNow);
             if (!freed.Blocked || watch.BlockedTooLong(true, DateTime.UtcNow)) return freed with { Actions = actions };
             await Task.Delay(1000, ct).ConfigureAwait(false);
         }

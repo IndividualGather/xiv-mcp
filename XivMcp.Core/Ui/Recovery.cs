@@ -29,6 +29,9 @@ public static class RecoveryPlanner
     /// <summary>Lines of dialogue clicked through before Escape is tried on it.</summary>
     public const int MaxDialogueLines = 20;
 
+    /// <summary>The blocker for a cutscene: waited out, except for its dialogue, which is clicked through.</summary>
+    public const string Cutscene = "watching a cutscene";
+
     /// <summary>Escape presses before recovery gives up and asks the player.</summary>
     public const int MaxEscapes = 3;
 
@@ -39,6 +42,9 @@ public static class RecoveryPlanner
 
     public static RecoveryAction Next(RecoverySnapshot s)
     {
+        // A cutscene is never skipped, but its dialogue waits for a click like any other (a custom delivery client talks in one).
+        if (s.Blocker == Cutscene && s.Windows.FirstOrDefault(IsClosable) == "Talk" && s.TriesOnTop < MaxDialogueLines)
+            return new(RecoveryStep.AdvanceTalk, "Talk");
         if (s.Blocker is not null) return new(RecoveryStep.Blocked, Reason: $"The character is {s.Blocker}, which recovery doesn't interrupt.");
 
         var windows = s.Windows.Where(IsClosable).ToList();

@@ -20,6 +20,21 @@ public class RecoveryTests
     }
 
     [Fact]
+    public void Dialogue_inside_a_cutscene_is_clicked_through()
+    {
+        // After a custom delivery, the client talks in a cutscene: its text boxes wait for a click like any dialogue.
+        var action = RecoveryPlanner.Next(new RecoverySnapshot(true, ["Talk"], RecoveryPlanner.Cutscene, 0, 0));
+        Assert.Equal(RecoveryStep.AdvanceTalk, action.Step);
+    }
+
+    [Fact]
+    public void A_cutscene_without_dialogue_is_waited_out()
+    {
+        Assert.Equal(RecoveryStep.Blocked, RecoveryPlanner.Next(new RecoverySnapshot(true, [], RecoveryPlanner.Cutscene, 0, 0)).Step);
+        Assert.Equal(RecoveryStep.Blocked, RecoveryPlanner.Next(new RecoverySnapshot(true, ["SelectString"], RecoveryPlanner.Cutscene, 0, 0)).Step);
+    }
+
+    [Fact]
     public void Combat_cutscenes_and_loading_are_never_interrupted()
     {
         var action = RecoveryPlanner.Next(new RecoverySnapshot(true, ["Talk"], "in combat", 0, 0));

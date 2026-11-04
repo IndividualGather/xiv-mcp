@@ -43,8 +43,8 @@ internal static class Recovery
     [
         (ConditionFlag.InCombat, "in combat"),
         (ConditionFlag.BetweenAreas, "loading a zone"), (ConditionFlag.BetweenAreas51, "loading a zone"),
-        (ConditionFlag.WatchingCutscene, "watching a cutscene"), (ConditionFlag.WatchingCutscene78, "watching a cutscene"),
-        (ConditionFlag.OccupiedInCutSceneEvent, "watching a cutscene"),
+        (ConditionFlag.WatchingCutscene, RecoveryPlanner.Cutscene), (ConditionFlag.WatchingCutscene78, RecoveryPlanner.Cutscene),
+        (ConditionFlag.OccupiedInCutSceneEvent, RecoveryPlanner.Cutscene),
         (ConditionFlag.ExecutingCraftingAction, "crafting"), (ConditionFlag.ExecutingGatheringAction, "gathering"),
         (ConditionFlag.Casting, "casting"),
     ];
