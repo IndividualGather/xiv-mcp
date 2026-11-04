@@ -28,12 +28,15 @@ internal static class Recovery
         "Talk", "SelectYesno", "InputNumeric", "Request", "SatisfactionSupplyResult", "SatisfactionSupply", "Bank",
         "ShopExchangeCurrency", "ShopExchangeItem", "Shop", "InclusionShop", "GrandCompanySupplyList", "CollectablesShop",
         "SelectString", "SelectIconString", "RetainerList", "SystemMenu",
+        // A gathering node left open (a collectable gathering that stalled holds the character until its window is closed).
+        "GatheringMasterpiece", "Gathering",
     ];
 
     private static readonly ConditionFlag[] OccupiedFlags =
     [
         ConditionFlag.OccupiedInEvent, ConditionFlag.OccupiedInQuestEvent, ConditionFlag.Occupied, ConditionFlag.Occupied30,
         ConditionFlag.Occupied33, ConditionFlag.Occupied38, ConditionFlag.Occupied39, ConditionFlag.OccupiedSummoningBell,
+        ConditionFlag.Gathering,
     ];
 
     private static readonly (ConditionFlag Flag, string What)[] Blockers =

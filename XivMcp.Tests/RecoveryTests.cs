@@ -28,6 +28,15 @@ public class RecoveryTests
     }
 
     [Fact]
+    public void A_gathering_window_left_open_is_closed()
+    {
+        // A collectable gathering that stalled: the node window holds the character (the Gathering condition) until it is closed.
+        var action = RecoveryPlanner.Next(new RecoverySnapshot(true, ["_GatheringMasterpieceInfo", "GatheringMasterpiece"], null, 0, 0));
+        Assert.Equal(RecoveryStep.CloseWindow, action.Step);
+        Assert.Equal("GatheringMasterpiece", action.Window);
+    }
+
+    [Fact]
     public void Dialogue_is_clicked_through()
     {
         Assert.Equal(new RecoveryAction(RecoveryStep.AdvanceTalk, "Talk"), RecoveryPlanner.Next(Stuck("Talk")));
