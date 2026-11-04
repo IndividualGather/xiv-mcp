@@ -91,7 +91,8 @@ internal static class ShopTools
                     "quantity": { "type": "integer", "description": "How many to buy." },
                     "npc": { "type": "string", "description": "Vendor NPC name or id (from find_vendors); default: a gil vendor, in a city first, the current zone first." },
                     "menu_option": { "type": "string", "description": "Text of the NPC menu entry that opens the right shop, if it can't be found automatically." },
-                    "approval": { "type": "string", "description": "Id of a standing approval (request_spending_approval) to use instead of asking per purchase; it caps what can be spent." }
+                    "approval": { "type": "string", "description": "Id of a standing approval (request_spending_approval) to use instead of asking per purchase; it caps what can be spent." },
+                    "up_to": { "type": "boolean", "description": "With an approval: buy as many as the currency in hand pays for, at most 'quantity', and finish without an error when it runs out (default false: not enough currency is an error). For job steps after farming a currency whose yield varies." }
                   },
                   "required": ["item", "quantity"]
                 }
@@ -165,7 +166,7 @@ internal static class ShopTools
 
                             var gilBefore = await Game.Run(Gil).ConfigureAwait(false);
                             if (window == "InclusionShop") await ShowInInclusionShop(item.RowId, steps, ct).ConfigureAwait(false);
-                            var bought = await Purchase(item.RowId, quantity, offer, check.Before, steps, ct, approval).ConfigureAwait(false);
+                            var bought = await Purchase(item.RowId, quantity, offer, check.Before, steps, ct, approval, args.Bool("up_to", false)).ConfigureAwait(false);
                             await CloseShop(ct).ConfigureAwait(false);
                             var after = await Game.Run(() => (Count: Items.CountInBags(item.RowId), Gil: Gil())).ConfigureAwait(false);
                             return new
@@ -539,7 +540,7 @@ internal static class ShopTools
     /// from the approved currency's drop, and then never buys more than the remaining approved amount covers.
     /// </summary>
     private static async Task<int> Purchase(uint itemId, int quantity, Offer offer, int before, List<string> steps, CancellationToken ct,
-                                            Approvals.Approval? approval = null)
+                                            Approvals.Approval? approval = null, bool upTo = false)
     {
         var target = before + quantity;
         var failures = 0;
@@ -559,6 +560,19 @@ internal static class ShopTools
                 {
                     steps.Add($"Approval {approval.Id} has {budget:N0} {Items.Name(approval.CurrencyId)} left, not enough for another one.");
                     return have - before;
+                }
+                // Once the unit cost is known, never ask the shop for more than the currency in hand pays for.
+                if (unitCost is { } each)
+                {
+                    var owned = await Game.Run(() => CurrencyCount(approval.CurrencyId)).ConfigureAwait(false);
+                    var affordable = (int)Math.Min(int.MaxValue, owned / Math.Max(1, each));
+                    if (affordable <= 0)
+                    {
+                        var note = $"{owned:N0} {Items.Name(approval.CurrencyId)} left, {each:N0} each: bought {have - before} of {quantity}.";
+                        if (upTo) { steps.Add($"Not enough for another one; {note}"); return have - before; }
+                        throw new ToolException($"Not enough {Items.Name(approval.CurrencyId)}: {note} (up_to=true buys as many as it covers).");
+                    }
+                    batch = Math.Min(batch, affordable);
                 }
             }
             var currencyBefore = approval is null ? 0 : await Game.Run(() => CurrencyCount(approval.CurrencyId)).ConfigureAwait(false);
