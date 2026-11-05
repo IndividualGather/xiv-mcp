@@ -112,9 +112,13 @@ internal static class TradeTools
         var completed = false;
         try
         {
-            // 1. Close enough, then the request.
-            await Approach(partner, ct).ConfigureAwait(false);
-            await Game.Run(() => Request(partner.EntityId)).ConfigureAwait(false);
+            // 1. Close enough, then the request — unless this player already opened a trade with us (we are the receiving side).
+            var incoming = await Game.Run(() => Read() is { Trading: true } w && string.Equals(w.Partner, partner.Name, StringComparison.OrdinalIgnoreCase)).ConfigureAwait(false);
+            if (!incoming)
+            {
+                await Approach(partner, ct).ConfigureAwait(false);
+                await Game.Run(() => Request(partner.EntityId)).ConfigureAwait(false);
+            }
             started = true;
             if (!await GameWindows.WaitFor(() => GameWindows.Ready("Trade"), timeout, ct).ConfigureAwait(false))
                 throw new ToolException($"{partner.Name} did not accept the trade request.");
@@ -135,19 +139,37 @@ internal static class TradeTools
                     throw new ToolException("The gil did not show up in the trade window.");
             }
 
-            // 3. Their side: wait until they have pressed Trade, so their offer is final.
-            if (!await GameWindows.WaitFor(() => Read() is { Trading: false } or { RemoteLocked: true }, timeout, ct).ConfigureAwait(false))
-                throw new ToolException($"{partner.Name} did not press Trade in time.");
-            var window = await Game.Run(Read).ConfigureAwait(false);
-            if (!window.Trading) throw new ToolException($"{partner.Name} cancelled the trade.");
-            Check(give, expect, window);
+            Window window;
+            if (TradeCheck.LocksFirst(expect))
+            {
+                // 3a. A gift: approve our offer and press Trade first, then wait for them (the final confirmation is checked again).
+                window = await Game.Run(Read).ConfigureAwait(false);
+                if (!window.Trading) throw new ToolException($"{partner.Name} cancelled the trade.");
+                Check(give, expect, window);
+                await Approve(partner.Name, window, expect).ConfigureAwait(false);
+                Check(give, expect, await Game.Run(Read).ConfigureAwait(false));
+                if (!await Game.Run(PressTrade).ConfigureAwait(false)) throw new ToolException("The trade window's Trade button could not be pressed.");
+                if (!await GameWindows.WaitFor(() => Read() is { Trading: false } or { RemoteLocked: true } || Prompt() is not null, timeout, ct).ConfigureAwait(false))
+                    throw new ToolException($"{partner.Name} did not press Trade in time.");
+            }
+            else
+            {
+                // 3. Their side: wait until they have pressed Trade, so their offer is final.
+                if (!await GameWindows.WaitFor(() => Read() is { Trading: false } or { RemoteLocked: true }, timeout, ct).ConfigureAwait(false))
+                    throw new ToolException($"{partner.Name} did not press Trade in time.");
+                window = await Game.Run(Read).ConfigureAwait(false);
+                if (!window.Trading) throw new ToolException($"{partner.Name} cancelled the trade.");
+                Check(give, expect, window);
 
-            // 4. The player approves what the window holds.
-            await Approve(partner.Name, window, expect).ConfigureAwait(false);
-            Check(give, expect, await Game.Run(Read).ConfigureAwait(false));
+                // 4. The player approves what the window holds.
+                await Approve(partner.Name, window, expect).ConfigureAwait(false);
+                Check(give, expect, await Game.Run(Read).ConfigureAwait(false));
 
-            // 5. Trade, then the final confirmation, checked once more.
-            if (!await Game.Run(PressTrade).ConfigureAwait(false)) throw new ToolException("The trade window's Trade button could not be pressed.");
+                // 5. Trade.
+                if (!await Game.Run(PressTrade).ConfigureAwait(false)) throw new ToolException("The trade window's Trade button could not be pressed.");
+            }
+
+            // 5b. The final confirmation, checked once more.
             if (!await GameWindows.WaitFor(() => Prompt() is not null || !Read().Trading, timeout, ct).ConfigureAwait(false))
                 throw new ToolException("The final trade confirmation did not appear.");
             for (var i = 0; i < 3 && await Game.Run(Prompt).ConfigureAwait(false) is { } prompt; i++)

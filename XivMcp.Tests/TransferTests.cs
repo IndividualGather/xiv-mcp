@@ -86,6 +86,13 @@ public class TradeCheckTests
     }
 
     [Fact]
+    public void A_gift_locks_first_so_two_assistants_dont_wait_on_each_other()
+    {
+        Assert.True(TradeCheck.LocksFirst(null));
+        Assert.False(TradeCheck.LocksFirst(new TradeOffer([new(4, false, 1)], 0)));
+    }
+
+    [Fact]
     public void A_trade_has_room_for_five_items()
     {
         Assert.Null(TradeOffer.Problem(Give));

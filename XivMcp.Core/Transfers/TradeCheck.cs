@@ -52,6 +52,13 @@ public sealed record TradeOffer(IReadOnlyList<TradeItem> Items, long Gil)
 public static class TradeCheck
 {
     /// <summary>What the game would not allow in a planned trade, or null. Only one side of a trade can put gil in.</summary>
+    /// <summary>
+    /// Whether this side presses Trade before the other side has: a gift (nothing expected back) can, since its offer is all that
+    /// matters and the final confirmation is checked again. Two assistants trading with each other would otherwise each wait for the
+    /// other to press first; the side that expects something waits, so it sees the other side's final offer before it agrees.
+    /// </summary>
+    public static bool LocksFirst(TradeOffer? expect) => expect is null;
+
     public static string? PlanProblem(TradeOffer give, TradeOffer? expect) =>
         TradeOffer.Problem(give) ?? (expect is not null ? TradeOffer.Problem(expect) : null)
         ?? (give.Gil > 0 && expect?.Gil > 0 ? "Only one side of a trade can put gil in: give gil, or receive it, not both." : null);
