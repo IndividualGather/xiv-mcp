@@ -113,6 +113,7 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(ShopTools.ApprovalTools(Config))
             .Concat(VentureTools.Create(Config, retainers, compat))
             .Concat(CollectableTools.Create(Config, compat))
+            .Concat(GrandCompanyTools.Create(Config, compat))
             .Append(VentureTools.RecallTool(Config, compat))
             .Concat(CraftPlanTools.Create(Config, retainers))
             .Concat(LongRunningTools.Create(Config))

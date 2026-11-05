@@ -46,6 +46,7 @@ public static class BuiltInCapabilities
         ["leave_duty"] = [GameUi, Combat],
         ["move_gil"] = [MoveItems, SpendGil],
         ["turn_in_collectables"] = [GameUi, TradeItems],
+        ["deliver_to_grand_company"] = [GameUi, TradeItems],
         ["assign_venture"] = [GameUi, SpendCurrency],
         ["recall_venture"] = [GameUi],
         ["repair_submersible"] = [GameUi, SpendCurrency],

@@ -107,6 +107,7 @@ public static class ToolSummaries
         ["assign_venture"] = "Sends a retainer on a venture. Costs venture tokens.",
         ["recall_venture"] = "Calls a retainer back from a running venture, only after you approve it.",
         ["turn_in_collectables"] = "Takes you to an appraiser and hands in your collectables for scrips, stopping before the scrip cap.",
+        ["deliver_to_grand_company"] = "Hands in the gear in your bags at your Grand Company for seals, and buys Venture coins.",
 
         // Market & purchases
         ["get_market_listings"] = "Looks at what your retainers are selling and whether someone sells cheaper.",

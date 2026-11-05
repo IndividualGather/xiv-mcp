@@ -21,6 +21,7 @@ public static class OnDemandPlugins
     public static IReadOnlyDictionary<string, string[]> CoreNeeds { get; } = new Dictionary<string, string[]>
     {
         ["run_autoretainer"] = ["AutoRetainer"],
+        ["deliver_to_grand_company"] = ["AutoRetainer"],
     };
 
     /// <summary>The plugins to turn on before the tool runs, in the order it lists them.</summary>
