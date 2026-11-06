@@ -69,27 +69,32 @@ internal static class JobTools
         {
             Name = "get_job",
             Description = "One background job in detail, as it is at the moment of the call (asOf): every step with its state, arguments, result " +
-                          "(or error), timing and attempts, plus the job log.",
-            InputSchema = """{ "type": "object", "properties": { "id": { "type": "string", "description": "Job id (or name)." }, "log_lines": { "type": "integer", "description": "Default 30." } }, "required": ["id"] }""",
+                          "(or error), timing and attempts, plus the job log. brief=true lists the steps by id, tool and state only, with " +
+                          "arguments and results just for the current step (for polling a long job).",
+            InputSchema = """{ "type": "object", "properties": { "id": { "type": "string", "description": "Job id (or name)." }, "log_lines": { "type": "integer", "description": "Default 30." }, "brief": { "type": "boolean", "description": "Only the current step in full (default false)." } }, "required": ["id"] }""",
             Handler = (args, _) =>
             {
                 var job = manager().Get(args.String("id") ?? throw new ToolException("'id' is required."));
                 var lines = args.Int("log_lines", 30, 0, 200);
+                var brief = args.Bool("brief", false);
+                var current = job.Steps.FirstOrDefault(s => s.State is not (JobManager.StepState.Done or JobManager.StepState.Skipped));
                 return Task.FromResult<object?>(new
                 {
                     asOf = DateTime.UtcNow,
                     job = JobManager.Describe(job),
-                    steps = job.Steps.Select(s => new
-                    {
-                        s.Id, s.Tool, s.Note,
-                        state = s.State.ToString().ToLowerInvariant(),
-                        args = s.Args,
-                        result = s.Result,
-                        error = s.Error,
-                        started = s.StartedUtc,
-                        finished = s.FinishedUtc,
-                        attempts = s.Attempts,
-                    }).ToList(),
+                    steps = job.Steps.Select(s => brief && s != current
+                        ? (object)new { s.Id, s.Tool, state = s.State.ToString().ToLowerInvariant() }
+                        : new
+                        {
+                            s.Id, s.Tool, s.Note,
+                            state = s.State.ToString().ToLowerInvariant(),
+                            args = s.Args,
+                            result = s.Result,
+                            error = s.Error,
+                            started = s.StartedUtc,
+                            finished = s.FinishedUtc,
+                            attempts = s.Attempts,
+                        }).ToList(),
                     log = job.Log.TakeLast(lines).ToList(),
                 });
             },
@@ -99,7 +104,8 @@ internal static class JobTools
         {
             Name = "update_job",
             Description = "Changes a job that is pending or paused: action=retry (run the current step again), skip (move past it), append (add " +
-                          "steps at the end) or replace_remaining (swap all steps that haven't run yet). resume=true continues right away.",
+                          "steps at the end) or replace_remaining (swap all steps that haven't run yet, including a failed or interrupted current step: " +
+                          "the first new step becomes the current one, so don't skip afterwards). resume=true continues right away.",
             InputSchema = $$"""
                 {
                   "type": "object",
