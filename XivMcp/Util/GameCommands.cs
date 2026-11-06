@@ -25,7 +25,10 @@ internal static class GameCommands
         finally { str->Dtor(true); }
     }
 
-    /// <summary>Collects system/error chat and log messages while it is alive, so a command's feedback can be returned.</summary>
+    /// <summary>
+    /// Collects the game's system and error notices (chat and log messages) while it is alive, so a command's feedback can be
+    /// returned. Battle log lines, chat and dialogue arriving at the same time are left out (<see cref="Ui.GameFeedback"/>).
+    /// </summary>
     public sealed class Feedback : IDisposable
     {
         private readonly ConcurrentQueue<string> messages = new();
@@ -40,13 +43,16 @@ internal static class GameCommands
 
         private void OnChat(IChatMessage m)
         {
-            if (m.LogKind is XivChatType.ErrorMessage or XivChatType.SystemMessage)
-                messages.Enqueue(m.Message.TextValue);
+            if (Ui.GameFeedback.IsNotice((int)m.LogKind) && Ui.GameFeedback.Clean(m.Message.TextValue) is { } text)
+                messages.Enqueue(text);
         }
 
         private void OnLog(ILogMessage m)
         {
-            if (m.GameData.ValueNullable is { } row && row.Text.ExtractText() is { Length: > 0 } text)
+            // The log message's own channel (its LogKind row is the chat type) decides: damage and effect lines
+            // ("... for  damage.") are not an answer.
+            if (m.GameData.ValueNullable is { } row && Ui.GameFeedback.IsNotice((int)row.LogKind.RowId) &&
+                Ui.GameFeedback.Clean(row.Text.ExtractText()) is { } text)
                 messages.Enqueue(text);
         }
 
