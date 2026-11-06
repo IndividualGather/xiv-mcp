@@ -215,7 +215,7 @@ internal static class InventoryTools
             Name = "get_currencies",
             Description = "All currencies of the logged-in character: gil, MGP, Wolf Marks, Allied Seals, Grand Company seals (with cap), " +
                           "every allagan tomestone type, the weekly tomestone cap progress, retainer gil, scrips and other special currencies " +
-                          "(with their cap), plus the raw contents of the currency container.",
+                          "(live amount, right after a turn-in or purchase, with their cap), plus the raw contents of the currency container.",
             Handler = (_, _) => Game.RunLoggedIn<object?>(() =>
             {
                 unsafe
@@ -234,8 +234,9 @@ internal static class InventoryTools
                         .Where(t => !string.IsNullOrEmpty(t.name))
                         .ToList();
 
-                    // Scrips and other special currencies don't sit in the currency container; the currency manager holds them
-                    // by a small "special id", with their cap.
+                    // Scrips and other special currencies don't sit in the currency container; the currency manager lists them
+                    // by a small "special id", with their cap. Its own count can trail behind for minutes after a turn-in, so the
+                    // amount comes from the inventory manager, which changes at once.
                     var cm = CurrencyManager.Instance();
                     var special = new List<object>();
                     for (byte specialId = 1; specialId < 64; specialId++)
@@ -243,7 +244,7 @@ internal static class InventoryTools
                         var itemId = cm->GetItemIdBySpecialId(specialId);
                         if (itemId == 0 || ItemName(itemId) is not { Length: > 0 } specialName) continue;
                         var max = cm->GetItemMaxCount(itemId);
-                        special.Add(new { itemId, name = specialName, count = cm->GetItemCount(itemId), max = max > 0 ? max : (uint?)null });
+                        special.Add(new { itemId, name = specialName, count = Collectables.CurrencyHeld(itemId), max = max > 0 ? max : (uint?)null });
                     }
 
                     var container = Svc.Inventory.GetInventoryItems(GameInventoryType.Currency).ToArray()

@@ -34,9 +34,22 @@ internal static class Collectables
     {
         var cm = CurrencyManager.Instance();
         if (cm == null || currencyItemId == 0) return (0, 0, long.MaxValue);
-        long have = cm->GetItemCount(currencyItemId);
+        var have = CurrencyHeld(currencyItemId);
         long max = cm->GetItemMaxCount(currencyItemId);
-        return (have, max, max > 0 ? Math.Max(0, max - have) : long.MaxValue);
+        return (have, max, XivMcp.CustomDeliveries.SpecialCurrency.Room(have, max));
+    }
+
+    /// <summary>
+    /// How many of a scrip or other special currency the player has right now: the inventory manager's live count (the currency
+    /// manager's own count can trail behind for minutes after a turn-in), see <see cref="XivMcp.CustomDeliveries.SpecialCurrency"/>.
+    /// Framework thread.
+    /// </summary>
+    public static unsafe long CurrencyHeld(uint currencyItemId)
+    {
+        var im = InventoryManager.Instance();
+        var cm = CurrencyManager.Instance();
+        return XivMcp.CustomDeliveries.SpecialCurrency.Held(im == null ? 0 : im->GetInventoryItemCount(currencyItemId),
+                                                          cm == null ? 0 : cm->GetItemCount(currencyItemId));
     }
 
     public static object Describe(Reward r)

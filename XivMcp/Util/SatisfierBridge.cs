@@ -116,7 +116,7 @@ internal static class SatisfierBridge
             if (data.RewardCurrency == 0 || (i == 1 && level < row.MinLevelForSecondReward)) continue;
             var itemId = cm->GetItemIdBySpecialId((byte)data.RewardCurrency);
             if (itemId == 0) continue;
-            rewards.Add(new CustomDeliveries.CappedReward(Util.Items.Name(itemId), cm->GetItemCount(itemId), cm->GetItemMaxCount(itemId),
+            rewards.Add(new CustomDeliveries.CappedReward(Util.Items.Name(itemId), Collectables.CurrencyHeld(itemId), cm->GetItemMaxCount(itemId),
                 data.QuantityHigh * row.BonusMultiplier / 100));
         }
         return rewards;
