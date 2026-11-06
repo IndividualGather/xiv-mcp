@@ -182,7 +182,7 @@ internal static class CraftPlanTools
 
     private static async Task<(List<CraftPlanner.Target>, CraftPlanner.Options)> ParseArgs(ToolArgs args, RetainerTracker retainers)
     {
-        var raw = (args.Node("items") as JsonArray ?? []).OfType<JsonObject>().ToList();
+        var raw = (args.Array("items") ?? []).OfType<JsonObject>().ToList();
         if (raw.Count == 0) throw new ToolException("'items' needs at least one { item, quantity }.");
         var options = new CraftPlanner.Options(args.Bool("craft_intermediates", true), args.Bool("use_retainers", true), args.Bool("count_existing", false));
         var respectCap = args.Bool("respect_scrip_cap", true);
@@ -334,7 +334,14 @@ internal static class CraftPlanTools
                 options.Add(new { how = "venture", tool = "find_ventures / assign_venture" });
             if (teamcraft.TryGetValue(id, out var tc) && tc is not null)
             {
-                var kinds = ItemSourceTools.Describe(tc, [], 2);
+                // One item with odd online data must not break the whole plan: its online sources are just left out.
+                Dictionary<string, object> kinds;
+                try { kinds = ItemSourceTools.Describe(tc, [], 2); }
+                catch (Exception ex)
+                {
+                    Svc.Log.Warning($"[MCP] Could not read Teamcraft sources of item {id}: {ex.Message}");
+                    kinds = [];
+                }
                 foreach (var kind in new[] { "exchange", "drop", "desynthesis", "reduction", "duty", "treasure", "fate", "voyage" })
                     if (kinds.TryGetValue(kind, out var detail)) options.Add(new { how = kind, detail });
             }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
@@ -86,7 +86,7 @@ internal static class ItemSourceTools
         if (sources is null) return result;
         foreach (var source in sources.OfType<JsonObject>())
         {
-            var type = (SourceType)(source["type"]?.GetValue<int>() ?? 0);
+            var type = (SourceType)(JsonNumber.Int(source["type"]) ?? 0);
             if (!Kinds.TryGetValue(type, out var kind)) continue;
             if (filter.Count > 0 && !filter.Contains(kind) && !filter.Contains(kind + "s")) continue;
             var data = source["data"];
@@ -104,7 +104,7 @@ internal static class ItemSourceTools
                 SourceType.ReducedFrom or SourceType.Desynths or SourceType.Treasures => Ids(data, max, id => Excel.Ref<Item>(id)),
                 SourceType.Quests => Ids(data, max, id => Excel.Ref<Quest>(id)),
                 SourceType.Achievements => Ids(data, max, id => Excel.Ref<Achievement>(id)),
-                SourceType.Voyages => Each(data, max, v => new { kind = v["type"]?.GetValue<int>() == 1 ? "submersible" : "airship", name = En(v["name"]) }),
+                SourceType.Voyages => Each(data, max, v => new { kind = JsonNumber.Int(v["type"]) == 1 ? "submersible" : "airship", name = En(v["name"]) }),
                 SourceType.Masterbooks => Each(data, max, m => Excel.Ref<Item>(UInt(m["id"]))),
                 _ => data?.DeepClone(),
             };
@@ -124,10 +124,10 @@ internal static class ItemSourceTools
     {
         recipeId = uint.TryParse(r["id"]?.ToString(), out var rid) ? rid : 0,
         job = JobAbbr(UInt(r["job"])),
-        level = r["lvl"]?.GetValue<int>(),
-        yield = r["yield"]?.GetValue<int>(),
+        level = JsonNumber.Int(r["lvl"]),
+        yield = JsonNumber.Int(r["yield"]),
         ingredients = (r["ingredients"] as JsonArray ?? []).OfType<JsonObject>()
-            .Select(i => new { id = UInt(i["id"]), name = Items.Name(UInt(i["id"])), amount = i["amount"]?.GetValue<int>() }).ToList(),
+            .Select(i => new { id = UInt(i["id"]), name = Items.Name(UInt(i["id"])), amount = JsonNumber.Int(i["amount"]) }).ToList(),
     };
 
     private static object Vendor(JsonObject v) => new
@@ -135,7 +135,7 @@ internal static class ItemSourceTools
         npc = NpcName(UInt(v["npcId"])),
         npcId = UInt(v["npcId"]),
         shop = En(v["shopName"]) is { Length: > 0 } s ? s : null,
-        priceGil = v["price"]?.GetValue<int>(),
+        priceGil = JsonNumber.Int(v["price"]),
         location = Location(v),
     };
 
@@ -149,9 +149,9 @@ internal static class ItemSourceTools
         trades = (t["trades"] as JsonArray ?? []).OfType<JsonObject>().Take(5).Select(tr => new
         {
             cost = (tr["currencies"] as JsonArray ?? []).OfType<JsonObject>()
-                .Select(c => new { id = UInt(c["id"]), name = Items.Name(UInt(c["id"])), amount = c["amount"]?.GetValue<int>() }).ToList(),
+                .Select(c => new { id = UInt(c["id"]), name = Items.Name(UInt(c["id"])), amount = JsonNumber.Int(c["amount"]) }).ToList(),
             receive = (tr["items"] as JsonArray ?? []).OfType<JsonObject>()
-                .Select(c => new { id = UInt(c["id"]), name = Items.Name(UInt(c["id"])), amount = c["amount"]?.GetValue<int>() }).ToList(),
+                .Select(c => new { id = UInt(c["id"]), name = Items.Name(UInt(c["id"])), amount = JsonNumber.Int(c["amount"]) }).ToList(),
         }).ToList(),
     };
 
@@ -162,11 +162,11 @@ internal static class ItemSourceTools
         if (data is not JsonObject g) return null;
         return new
         {
-            level = g["level"]?.GetValue<int>(),
+            level = JsonNumber.Int(g["level"]),
             nodes = (g["nodes"] as JsonArray ?? []).OfType<JsonObject>().Take(max).Select(n => new
             {
-                type = n["type"]?.GetValue<int>() is int t && t >= 0 && t < NodeTypes.Length ? NodeTypes[t] : n["type"]?.ToString(),
-                level = n["level"]?.GetValue<int>(),
+                type = JsonNumber.Int(n["type"]) is int t && t >= 0 && t < NodeTypes.Length ? NodeTypes[t] : n["type"]?.ToString(),
+                level = JsonNumber.Int(n["level"]),
                 zone = Excel.NameOf<PlaceName>(UInt(n["zoneId"])),
                 map = new { x = n["x"]?.GetValue<double>(), y = n["y"]?.GetValue<double>() },
                 timed = n["limited"]?.GetValue<bool>() == true || (n["spawns"] as JsonArray)?.Count > 0,
@@ -179,11 +179,11 @@ internal static class ItemSourceTools
 
     private static object TimedNode(JsonObject n) => new
     {
-        type = n["type"]?.GetValue<int>() is int t && t >= 0 && t < NodeTypes.Length ? NodeTypes[t] : n["type"]?.ToString(),
+        type = JsonNumber.Int(n["type"]) is int t && t >= 0 && t < NodeTypes.Length ? NodeTypes[t] : n["type"]?.ToString(),
         zone = Excel.NameOf<PlaceName>(UInt(n["zoneId"])),
         map = n["coords"]?.DeepClone(),
         spawnsEorzeaHours = n["spawns"]?.DeepClone(),
-        durationHours = n["duration"]?.GetValue<int>(),
+        durationHours = JsonNumber.Int(n["duration"]),
         ephemeral = n["ephemeral"]?.GetValue<bool>(),
     };
 
@@ -201,19 +201,19 @@ internal static class ItemSourceTools
         {
             ventureId = UInt(v["id"]),
             retainerClass = task is { } t ? t.ClassJobCategory.ValueNullable?.Name.ExtractText() : null,
-            retainerLevel = v["lvl"]?.GetValue<int>(),
-            ventureCost = v["cost"]?.GetValue<int>(),
-            requiredItemLevel = v["reqIlvl"]?.GetValue<int>() is > 0 and var il ? il : (int?)null,
-            requiredGathering = v["reqGathering"]?.GetValue<int>() is > 0 and var rg ? rg : (int?)null,
+            retainerLevel = JsonNumber.Int(v["lvl"]),
+            ventureCost = JsonNumber.Int(v["cost"]),
+            requiredItemLevel = JsonNumber.Int(v["reqIlvl"]) is > 0 and var il ? il : (int?)null,
+            requiredGathering = JsonNumber.Int(v["reqGathering"]) is > 0 and var rg ? rg : (int?)null,
             quantities = (v["quantities"] as JsonArray ?? []).OfType<JsonObject>()
-                .Select(q => new { quantity = q["quantity"]?.GetValue<int>(), stat = q["stat"]?.ToString(), atLeast = q["value"]?.GetValue<int>() ?? 0 }).ToList(),
+                .Select(q => new { quantity = JsonNumber.Int(q["quantity"]), stat = q["stat"]?.ToString(), atLeast = JsonNumber.Int(q["value"]) ?? 0 }).ToList(),
         };
     }
 
     private static object Fate(JsonObject f) => new
     {
         fate = Excel.NameOf<Fate>(UInt(f["id"])),
-        level = f["level"]?.GetValue<int>(),
+        level = JsonNumber.Int(f["level"]),
         zone = Excel.NameOf<PlaceName>(UInt(f["zoneId"])),
         map = f["coords"]?.DeepClone(),
     };
