@@ -105,26 +105,38 @@ internal static partial class NavigationTools
         else if (plan is not null)
         {
             phase = $"travelling to {plan.Value.Label}";
-            // Lifestream can't leave an inn room; the game's own teleport can.
+            // Lifestream can't leave an inn room, and "/li <shard>" can pick another city's shard of the same name: then the game's
+            // own teleport goes to the right city first.
             var exit = await Game.Run(() =>
             {
                 var sheet = Svc.Data.GetExcelSheet<Aetheryte>();
                 var target = sheet.GetRow(plan.Value.AetheryteId);
                 uint? city = plan.Value.Shard && target.AethernetGroup != 0 &&
                              sheet.FirstOrDefault(a => a.IsAetheryte && a.AethernetGroup == target.AethernetGroup) is { RowId: not 0 } c ? c.RowId : null;
-                return (Plan: XivMcp.Maps.InnExit.Plan(CurrentIntendedUse(), plan.Value.AetheryteId, plan.Value.Shard, city),
-                        CityName: city is { } id ? Excel.Name(sheet.GetRow(id).PlaceName) : null);
+                var ambiguous = false;
+                if (plan.Value.Shard && target.AethernetGroup != 0)
+                {
+                    var here = Svc.ClientState.TerritoryType;
+                    var inCity = sheet.Any(a => a.AethernetGroup == target.AethernetGroup && a.Territory.RowId == here);
+                    var shared = sheet.Any(a => a.RowId != target.RowId && a.AethernetName.RowId != 0 && a.AethernetGroup != target.AethernetGroup &&
+                                                string.Equals(Excel.Name(a.AethernetName), plan.Value.Label, StringComparison.OrdinalIgnoreCase));
+                    ambiguous = shared && !inCity;
+                }
+                return (Plan: XivMcp.Maps.InnExit.Plan(CurrentIntendedUse(), plan.Value.AetheryteId, plan.Value.Shard, city, ambiguous),
+                        CityName: city is { } id ? Excel.Name(sheet.GetRow(id).PlaceName) : null,
+                        FromInn: CurrentIntendedUse() == XivMcp.Maps.PlayerGuidance.InnUse);
             }).ConfigureAwait(false);
             if (exit.Plan.Teleport is { } first)
             {
                 var room = await Game.Run(() => Svc.ClientState.TerritoryType).ConfigureAwait(false);
                 var teleported = await Game.Run(() => GameTeleport(first)).ConfigureAwait(false);
-                if (!teleported) throw new ToolException($"The teleport out of the inn room to {exit.CityName ?? plan.Value.Label} was refused (is the aetheryte attuned, is there enough gil?).");
-                steps.Add($"Teleported out of the inn room to {exit.CityName ?? plan.Value.Label}.");
+                var whereTo = exit.CityName ?? plan.Value.Label;
+                if (!teleported) throw new ToolException($"The teleport to {whereTo} was refused (is the aetheryte attuned, is there enough gil?).");
+                steps.Add(exit.FromInn ? $"Teleported out of the inn room to {whereTo}." : $"Teleported to {whereTo} (other cities have a shard named {plan.Value.Label} too).");
                 var left = DateTime.UtcNow + TimeSpan.FromSeconds(30);
                 while (await Game.Run(() => Svc.ClientState.TerritoryType).ConfigureAwait(false) == room)
                 {
-                    if (DateTime.UtcNow > left) throw new ToolException("The teleport out of the inn room did not happen (interrupted?).");
+                    if (DateTime.UtcNow > left) throw new ToolException($"The teleport to {whereTo} did not happen (interrupted?).");
                     await Task.Delay(250, ct).ConfigureAwait(false);
                 }
                 await WaitUntilSettled(ct).ConfigureAwait(false);
