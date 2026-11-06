@@ -27,6 +27,8 @@ Most tools on this page only read. They are in the **Game data** module, whose *
 | `inspect_window` | Which game windows are open, or the values and texts one of them shows |
 | `run_self_test` | The live self-test. See [Troubleshooting](/docs/user/troubleshooting). |
 
+`get_active_quests` marks a quest at its last step with `onFinalStep`: only the final talk to the quest NPC is left. That doesn't mean the quest's items are ready. Crafter and gatherer class quests hand their items in at that talk, so your assistant checks your bags first. (Older versions called this field `readyToTurnIn`.)
+
 Some of this data is only sent by the game in certain places, such as your retainers at a summoning bell. XIV MCP remembers it between visits. See [Caches](/docs/user/caches).
 
 ## Collections and actions

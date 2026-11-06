@@ -198,7 +198,9 @@ internal static class UnlockTools
         {
             Name = "get_active_quests",
             Description = "The quests currently in the logged-in character's journal (accepted, not yet completed) with their current step, " +
-                          "plus accepted daily (beast tribe) quests, active levequests, leve allowances and beast tribe reputation.",
+                          "plus accepted daily (beast tribe) quests, active levequests, leve allowances and beast tribe reputation. " +
+                          "onFinalStep (step 255) only means the last talk to the quest NPC is left; it does not mean the quest's items " +
+                          "are in the bags (class quests hand them in at that talk), so check the inventory before turning in.",
             Handler = (_, _) => Game.RunLoggedIn<object?>(() =>
             {
                 unsafe
@@ -216,7 +218,8 @@ internal static class UnlockTools
                             questId = q.QuestId + 65536u,
                             name = Game.Clean(row?.Name.ExtractText()),
                             sequence = q.Sequence,
-                            readyToTurnIn = q.Sequence == 255,
+                            // Not "readyToTurnIn": the final step says nothing about the items a class quest wants handed in.
+                            onFinalStep = XivMcp.Quests.QuestStep.IsFinal(q.Sequence),
                             journalGenre = row is { } r ? Excel.Name(r.JournalGenre) : null,
                             classJobLevel = row?.ClassJobLevel[0],
                             hidden = q.IsHidden,
@@ -258,6 +261,7 @@ internal static class UnlockTools
                     return new
                     {
                         acceptedQuests = normal,
+                        finalStep = XivMcp.Quests.QuestStep.FinalStepMeaning,
                         dailyQuests = dailies,
                         dailyAllowancesRemaining = qm->GetBeastTribeAllowance(),
                         levequests = leves,
