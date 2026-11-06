@@ -328,7 +328,7 @@ internal static class UnlockTools
         {
             Name = "check_quests",
             Description = "Checks completion of quests by name or id for the logged-in character, including whether each is currently accepted " +
-                          "and which step it is on. Useful for main scenario / unlock progress questions (e.g. \"have I unlocked Eureka?\").",
+                          "and which step it is on, read live from the game's quest state (a turn-in shows at once). Useful for main scenario / unlock progress questions (e.g. \"have I unlocked Eureka?\").",
             InputSchema = """
                 {
                   "type": "object",
@@ -367,7 +367,9 @@ internal static class UnlockTools
                                 journalGenre = Excel.Name(q.JournalGenre),
                                 level = q.ClassJobLevel[0],
                                 place = Excel.Name(q.PlaceName),
-                                completed = Svc.Unlocks.IsQuestCompleted(q),
+                                // The game's own quest state, as do_quests reads it: Dalamud's unlock state is a cache that was
+                                // seen trailing a turn-in by minutes.
+                                completed = QuestManager.IsQuestComplete(id),
                                 accepted,
                                 currentSequence = accepted ? QuestManager.GetQuestSequence(id) : (byte?)null,
                             };

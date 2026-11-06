@@ -155,7 +155,8 @@ internal static class QuestionableTools
         {
             Name = "do_quests",
             Description = "Does quests with Questionable until they are done: with 'quest', that quest and the quests it needs first; with " +
-                          "'tribe', the day's quests of an allied society (rank-up quests included). Looks again after each quest. Gives " +
+                          "'tribe', the day's quests of an allied society (rank-up quests included). A quest counts as completed only when " +
+                          "the game's quest state shows it turned in (out of the journal, completed) on two checks in a row. Looks again after each quest. Gives " +
                           "Questionable the quests as its priority list (its own list is put back afterwards) and stops it when done, after a " +
                           "fight. Starts Questionable again when the character stands still for 2 minutes (at most 3 times). Fails when Questionable stops on its own, waits for the player (a duty, a solo duty, a step by hand) or turns to another quest. Meant as a job step; complete_quest and " +
                           "do_tribe_dailies start it.",
@@ -301,6 +302,8 @@ internal static class QuestionableTools
                 var ids = batch.Select(q => q.QuestionableId).ToHashSet();
                 DateTime? stoppedSince = null, elsewhereSince = null;
                 var stall = new StallWatch(StallLimit);
+                // A quest counts as done only when the game's quest state says so on two checks in a row.
+                var turnedIn = new SteadyReading<uint?>(2);
                 var restarts = 0;
                 while (true)
                 {
@@ -309,7 +312,7 @@ internal static class QuestionableTools
                     await Task.Delay(TimeSpan.FromSeconds(2), ct).ConfigureAwait(false);
                     var s = await Game.Run(() => (Done: batch.FirstOrDefault(Finished), Running: IsRunning(), Current: Ipc<string?>("GetCurrentQuestId"),
                                                   Position: Svc.Objects.LocalPlayer?.Position ?? default, Busy: Busy())).ConfigureAwait(false);
-                    if (s.Done is { } done)
+                    if (turnedIn.Confirm(s.Done?.Id) is not null && s.Done is { } done)
                     {
                         completed.Add(done.Name);
                         break;
@@ -697,9 +700,9 @@ internal static class QuestionableTools
 
     private static unsafe bool IsAccepted(QuestInfo q) => QuestManager.Instance()->IsQuestAccepted((ushort)(q.Id & 0xFFFF));
 
-    /// <summary>A planned quest that is done: completed, or for a daily, completed today.</summary>
+    /// <summary>A planned quest that is done: turned in (out of the journal) and completed, or for a daily, completed today.</summary>
     private static unsafe bool Finished(QuestInfo q) =>
-        q.Repeatable ? QuestManager.Instance()->IsDailyQuestCompleted((ushort)(q.Id & 0xFFFF)) && !IsAccepted(q) : IsComplete(q.Id);
+        QuestDone.Finished(q.Repeatable, IsComplete(q.Id), q.Repeatable && QuestManager.Instance()->IsDailyQuestCompleted((ushort)(q.Id & 0xFFFF)), IsAccepted(q));
 
     private static bool Ready(QuestInfo q) => Ipc<string, bool>("IsReadyToAcceptQuest", q.QuestionableId);
 

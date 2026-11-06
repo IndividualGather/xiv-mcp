@@ -236,6 +236,41 @@ public static class QuestionableMessage
         Text(chat) is { } text && text.Contains("not able to find a path", StringComparison.OrdinalIgnoreCase);
 }
 
+/// <summary>When a quest of a run counts as done.</summary>
+public static class QuestDone
+{
+    /// <summary>
+    /// Done means turned in: out of the journal, and completed (a daily: completed today; an earlier day's completion does not
+    /// count). Only the game's own quest state decides (QuestManager), never a cache of it.
+    /// </summary>
+    public static bool Finished(bool repeatable, bool complete, bool completedToday, bool accepted) =>
+        !accepted && (repeatable ? completedToday : complete);
+}
+
+/// <summary>
+/// Trusts a reading of the game only once it was the same several times in a row, so one odd frame (the journal in flux during a
+/// turn-in, a zone change) is not taken for a result. Nothing read (null) is never confirmed.
+/// </summary>
+public sealed class SteadyReading<T>(int times)
+{
+    private T? last;
+    private int seen;
+
+    /// <summary>The reading once it was seen <c>times</c> times in a row, else default.</summary>
+    public T? Confirm(T? value)
+    {
+        if (value is null)
+        {
+            seen = 0;
+            last = default;
+            return default;
+        }
+        seen = EqualityComparer<T>.Default.Equals(value, last) ? seen + 1 : 1;
+        last = value;
+        return seen >= times ? value : default;
+    }
+}
+
 /// <summary>Several quests at once.</summary>
 public static class QuestBatch
 {

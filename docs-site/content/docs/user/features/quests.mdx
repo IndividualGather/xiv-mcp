@@ -38,6 +38,8 @@ Before it starts, it tells you:
 
 When several quests share a name, such as the first quests of each starting city, it picks the one your character can do.
 
+A quest counts as done only once the game itself says it is turned in: out of your journal and completed (a daily: completed today), on two checks in a row. `check_quests` reads the same live quest state, so right after a turn-in both agree.
+
 ### When Questionable needs you
 
 Some steps Questionable leaves to you: a duty it cannot run (or cannot have [AutoDuty](/docs/user/features/dungeons) run, for example below the duty's item level), a solo duty, or something to do by hand. Questionable says so in chat. The job then stops and tells you what Questionable said. Do that step, then start again: the quests you completed are left out.
