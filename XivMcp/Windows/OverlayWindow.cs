@@ -82,7 +82,7 @@ internal sealed class OverlayWindow : Window
         var now = DateTime.UtcNow;
         calls = s.ShowToolCalls ? plugin.Server.Activity.Visible(now, s.ShowAfter, s.Linger) : [];
         jobs = s.ShowJobs && plugin.Jobs is { } manager
-            ? manager.All().Where(j => j.State is JobState.Running or JobState.Queued || now - j.UpdatedUtc <= Lingers(j, s)).ToList()
+            ? manager.AllForUi().Where(j => j.State is JobState.Running or JobState.Queued || now - j.UpdatedUtc <= Lingers(j, s)).ToList()
             : [];
         Shown = s.ShouldShow(Preview, calls.Count, jobs.Count);
     }

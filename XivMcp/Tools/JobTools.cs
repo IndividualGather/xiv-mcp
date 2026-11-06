@@ -68,7 +68,8 @@ internal static class JobTools
         yield return new McpTool
         {
             Name = "get_job",
-            Description = "One background job in detail: every step with its state, arguments, result (or error), timing and attempts, plus the job log.",
+            Description = "One background job in detail, as it is at the moment of the call (asOf): every step with its state, arguments, result " +
+                          "(or error), timing and attempts, plus the job log.",
             InputSchema = """{ "type": "object", "properties": { "id": { "type": "string", "description": "Job id (or name)." }, "log_lines": { "type": "integer", "description": "Default 30." } }, "required": ["id"] }""",
             Handler = (args, _) =>
             {
@@ -76,6 +77,7 @@ internal static class JobTools
                 var lines = args.Int("log_lines", 30, 0, 200);
                 return Task.FromResult<object?>(new
                 {
+                    asOf = DateTime.UtcNow,
                     job = JobManager.Describe(job),
                     steps = job.Steps.Select(s => new
                     {

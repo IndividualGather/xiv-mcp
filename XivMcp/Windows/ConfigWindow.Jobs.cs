@@ -98,7 +98,7 @@ internal sealed partial class ConfigWindow
     {
         var manager = plugin.Jobs;
         if (manager is null) return;
-        var all = manager.All();
+        var all = manager.AllForUi();
         var active = all.Where(j => !j.Finished).ToList();
         var finished = all.Where(j => j.Finished).ToList();
 

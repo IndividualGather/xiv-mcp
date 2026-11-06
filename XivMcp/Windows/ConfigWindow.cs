@@ -80,7 +80,7 @@ internal sealed partial class ConfigWindow : Window
         Tab(FontAwesomeIcon.Plug, "Connect", DrawConnect);
         Tab(FontAwesomeIcon.Cubes, "Modules", DrawPermissions);
         Tab(FontAwesomeIcon.UserShield, ThirdPartyTabLabel(), DrawThirdParty);
-        var activeJobs = plugin.Jobs?.All().Count(j => !j.Finished) ?? 0;
+        var activeJobs = plugin.Jobs?.AllForUi().Count(j => !j.Finished) ?? 0;
         Tab(FontAwesomeIcon.Tasks, activeJobs > 0 ? $"Jobs ({activeJobs})" : "Jobs", DrawJobs);
         Tab(FontAwesomeIcon.LayerGroup, "Overlay", DrawOverlaySettings);
         Tab(FontAwesomeIcon.InfoCircle, "Info", DrawInfo);

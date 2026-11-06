@@ -183,30 +183,51 @@ internal sealed class JobManager : IDisposable, ICache
         return job;
     }
 
-    private List<Job>? snapshot;
-    private long snapshotVersion = -1;
+    private List<Job>? uiSnapshot;
+    private long uiSnapshotVersion = -1;
 
-    /// <summary>Copies of all jobs (newest first), safe to read while the runner works; rebuilt only when something changed.</summary>
+    /// <summary>
+    /// Fresh copies of all jobs (newest first), taken under the runner's lock at the moment of the call. Tools and the plugin API read
+    /// this: an answer to the agent must show the job as it is now, never a copy shared with (and kept alive by) someone else.
+    /// </summary>
     public List<Job> All()
+    {
+        lock (sync) return Copy(jobs.OrderByDescending(j => j.CreatedUtc));
+    }
+
+    /// <summary>
+    /// The same for windows drawn every frame (overlay, Jobs tab): one shared copy, rebuilt whenever the jobs changed, so a frame does not
+    /// serialize every job. Not for tool answers — use <see cref="All"/> or <see cref="Get"/>.
+    /// </summary>
+    public List<Job> AllForUi()
     {
         lock (sync)
         {
             var v = Interlocked.Read(ref version);
-            if (snapshot is null || snapshotVersion != v)
+            if (uiSnapshot is null || uiSnapshotVersion != v)
             {
-                snapshot = JsonSerializer.Deserialize<List<Job>>(JsonSerializer.Serialize(jobs.OrderByDescending(j => j.CreatedUtc).ToList(), JsonOptions), JsonOptions) ?? [];
-                snapshotVersion = v;
+                uiSnapshot = Copy(jobs.OrderByDescending(j => j.CreatedUtc));
+                uiSnapshotVersion = v;
             }
-            return snapshot;
+            return uiSnapshot;
         }
     }
 
+    /// <summary>A fresh copy of one job, read under the runner's lock (throws if unknown).</summary>
     public Job Get(string id)
     {
-        string jobId;
-        lock (sync) jobId = Find(id).Id; // throws if unknown
-        return All().First(j => j.Id == jobId);
+        lock (sync) return Copy([Find(id)])[0];
     }
+
+    /// <summary>True while a job waits to run or runs (cheap: no copies).</summary>
+    public bool AnyActive
+    {
+        get { lock (sync) return jobs.Any(j => j.State is JobState.Queued or JobState.Running); }
+    }
+
+    /// <summary>Deep copies (JSON round trip), so readers never share objects with the runner.</summary>
+    private static List<Job> Copy(IEnumerable<Job> source) =>
+        JsonSerializer.Deserialize<List<Job>>(JsonSerializer.Serialize(source.ToList(), JsonOptions), JsonOptions) ?? [];
 
     public void Pause(string id, string reason = "Paused.")
     {

@@ -9,7 +9,7 @@ A job is a queue of tool calls that XIV MCP runs in the game, one after another,
 | Tool | What it does |
 |---|---|
 | `start_job` | Starts a job with its steps (tool and arguments). Later steps can use earlier results. |
-| `list_jobs` / `get_job` | Jobs with state, progress and the current step; one job's steps, results, errors and log |
+| `list_jobs` / `get_job` | Jobs with state, progress and the current step; one job's steps, results, errors and log, as they are at the moment of the call (`asOf`) |
 | `update_job` | For a pending or paused job: retries or skips the current step, adds steps or replaces the remaining ones |
 | `pause_job` / `resume_job` / `cancel_job` | Controls a job |
 | `wait` | A step that waits a number of seconds, or until a time |
