@@ -235,14 +235,18 @@ internal static class LongRunningTools
         {
             Name = "run_crafting_list",
             Description = "Runs an Artisan crafting list (id or name, e.g. from prepare_craft_plan) to the end and reports what was crafted (items " +
-                          "added to the bags per recipe). Fails (job: pending) if Artisan stops before the list is done (e.g. missing materials). " +
+                          "and crafts made per recipe, counted as the products arrive, so intermediates count even when later crafts use them up). " +
+                          "Fails (job: pending) if Artisan stops without crafting anything (e.g. missing materials), and when Artisan stays busy " +
+                          "without any craft progress for 'stall_minutes' (default 5): it is then stopped and the error names the recipe it is " +
+                          "stuck on — typically one with an equipment ingredient, which Artisan can't select in the crafting log. " +
                           "Cancelling stops Artisan. Meant as a job step (start_job). Requires Artisan and 'Crafting & gathering' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
                   "properties": {
                     "list": { "type": "string", "description": "Artisan list id or name." },
-                    "timeout_minutes": { "type": "integer", "description": "Give up after this long (default 600)." }
+                    "timeout_minutes": { "type": "integer", "description": "Give up after this long (default 600)." },
+                    "stall_minutes": { "type": "integer", "description": "Stop and fail when Artisan is busy but nothing is crafted (no bag count changes) for this long (default 5; 0 = never)." }
                   },
                   "required": ["list"]
                 }
@@ -253,6 +257,7 @@ internal static class LongRunningTools
                 RequireEnabled();
                 var listArg = args.String("list") ?? throw new ToolException("'list' is required.");
                 var timeout = TimeSpan.FromMinutes(args.Int("timeout_minutes", 600, 1, 24 * 60));
+                var stallAfter = TimeSpan.FromMinutes(args.Int("stall_minutes", 5, 0, 120));
                 var plan = await Game.RunLoggedIn(() =>
                 {
                     CraftGatherTools.RequireArtisan();
@@ -260,27 +265,54 @@ internal static class LongRunningTools
                     var lists = PluginTools.ReadPluginJson(CraftGatherTools.Artisan, null)["NewCraftingLists"] as JsonArray ?? [];
                     var list = CraftGatherTools.MatchList(lists, listArg) ?? throw new ToolException($"No Artisan list '{listArg}'.");
                     var recipes = Svc.Data.GetExcelSheet<Recipe>();
-                    var expected = (list["Recipes"] as JsonArray ?? []).OfType<JsonObject>()
-                        .Select(r => recipes.GetRowOrDefault(r["ID"]?.GetValue<uint>() ?? 0) is { } rec
-                            ? (Item: rec.ItemResult.RowId, Count: (r["Quantity"]?.GetValue<int>() ?? 0) * Math.Max(1, (int)rec.AmountResult)) : (Item: 0u, Count: 0))
-                        .Where(x => x.Item != 0).GroupBy(x => x.Item).ToDictionary(g => g.Key, g => g.Sum(x => x.Count));
+                    var entries = new List<ListRecipe>();
+                    var watched = new HashSet<uint>();
+                    foreach (var r in (list["Recipes"] as JsonArray ?? []).OfType<JsonObject>())
+                    {
+                        if (recipes.GetRowOrDefault(ItemSourceTools.UInt(r["ID"])) is not { } rec || rec.ItemResult.RowId == 0) continue;
+                        var crafts = JsonNumber.Int(r["Quantity"]) ?? 0;
+                        if (crafts <= 0) continue;
+                        entries.Add(new ListRecipe(rec.RowId, Items.Name(rec.ItemResult.RowId), rec.ItemResult.RowId, crafts, Math.Max(1, (int)rec.AmountResult),
+                                                   CraftPlanner.GearIngredientNames(rec)));
+                        watched.Add(rec.ItemResult.RowId);
+                        foreach (var (ing, _) in CraftPlanner.Ingredients(rec)) watched.Add(ing);
+                    }
+                    if (entries.Count == 0) throw new ToolException($"The Artisan list '{list["Name"]}' has no recipes.");
                     if (Svc.PluginInterface.GetIpcSubscriber<bool>("Artisan.GetEnduranceStatus").InvokeFunc())
                         throw new ToolException("Artisan's Endurance mode is on; lists can't start while it is active.");
-                    return (Id: list["ID"]!.GetValue<int>(), Name: list["Name"]?.ToString(), Expected: expected, Before: expected.Keys.ToDictionary(k => k, Items.CountInBags));
+                    return (Id: list["ID"]!.GetValue<int>(), Name: list["Name"]?.ToString() ?? listArg, Entries: entries, Watched: watched.ToList(),
+                            Before: watched.ToDictionary(k => k, Items.CountInBags));
                 }).ConfigureAwait(false);
 
                 var started = DateTime.UtcNow;
+                var progress = new CraftListProgress(plan.Entries, plan.Before, started);
+                Dictionary<uint, int> Counts() => plan.Watched.ToDictionary(k => k, Items.CountInBags);
                 await Game.Run(() => { Svc.PluginInterface.GetIpcSubscriber<int, object>("Artisan.StartListById").InvokeAction(plan.Id); return true; }).ConfigureAwait(false);
                 try
                 {
                     var sawRunning = false;
-                    while (true)
+                    for (var tick = 1; ; tick++)
                     {
-                        await Task.Delay(5000, ct).ConfigureAwait(false);
-                        var running = await Game.Run(() => CraftGatherTools.Ipc("Artisan.IsListRunning") == true || CraftGatherTools.Ipc("Artisan.IsBusy") == true).ConfigureAwait(false);
+                        // Counts every second, so a product made just before the next craft uses it up is still seen.
+                        await Task.Delay(1000, ct).ConfigureAwait(false);
+                        var counts = await Game.Run(Counts).ConfigureAwait(false);
+                        progress.Observe(counts, DateTime.UtcNow);
+                        if (tick % 5 != 0) continue;
+                        var (running, paused, solving) = await Game.Run(() => (
+                            CraftGatherTools.Ipc("Artisan.IsListRunning") == true || CraftGatherTools.Ipc("Artisan.IsBusy") == true,
+                            CraftGatherTools.Ipc("Artisan.IsListPaused") == true,
+                            RaphaelBusy())).ConfigureAwait(false);
+                        var now = DateTime.UtcNow;
                         if (running) { sawRunning = true; }
-                        else if (sawRunning || DateTime.UtcNow - started > TimeSpan.FromSeconds(30)) break;
-                        if (DateTime.UtcNow - started > timeout) throw new ToolException("Timed out while Artisan was still crafting.");
+                        else if (sawRunning || now - started > TimeSpan.FromSeconds(30)) break;
+                        // A paused list or a solver still working isn't stuck.
+                        if (paused || solving) progress.Touch(now);
+                        if (running && progress.Stalled(now, stallAfter))
+                        {
+                            await Game.Run(() => { CraftGatherTools.StopArtisan(); return true; }).ConfigureAwait(false);
+                            throw new ToolException(progress.StallMessage(plan.Name, progress.Idle(now)));
+                        }
+                        if (now - started > timeout) throw new ToolException("Timed out while Artisan was still crafting.");
                     }
                 }
                 catch (OperationCanceledException)
@@ -289,15 +321,17 @@ internal static class LongRunningTools
                     throw;
                 }
 
-                var after = await Game.Run(() => plan.Expected.Keys.ToDictionary(k => k, Items.CountInBags)).ConfigureAwait(false);
-                var made = plan.Expected.ToDictionary(e => e.Key, e => after[e.Key] - plan.Before[e.Key]);
-                var shortItems = plan.Expected.Where(e => made[e.Key] < e.Value).ToList();
-                var report = plan.Expected.Select(e => new { item = Items.Name(e.Key), expected = e.Value, made = made[e.Key] }).ToList();
-                // Intermediates get used up by later crafts, so only the list's final products are a fair check: items nothing else consumes.
-                if (shortItems.Count > 0 && shortItems.All(s => made[s.Key] <= 0) && report.Count > 0 && report.All(r => r.made <= 0))
-                    throw new ToolException($"Artisan stopped without crafting anything from '{plan.Name}' (missing materials, wrong job or gear?).");
+                progress.Observe(await Game.Run(Counts).ConfigureAwait(false), DateTime.UtcNow);
+                var report = plan.Entries.Select(e => new
+                {
+                    item = e.Item, recipeId = e.RecipeId, crafts = e.Crafts, craftsDone = progress.CraftsDone(e.RecipeId),
+                    expected = e.Crafts * e.Yield, made = progress.ItemsMade(e.RecipeId),
+                }).ToList();
+                if (!progress.MadeProgressThisRun && !progress.Finished)
+                    throw new ToolException($"Artisan stopped without crafting anything from '{plan.Name}' (stopped at {progress.Current!.Item}: missing materials, wrong job or gear?)." +
+                                            (GearIngredients.Note(progress.Current.GearIngredients) is { } manual ? " " + manual : ""));
                 return new { list = plan.Name, minutes = Math.Round((DateTime.UtcNow - started).TotalMinutes, 1), crafted = report,
-                             note = shortItems.Count > 0 ? "Some outputs are below the expected count — intermediates are consumed by later crafts, or the list stopped early." : null };
+                             note = progress.Finished ? null : $"The list stopped early, at {progress.Current!.Item}: not every craft was made." };
             },
         };
     }
@@ -322,6 +356,13 @@ internal static class LongRunningTools
 
     private static string Missing(List<KeyValuePair<uint, int>> missing, Dictionary<uint, int> have) =>
         string.Join(", ", missing.Select(m => $"{m.Value - have[m.Key]}x {Items.Name(m.Key)}"));
+
+    /// <summary>Artisan's Raphael solver is building a solution (a craft waits for it). Framework thread.</summary>
+    private static bool RaphaelBusy()
+    {
+        try { return ArtisanBridge.AnyInProgress(); }
+        catch { return false; }
+    }
 
     private static async Task WaitForPlugin(string name, CancellationToken ct)
     {

@@ -36,7 +36,8 @@ internal static class CraftPlanTools
                           "is still missing with where to get it (gathering, gil vendors, retainer ventures, and — with 'Online lookups' — exchanges, " +
                           "drops and more). It simulates bag space through the whole project and splits it into batches when it would not fit. With a " +
                           "crafting automation plugin installed it also shows, per recipe, the stats it will craft with (gearset + food + potion) and " +
-                          "whether a solver solution is already cached for exactly those stats.",
+                          "whether a solver solution is already cached for exactly those stats. Recipes with an equipment item as an ingredient " +
+                          "are flagged per step (craftByHand): Artisan can't select equipment ingredients, so they must be crafted by hand.",
             InputSchema = $$"""{ "type": "object", "properties": { {{ItemsSchema}} }, "required": ["items"] }""",
             Handler = async (args, ct) =>
             {
@@ -55,8 +56,9 @@ internal static class CraftPlanTools
                           "for each recipe ahead of time — with exactly the stats Artisan will craft with (the job's gearset + the recipe's food and " +
                           "potion settings), so the craft starts with a cached optimal macro instead of solving (and possibly timing out) mid-list. " +
                           "Solutions already cached are reused; calling again continues unfinished ones. Missing materials are reported, not obtained — " +
-                          "get them first (buy_item, gathering lists, assign_venture, retainer withdrawals), then crafting_control start_list. Requires " +
-                          "Artisan and 'Crafting & gathering'.",
+                          "get them first (buy_item, gathering lists, assign_venture, retainer withdrawals), then crafting_control start_list. Recipes " +
+                          "that use an equipment item as an ingredient are marked \"craft by hand\" and warned about: Artisan can't select such " +
+                          "ingredients and its list stalls on them. Requires Artisan and 'Crafting & gathering'.",
             InputSchema = $$"""
                 {
                   "type": "object",
@@ -162,7 +164,11 @@ internal static class CraftPlanTools
                     .SelectMany(m => m.RetainerStock.Select(r => new { item = m.Item, retainer = r.Retainer, quantity = r.Quantity })).ToList();
                 return new
                 {
-                    list = new { id = listId, name, crafts = plan.Steps.Select(s => $"{s.Crafts}x {s.Item} ({s.Job})").ToList() },
+                    list = new
+                    {
+                        id = listId, name,
+                        crafts = plan.Steps.Select(s => $"{s.Crafts}x {s.Item} ({s.Job})" + (s.GearIngredients.Count > 0 ? " — craft by hand (equipment ingredient)" : "")).ToList(),
+                    },
                     batch = new { index = batchIndex, of = totalBatches, extraBagSlots = plan.PeakSlotsNeeded, freeBagSlots = plan.FreeSlots },
                     raphael,
                     raphaelSettings = useRaphael ? await Game.Run(ArtisanBridge.Settings).ConfigureAwait(false) : null,
@@ -242,7 +248,8 @@ internal static class CraftPlanTools
             produces = s.Produces,
             uses = s.Ingredients.Select(x => $"{x.Amount}x {Items.Name(x.ItemId)}").ToList(),
             problem = s.Problem,
-            raphael = raphael ? RaphaelInfo(s) : null,
+            craftByHand = s.ManualNote,
+            raphael =raphael ? RaphaelInfo(s) : null,
             collectable = s.IsTarget && Collectables.RewardFor(s.ItemId) is { } reward
                 ? new { turnIn = Collectables.Describe(reward), scripForAll = (long)reward.HighReward * s.Produces, note = "Raphael solutions for collectables aim for the highest collectability tier; prepare_craft_plan simulates the solution with your stats and refuses when it doesn't reach the lowest tier." }
                 : null,

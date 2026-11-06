@@ -20,7 +20,13 @@ internal static class CraftPlanner
     public sealed record Options(bool CraftIntermediates = true, bool UseRetainers = true, bool CountExistingTargets = false, int? FreeSlotsOverride = null);
 
     public sealed record Step(uint RecipeId, uint ItemId, string Item, string Job, int JobLevelNeeded, int PlayerJobLevel, int Crafts, int Yield,
-                              int Produces, int Depth, bool IsTarget, List<(uint ItemId, int Amount)> Ingredients, string? Problem);
+                              int Produces, int Depth, bool IsTarget, List<(uint ItemId, int Amount)> Ingredients, string? Problem)
+    {
+        /// <summary>Equipment used as an ingredient (names): Artisan can't select it, so the recipe has to be crafted by hand.</summary>
+        public List<string> GearIngredients { get; init; } = [];
+
+        public string? ManualNote => XivMcp.Crafting.GearIngredients.Note(GearIngredients);
+    }
 
     public sealed record Material(uint ItemId, string Item, int Needed, int InBags, int OnRetainers, List<(string Retainer, int Quantity)> RetainerStock,
                                   int Missing, bool Crystal, string? Note);
@@ -119,9 +125,11 @@ internal static class CraftPlanner
                 problem = "Needs a crafter's soul (specialist) for this job.";
             var y = Math.Max(1, (int)r.AmountResult);
             return new Step(r.RowId, c.Key, Items.Name(c.Key), job.Abbreviation.ExtractText(), needed, have, c.Value, y, c.Value * y, depth[c.Key],
-                            targetIds.Contains(c.Key), Ingredients(r).Select(i => (i.Item, i.Amount * c.Value)).ToList(), problem);
+                            targetIds.Contains(c.Key), Ingredients(r).Select(i => (i.Item, i.Amount * c.Value)).ToList(), problem)
+            { GearIngredients = GearIngredientNames(r) };
         }).ToList();
         foreach (var s in steps.Where(s => s.Problem is not null)) warnings.Add($"{s.Item}: {s.Problem}");
+        foreach (var s in steps.Where(s => s.ManualNote is not null)) warnings.Add($"{s.Item}: {s.ManualNote}");
 
         var materials = demand.Where(d => !crafts.ContainsKey(d.Key) && !targetIds.Contains(d.Key)).Select(d =>
         {
@@ -232,6 +240,14 @@ internal static class CraftPlanner
             var amount = r.AmountIngredient[i];
             if (id != 0 && amount > 0) yield return (id, amount);
         }
+    }
+
+    /// <summary>Names of the recipe's ingredients that are equipment (have an equip slot). Framework thread.</summary>
+    public static List<string> GearIngredientNames(Recipe r)
+    {
+        var items = Svc.Data.GetExcelSheet<Item>();
+        return Ingredients(r).Where(i => items.GetRowOrDefault(i.Item) is { } it && XivMcp.Crafting.GearIngredients.IsGear(it.EquipSlotCategory.RowId))
+            .Select(i => Items.Name(i.Item)).ToList();
     }
 
     private static unsafe bool BookUnlocked(uint book) => PlayerState.Instance()->IsSecretRecipeBookUnlocked(book);

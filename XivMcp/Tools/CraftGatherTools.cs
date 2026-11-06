@@ -58,7 +58,8 @@ internal static class CraftGatherTools
         {
             Name = "craft_item",
             Description = "Crafts an item a number of times with Artisan (like Artisan's \"craft X\"), by item name/id or recipe id. If several jobs " +
-                          "can craft it, the current job's recipe is preferred. Requires Artisan and 'Crafting & gathering'.",
+                          "can craft it, the current job's recipe is preferred. Refuses recipes that use an equipment item as an ingredient: " +
+                          "Artisan can't select those in the crafting log and would hang, so craft them by hand. Requires Artisan and 'Crafting & gathering'.",
             InputSchema = """
                 {
                   "type": "object",
@@ -79,6 +80,9 @@ internal static class CraftGatherTools
                     RequireArtisan();
                     EnsureArtisanIdle();
                     var recipe = ResolveRecipe(args.String("item"), args.UInt("recipe_id"));
+                    // Artisan can't select equipment ingredients and would wait forever without starting the synthesis.
+                    if (XivMcp.Crafting.GearIngredients.Note(CraftPlanner.GearIngredientNames(recipe)) is { } manual)
+                        throw new ToolException($"Not started: {Excel.Name(recipe.ItemResult)}: {manual}");
                     Svc.PluginInterface.GetIpcSubscriber<ushort, int, object>("Artisan.CraftItem").InvokeAction((ushort)recipe.RowId, amount);
                     return new { crafting = DescribeRecipe(recipe.RowId, amount), note = "Artisan takes over now; use crafting_control action=stop to stop it." };
                 });

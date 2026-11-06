@@ -12,7 +12,7 @@ Planning works on its own. Crafting and gathering go through **Artisan** and **G
 | `get_crafting_lists` / `set_crafting_list` / `delete_crafting_list` | Artisan's lists and state; creates, edits or deletes lists | Artisan |
 | `craft_item` / `crafting_control` | Crafts an item a number of times; starts, pauses, resumes or stops a list | Artisan |
 | `prepare_craft_plan` | Creates the Artisan list in the right order and works out each recipe's steps ahead of time with **Raphael** (the crafting solver built into Artisan), with the exact stats Artisan will use | Artisan |
-| `run_crafting_list` | Runs an Artisan list to the end and reports what was crafted | Artisan |
+| `run_crafting_list` | Runs an Artisan list to the end and reports what was crafted per recipe. Stops and fails when Artisan gets stuck | Artisan |
 | `get_gather_lists` / `set_gather_list` / `delete_gather_list` / `set_auto_gather` | GatherBuddy Reborn's auto-gather lists, and auto-gather on or off | GatherBuddy Reborn |
 | `gather_until` | Gathers until your bags hold the target quantities. Your other lists are paused and restored afterwards. It can also stop on something else in your bags, such as the aethersand that GatherBuddy reduces collectables into. If GatherBuddy turns itself off between timed node windows, it is started again. If GatherBuddy hangs, so your character stands idle for 6 minutes (`stall_minutes`) while no count changes, the step fails and names the items still missing and what GatherBuddy last said. Skip those items or get them another way. Waiting for a timed node does not count as hanging. A session length ends the step without failing, so a job can take breaks between `gather_until` steps. Fallback items, such as a fish, are only gathered while nothing else on the list can be, for example between timed node windows. | GatherBuddy Reborn |
 
@@ -27,6 +27,14 @@ With `"quantity": "fill"`, `plan_craft` plans as many as fit in your bags. For c
 ## Where materials come from
 
 `plan_craft` lists gil vendors only when a gil shop sells the material. Vendors that take other currencies, such as gemstones or scrips, are listed as exchanges. Some of them only trade once you have unlocked them. Tradeable materials also list the market board. When a vendor won't trade, `buy_item` passes on what the game says: its system and error messages, not combat lines or chat that arrive at the same time.
+
+## Equipment as an ingredient
+
+Some recipes use a piece of equipment as an ingredient, for example Wrapped Crowsbeak Hammer (a Steel Crowsbeak Hammer) or Engraved Hard Leather Grimoire (a Hard Leather Grimoire). Artisan can't select equipment in the crafting log: the ingredient stays "Unselected" and the synthesis never starts. So:
+
+- `plan_craft` marks these steps with `craftByHand`, and `prepare_craft_plan` warns about them and marks them in the list. Craft them yourself: open the recipe, select the ingredient and start the synthesis.
+- `craft_item` refuses such recipes instead of hanging.
+- `run_crafting_list` notices when Artisan stays busy but nothing gets crafted (no bag counts change) for `stall_minutes` (default 5). It stops Artisan and fails with the recipe it is stuck on and the likely cause. A paused list or a solution still being worked out doesn't count as stuck.
 
 ## A whole project as one job
 
