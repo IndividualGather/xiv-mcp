@@ -36,6 +36,9 @@ internal sealed class JobManager : IDisposable, ICache
         public DateTime? StartedUtc { get; set; }
         public DateTime? FinishedUtc { get; set; }
         public int Attempts { get; set; }
+
+        /// <summary>What the step's tool keeps between its runs (resume after a pause, retry), e.g. crafts already made. Kept in jobs.json.</summary>
+        public JsonObject? Memory { get; set; }
     }
 
     public sealed class Job
@@ -131,6 +134,30 @@ internal sealed class JobManager : IDisposable, ICache
         {
             if (runningJobId is not { } id || jobs.FirstOrDefault(j => j.Id == id) is not { } job || job.Current?.Tool != tool) return;
             AddLog(job, $"{job.Current.Id}: {text}");
+            Changed();
+        }
+    }
+
+    /// <summary>
+    /// The memory of the running step if it is <paramref name="tool"/> (a copy), or null — also when the tool isn't running as a job
+    /// step. Lets a step continue where an earlier run of it stopped instead of starting over.
+    /// </summary>
+    public JsonObject? StepMemory(string tool)
+    {
+        lock (sync)
+        {
+            if (runningJobId is not { } id || jobs.FirstOrDefault(j => j.Id == id)?.Current is not { } step || step.Tool != tool) return null;
+            return step.Memory?.DeepClone() as JsonObject;
+        }
+    }
+
+    /// <summary>Stores the running step's memory (if that step is <paramref name="tool"/>) and saves the jobs.</summary>
+    public void SetStepMemory(string tool, JsonObject memory)
+    {
+        lock (sync)
+        {
+            if (runningJobId is not { } id || jobs.FirstOrDefault(j => j.Id == id)?.Current is not { } step || step.Tool != tool) return;
+            step.Memory = memory.DeepClone() as JsonObject;
             Changed();
         }
     }

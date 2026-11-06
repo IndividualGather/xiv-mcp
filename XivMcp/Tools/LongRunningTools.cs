@@ -239,7 +239,9 @@ internal static class LongRunningTools
                           "Fails (job: pending) if Artisan stops without crafting anything (e.g. missing materials), and when Artisan stays busy " +
                           "without any craft progress for 'stall_minutes' (default 5): it is then stopped and the error names the recipe it is " +
                           "stuck on — typically one with an equipment ingredient, which Artisan can't select in the crafting log. " +
-                          "Cancelling stops Artisan. Meant as a job step (start_job). Requires Artisan and 'Crafting & gathering' in /xivmcp.",
+                          "Cancelling stops Artisan. Meant as a job step (start_job): when the same step runs again (resume after a pause, " +
+                          "retry after a failure) it continues instead of starting over — the Artisan list is shrunk to the crafts still missing, " +
+                          "and gets its original quantities back once everything is made. Requires Artisan and 'Crafting & gathering' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
@@ -258,35 +260,77 @@ internal static class LongRunningTools
                 var listArg = args.String("list") ?? throw new ToolException("'list' is required.");
                 var timeout = TimeSpan.FromMinutes(args.Int("timeout_minutes", 600, 1, 24 * 60));
                 var stallAfter = TimeSpan.FromMinutes(args.Int("stall_minutes", 5, 0, 120));
-                var plan = await Game.RunLoggedIn(() =>
+                var (listId, listName, current) = await Game.RunLoggedIn(() =>
                 {
                     CraftGatherTools.RequireArtisan();
                     CraftGatherTools.EnsureArtisanIdle();
                     var lists = PluginTools.ReadPluginJson(CraftGatherTools.Artisan, null)["NewCraftingLists"] as JsonArray ?? [];
                     var list = CraftGatherTools.MatchList(lists, listArg) ?? throw new ToolException($"No Artisan list '{listArg}'.");
+                    var counts = (list["Recipes"] as JsonArray ?? []).OfType<JsonObject>()
+                        .Select(r => new RecipeCount(ItemSourceTools.UInt(r["ID"]), JsonNumber.Int(r["Quantity"]) ?? 0))
+                        .Where(r => r.RecipeId != 0 && r.Crafts > 0).ToList();
+                    if (Svc.PluginInterface.GetIpcSubscriber<bool>("Artisan.GetEnduranceStatus").InvokeFunc())
+                        throw new ToolException("Artisan's Endurance mode is on; lists can't start while it is active.");
+                    return (list["ID"]!.GetValue<int>(), list["Name"]?.ToString() ?? listArg, counts);
+                }).ConfigureAwait(false);
+
+                // Run again after a pause or failure (job resume / retry): Artisan would start the list from the top and craft
+                // everything again, so the list is shrunk to what the earlier runs haven't made.
+                const string tool = "run_crafting_list";
+                var resume = CraftListResume.Plan(CraftListMemory.FromJson(JobManager.Instance?.StepMemory(tool)), listId, current);
+                var written = current;
+                string? resumeNote = null;
+                if (resume.Shrink is { } left && !resume.AllDone)
+                {
+                    await CraftGatherTools.WriteCraftingList(listId.ToString(), null, left.Select(r => (r.RecipeId, r.Crafts)).ToList(), append: false).ConfigureAwait(false);
+                    await WaitForPlugin(CraftGatherTools.Artisan, ct).ConfigureAwait(false);
+                    written = left;
+                    resumeNote = $"Continued an earlier run: the list was shrunk to the {left.Sum(r => r.Crafts)} craft(s) still missing.";
+                }
+
+                var plan = await Game.RunLoggedIn(() =>
+                {
+                    CraftGatherTools.RequireArtisan();
                     var recipes = Svc.Data.GetExcelSheet<Recipe>();
                     var entries = new List<ListRecipe>();
                     var watched = new HashSet<uint>();
-                    foreach (var r in (list["Recipes"] as JsonArray ?? []).OfType<JsonObject>())
+                    foreach (var r in resume.Original)
                     {
-                        if (recipes.GetRowOrDefault(ItemSourceTools.UInt(r["ID"])) is not { } rec || rec.ItemResult.RowId == 0) continue;
-                        var crafts = JsonNumber.Int(r["Quantity"]) ?? 0;
-                        if (crafts <= 0) continue;
-                        entries.Add(new ListRecipe(rec.RowId, Items.Name(rec.ItemResult.RowId), rec.ItemResult.RowId, crafts, Math.Max(1, (int)rec.AmountResult),
+                        if (recipes.GetRowOrDefault(r.RecipeId) is not { } rec || rec.ItemResult.RowId == 0) continue;
+                        entries.Add(new ListRecipe(rec.RowId, Items.Name(rec.ItemResult.RowId), rec.ItemResult.RowId, r.Crafts, Math.Max(1, (int)rec.AmountResult),
                                                    CraftPlanner.GearIngredientNames(rec)));
                         watched.Add(rec.ItemResult.RowId);
                         foreach (var (ing, _) in CraftPlanner.Ingredients(rec)) watched.Add(ing);
                     }
-                    if (entries.Count == 0) throw new ToolException($"The Artisan list '{list["Name"]}' has no recipes.");
-                    if (Svc.PluginInterface.GetIpcSubscriber<bool>("Artisan.GetEnduranceStatus").InvokeFunc())
-                        throw new ToolException("Artisan's Endurance mode is on; lists can't start while it is active.");
-                    return (Id: list["ID"]!.GetValue<int>(), Name: list["Name"]?.ToString() ?? listArg, Entries: entries, Watched: watched.ToList(),
-                            Before: watched.ToDictionary(k => k, Items.CountInBags));
+                    if (entries.Count == 0) throw new ToolException($"The Artisan list '{listName}' has no recipes.");
+                    return (Id: listId, Name: listName, Entries: entries, Watched: watched.ToList(), Before: watched.ToDictionary(k => k, Items.CountInBags));
                 }).ConfigureAwait(false);
 
                 var started = DateTime.UtcNow;
-                var progress = new CraftListProgress(plan.Entries, plan.Before, started);
+                var progress = new CraftListProgress(plan.Entries, plan.Before, started, resume.Done);
                 Dictionary<uint, int> Counts() => plan.Watched.ToDictionary(k => k, Items.CountInBags);
+                var saved = progress.Done();
+                void Remember(bool force = false)
+                {
+                    var done = progress.Done();
+                    if (!force && done.SequenceEqual(saved)) return;
+                    saved = done;
+                    JobManager.Instance?.SetStepMemory(tool, new CraftListMemory(plan.Id, resume.Original, written, done).ToJson());
+                }
+                async Task Settle()
+                {
+                    // A craft that was in progress when Artisan stopped may still deliver its product.
+                    await Task.Delay(3000, CancellationToken.None).ConfigureAwait(false);
+                    progress.Observe(await Game.Run(Counts).ConfigureAwait(false), DateTime.UtcNow);
+                    Remember();
+                }
+                Remember(force: true);
+
+                if (resume.AllDone)
+                    return new { list = plan.Name, minutes = 0.0, crafted = Report(plan.Entries, progress), resumed = (string?)null,
+                                 restored = written.SequenceEqual(resume.Original) ? null : await RestoreList(plan.Id, resume.Original).ConfigureAwait(false),
+                                 note = (string?)"Every craft of this list was already made by an earlier run of this step." };
+
                 await Game.Run(() => { Svc.PluginInterface.GetIpcSubscriber<int, object>("Artisan.StartListById").InvokeAction(plan.Id); return true; }).ConfigureAwait(false);
                 try
                 {
@@ -297,6 +341,7 @@ internal static class LongRunningTools
                         await Task.Delay(1000, ct).ConfigureAwait(false);
                         var counts = await Game.Run(Counts).ConfigureAwait(false);
                         progress.Observe(counts, DateTime.UtcNow);
+                        Remember();
                         if (tick % 5 != 0) continue;
                         var (running, paused, solving) = await Game.Run(() => (
                             CraftGatherTools.Ipc("Artisan.IsListRunning") == true || CraftGatherTools.Ipc("Artisan.IsBusy") == true,
@@ -309,29 +354,30 @@ internal static class LongRunningTools
                         if (paused || solving) progress.Touch(now);
                         if (running && progress.Stalled(now, stallAfter))
                         {
+                            var idle = progress.Idle(now);
                             await Game.Run(() => { CraftGatherTools.StopArtisan(); return true; }).ConfigureAwait(false);
-                            throw new ToolException(progress.StallMessage(plan.Name, progress.Idle(now)));
+                            await Settle().ConfigureAwait(false);
+                            throw new ToolException(progress.StallMessage(plan.Name, idle) + Continues(progress));
                         }
-                        if (now - started > timeout) throw new ToolException("Timed out while Artisan was still crafting.");
+                        if (now - started > timeout) throw new ToolException("Timed out while Artisan was still crafting." + Continues(progress));
                     }
                 }
                 catch (OperationCanceledException)
                 {
                     await Game.Run(() => { CraftGatherTools.StopArtisan(); return true; }).ConfigureAwait(false);
+                    await Settle().ConfigureAwait(false);
                     throw;
                 }
 
                 progress.Observe(await Game.Run(Counts).ConfigureAwait(false), DateTime.UtcNow);
-                var report = plan.Entries.Select(e => new
-                {
-                    item = e.Item, recipeId = e.RecipeId, crafts = e.Crafts, craftsDone = progress.CraftsDone(e.RecipeId),
-                    expected = e.Crafts * e.Yield, made = progress.ItemsMade(e.RecipeId),
-                }).ToList();
+                Remember();
                 if (!progress.MadeProgressThisRun && !progress.Finished)
                     throw new ToolException($"Artisan stopped without crafting anything from '{plan.Name}' (stopped at {progress.Current!.Item}: missing materials, wrong job or gear?)." +
                                             (GearIngredients.Note(progress.Current.GearIngredients) is { } manual ? " " + manual : ""));
-                return new { list = plan.Name, minutes = Math.Round((DateTime.UtcNow - started).TotalMinutes, 1), crafted = report,
-                             note = progress.Finished ? null : $"The list stopped early, at {progress.Current!.Item}: not every craft was made." };
+                var restored = progress.Finished && !written.SequenceEqual(resume.Original) ? await RestoreList(plan.Id, resume.Original).ConfigureAwait(false) : null;
+                return new { list = plan.Name, minutes = Math.Round((DateTime.UtcNow - started).TotalMinutes, 1), crafted = Report(plan.Entries, progress),
+                             resumed = resumeNote, restored,
+                             note = progress.Finished ? null : $"The list stopped early, at {progress.Current!.Item}: not every craft was made." + Continues(progress) };
             },
         };
     }
@@ -356,6 +402,33 @@ internal static class LongRunningTools
 
     private static string Missing(List<KeyValuePair<uint, int>> missing, Dictionary<uint, int> have) =>
         string.Join(", ", missing.Select(m => $"{m.Value - have[m.Key]}x {Items.Name(m.Key)}"));
+
+    private static object Report(List<ListRecipe> entries, CraftListProgress progress) => entries.Select(e => new
+    {
+        item = e.Item, recipeId = e.RecipeId, crafts = e.Crafts, craftsDone = progress.CraftsDone(e.RecipeId),
+        expected = e.Crafts * e.Yield, made = progress.ItemsMade(e.RecipeId),
+    }).ToList();
+
+    private static string Continues(CraftListProgress progress)
+    {
+        var done = progress.Done().Values.Sum();
+        return done == 0 ? "" : $" {done} craft(s) are done; running this job step again (retry / resume) continues with the rest instead of crafting them again.";
+    }
+
+    /// <summary>Puts the list's original quantities back after a resumed run shrank it and everything is crafted.</summary>
+    private static async Task<string?> RestoreList(int listId, List<RecipeCount> original)
+    {
+        try
+        {
+            await CraftGatherTools.WriteCraftingList(listId.ToString(), null, original.Select(r => (r.RecipeId, r.Crafts)).ToList(), append: false).ConfigureAwait(false);
+            return "The Artisan list has its original quantities again.";
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"[MCP] Could not restore Artisan list {listId}: {ex.Message}");
+            return $"The Artisan list still holds only the crafts that were missing (restoring it failed: {ex.Message}).";
+        }
+    }
 
     /// <summary>Artisan's Raphael solver is building a solution (a craft waits for it). Framework thread.</summary>
     private static bool RaphaelBusy()
