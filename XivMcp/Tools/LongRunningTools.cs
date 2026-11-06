@@ -4,7 +4,9 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using Dalamud.Game.ClientState.Conditions;
 using Lumina.Excel.Sheets;
+using XivMcp.Crafting;
 using XivMcp.Mcp;
 using XivMcp.Util;
 
@@ -48,6 +50,7 @@ internal static class LongRunningTools
                     "fallback": { "type": "array", "description": "Items GatherBuddy only gathers while nothing from 'items' can be (its fallback list), e.g. a fish between the windows of timed nodes. Quantity defaults to 9999.", "items": { "type": "object", "properties": { "item": { "type": "string" }, "quantity": { "type": "integer" } }, "required": ["item"] } },
                     "until": { "type": "array", "description": "Stop once the bags hold these instead of the gathered items' quantities.", "items": { "type": "object", "properties": { "item": { "type": "string" }, "quantity": { "type": "integer" } }, "required": ["item", "quantity"] } },
                     "restarts": { "type": "integer", "minimum": 0, "maximum": 200, "description": "How often to start GatherBuddy again when it switches itself off (default 20)." },
+                    "stall_minutes": { "type": "integer", "minimum": 0, "maximum": 240, "description": "Fail when the character stands idle this long with no count changing while GatherBuddy claims to gather (default 6; 0 turns the check off). Waiting for a timed node never counts." },
                     "session_minutes": { "type": "integer", "minimum": 1, "description": "Gather for at most this long, then stop without failing (done=false), e.g. before a break; a later gather_until step carries on." },
                     "timeout_minutes": { "type": "integer", "description": "Give up after this long (default 600)." }
                   }
@@ -76,6 +79,7 @@ internal static class LongRunningTools
                         return true;
                     }).ConfigureAwait(false);
                 var maxRestarts = args.Int("restarts", 20, 0, 200);
+                var stallWindow = TimeSpan.FromMinutes(args.Int("stall_minutes", (int)GatherStallWatch.DefaultWindow.TotalMinutes, 0, 240));
                 TimeSpan? session = args.Node("session_minutes") is null ? null : TimeSpan.FromMinutes(args.Int("session_minutes", 60, 1, 24 * 60));
                 Dictionary<uint, int>? until = null;
                 if (args.Node("until") is JsonArray untilItems && untilItems.Count > 0)
@@ -154,14 +158,20 @@ internal static class LongRunningTools
                     var goal = until ?? targets;
                     var restarts = 0;
                     string? lastProgress = null;
+                    var stall = new GatherStallWatch(stallWindow, DateTime.UtcNow);
                     while (true)
                     {
                         ct.ThrowIfCancellationRequested();
-                        var state = await Game.Run(() => (
-                            Have: goal.ToDictionary(t => t.Key, t => Items.CountInBags(t.Key)),
-                            Running: CraftGatherTools.Ipc("GatherBuddyReborn.IsAutoGatherEnabled") == true,
-                            Status: CraftGatherTools.SafeString("GatherBuddyReborn.GetAutoGatherStatusText"),
-                            Free: Items.FreeBagSlots())).ConfigureAwait(false);
+                        var state = await Game.Run(() =>
+                        {
+                            var status = CraftGatherTools.SafeString("GatherBuddyReborn.GetAutoGatherStatusText");
+                            return (
+                                Have: goal.ToDictionary(t => t.Key, t => Items.CountInBags(t.Key)),
+                                Running: CraftGatherTools.Ipc("GatherBuddyReborn.IsAutoGatherEnabled") == true,
+                                Status: status,
+                                Free: Items.FreeBagSlots(),
+                                Activity: GatherActivityNow(GatherStallWatch.IsWaiting(CraftGatherTools.Ipc("GatherBuddyReborn.IsAutoGatherWaiting"), status)));
+                        }).ConfigureAwait(false);
                         var missing = goal.Where(t => state.Have[t.Key] < t.Value).ToList();
                         var progress = string.Join(" · ", goal.Select(t => $"{Items.Name(t.Key)} {state.Have[t.Key]}/{t.Value}"));
                         if (progress != lastProgress)
@@ -184,7 +194,14 @@ internal static class LongRunningTools
                             await Task.Delay(30000, ct).ConfigureAwait(false);
                             await Game.Run(() => { Svc.PluginInterface.GetIpcSubscriber<bool, object>("GatherBuddyReborn.SetAutoGatherEnabled").InvokeAction(true); return true; }).ConfigureAwait(false);
                             await Task.Delay(5000, ct).ConfigureAwait(false);
+                            stall.Reset(DateTime.UtcNow);
                             continue;
+                        }
+                        if (stall.Observe(DateTime.UtcNow, state.Have, state.Activity))
+                        {
+                            Svc.Log.Warning($"[MCP] gather_until: GatherBuddy idle for {stall.IdleFor(DateTime.UtcNow).TotalMinutes:0} min ({state.Status}); giving up.");
+                            throw new ToolException(GatherStallWatch.Message(missing.Select(m => $"{m.Value - state.Have[m.Key]}x {Items.Name(m.Key)}"),
+                                state.Status, stall.IdleFor(DateTime.UtcNow)));
                         }
                         await Task.Delay(10000, ct).ConfigureAwait(false);
                     }
@@ -283,6 +300,21 @@ internal static class LongRunningTools
                              note = shortItems.Count > 0 ? "Some outputs are below the expected count — intermediates are consumed by later crafts, or the list stopped early." : null };
             },
         };
+    }
+
+    /// <summary>
+    /// What the character is doing for the stall check: gathering, fishing/spearfishing, mounted or flying, walking a path,
+    /// teleporting or loading a zone counts as busy. Framework thread.
+    /// </summary>
+    private static GatherActivity GatherActivityNow(bool waiting)
+    {
+        var c = Svc.Condition;
+        var busy = c[ConditionFlag.Gathering] || c[ConditionFlag.ExecutingGatheringAction] || c[ConditionFlag.Fishing]
+                   || c[ConditionFlag.Mounted] || c[ConditionFlag.InFlight] || c[ConditionFlag.Diving] || c[ConditionFlag.Jumping]
+                   || c[ConditionFlag.Casting] || c[ConditionFlag.BetweenAreas] || c[ConditionFlag.BetweenAreas51]
+                   || c[ConditionFlag.OccupiedInCutSceneEvent] || Navigation.PathRunning;
+        var pos = Svc.Objects.LocalPlayer?.Position ?? default;
+        return new GatherActivity(busy, waiting, pos.X, pos.Y, pos.Z);
     }
 
     private static object Describe(Dictionary<uint, int> targets, Dictionary<uint, int> have) =>
