@@ -31,6 +31,9 @@ icon: Coins
 - **Any other currency** (scrips, tomestones, seals) shows an approval window in the game while the shop is open, unless you gave a standing approval. See [Approvals](/docs/user/permissions/approvals).
 - **As many as you can afford**: with a standing approval, `up_to` buys as many as the currency in hand pays for (at most the quantity asked) and finishes without an error, e.g. after farming tomestones whose yield varies.
 - **Grand Company seals**: only your own company's Quartermaster is used. `buy_item` clicks through the seal exchange's rank and category tabs (Materials first) until the item is listed, and stops when your rank is too low for it. Items that open a separate quantity window, such as Ventures, aren't supported yet.
+- **Vendors with several menus**, such as the tool merchants, ask for a topic first ("Purchase Disciple of the Hand Tools") and then for the shop ("Purchase Tools (Lv. 1-9)"). `buy_item` finds both from the shops that sell the item. If it can't tell, it lists the entries; `menu_option` then takes one entry or the whole path, such as `Purchase Disciple of the Hand Tools > Purchase Tools (Lv. 1-9)`.
+- **Gear** doesn't stack, so it is bought one piece at a time. Pieces that go into the armoury chest count as bought.
+- **Out of the line of sight**: when the vendor doesn't answer (a counter in the way), `buy_item` talks again without the game's line-of-sight check, then from right next to the vendor, as `interact_with_object` does.
 - **Exchanges that need a quest**, such as the master recipe books, only appear in the shop once you have done that quest. If you haven't, `buy_item` stops before you travel and names the quest.
 
 ## Selling and undercutting

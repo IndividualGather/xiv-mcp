@@ -60,6 +60,35 @@ internal static class Items
         return count;
     }
 
+    private static readonly InventoryType[] Armoury =
+    [
+        InventoryType.ArmoryMainHand, InventoryType.ArmoryOffHand, InventoryType.ArmoryHead, InventoryType.ArmoryBody, InventoryType.ArmoryHands,
+        InventoryType.ArmoryWaist, InventoryType.ArmoryLegs, InventoryType.ArmoryFeets, InventoryType.ArmoryEar, InventoryType.ArmoryNeck,
+        InventoryType.ArmoryWrist, InventoryType.ArmoryRings, InventoryType.ArmorySoulCrystal,
+    ];
+
+    /// <summary>
+    /// How many of an item are in the bags and the armoury chest (not equipped): where a purchase can arrive, since gear bought from
+    /// a vendor may go straight into the armoury chest. Framework thread.
+    /// </summary>
+    public static unsafe int CountReceived(uint itemId)
+    {
+        var count = CountInBags(itemId);
+        var im = InventoryManager.Instance();
+        if (im == null || IsCrystal(itemId)) return count;
+        foreach (var box in Armoury)
+        {
+            var c = im->GetInventoryContainer(box);
+            if (c == null) continue;
+            for (var i = 0; i < c->Size; i++)
+            {
+                var slot = c->GetInventorySlot(i);
+                if (slot != null && slot->ItemId == itemId) count += slot->Quantity;
+            }
+        }
+        return count;
+    }
+
     /// <summary>Free slots in the four inventory bags. Framework thread.</summary>
     public static unsafe int FreeBagSlots()
     {

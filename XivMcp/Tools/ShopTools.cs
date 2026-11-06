@@ -78,7 +78,8 @@ internal static class ShopTools
             Name = "buy_item",
             Description = "Buys an item from an NPC vendor (needs a vendor-location plugin to know where vendors stand): picks a vendor (gil vendors " +
                           "in a city first, then the current zone, or the one you name), travels there if needed (with the navigation plugins installed, needs 'Game & navigation'), " +
-                          "opens the shop through the NPC's menu and buys the quantity in batches of up to 99, confirming like a player. Checks free " +
+                          "opens the shop through the NPC's menus (also a topic menu in front of the shops) and buys the quantity in batches of up to 99 " +
+                          "(gear, which doesn't stack, one piece at a time), confirming like a player. Checks free " +
                           "bag slots (and gil for gil shops) first and verifies what arrived. Gil shops buy directly. Any other shop (tomestones, " +
                           "scrips, seals, items) shows an approval popup in game while its window is open, and only buys when the player clicks " +
                           "Approve. Supported shop windows: gil shops, the common exchange windows and the scrip exchanges with several pages, where " +
@@ -91,7 +92,7 @@ internal static class ShopTools
                     "item": { "type": "string", "description": "Item name or id." },
                     "quantity": { "type": "integer", "description": "How many to buy." },
                     "npc": { "type": "string", "description": "Vendor NPC name or id (from find_vendors); default: a gil vendor, in a city first, the current zone first." },
-                    "menu_option": { "type": "string", "description": "Text of the NPC menu entry that opens the right shop, if it can't be found automatically." },
+                    "menu_option": { "type": "string", "description": "The NPC menu entry that opens the right shop, if it can't be found automatically. For nested menus give the path, separated by '>', e.g. \"Purchase Disciple of the Hand Tools > Purchase Tools (Lv. 1-9)\"; levels the path doesn't name are matched against the shops that sell the item." },
                     "approval": { "type": "string", "description": "Id of a standing approval (request_spending_approval) to use instead of asking per purchase; it caps what can be spent." },
                     "up_to": { "type": "boolean", "description": "With an approval: buy as many as the currency in hand pays for, at most 'quantity', and finish without an error when it runs out (default false: not enough currency is an error). For job steps after farming a currency whose yield varies." }
                   },
@@ -123,7 +124,7 @@ internal static class ShopTools
                         if (slots > Items.FreeBagSlots()) throw new ToolException($"{quantity}x {name} needs {slots} free bag slots; only {Items.FreeBagSlots()} are free.");
                         var gil = Gil();
                         if (offer.GilPrice is { } p && (long)p * quantity > gil) throw new ToolException($"Not enough gil: about {(long)p * quantity:N0} needed, {gil:N0} owned.");
-                        return (Gil: gil, Before: Items.CountInBags(item.RowId));
+                        return (Gil: gil, Before: Items.CountReceived(item.RowId));
                     }).ConfigureAwait(false);
 
                     // Get to the vendor.
@@ -170,7 +171,7 @@ internal static class ShopTools
                             if (window == "GrandCompanyExchange") await ShowInGcExchange(item.RowId, steps, ct).ConfigureAwait(false);
                             var bought = await Purchase(item.RowId, quantity, offer, check.Before, steps, ct, approval, args.Bool("up_to", false)).ConfigureAwait(false);
                             await CloseShop(ct).ConfigureAwait(false);
-                            var after = await Game.Run(() => (Count: Items.CountInBags(item.RowId), Gil: Gil())).ConfigureAwait(false);
+                            var after = await Game.Run(() => (Count: Items.CountReceived(item.RowId), Gil: Gil())).ConfigureAwait(false);
                             return new
                             {
                                 bought,
@@ -478,20 +479,23 @@ internal static class ShopTools
         if (await Game.Run(() => AnyVisible(ShopAddons)).ConfigureAwait(false) is { } already) return already;
         // A vendor that won't trade yet says why in the chat log (e.g. a gemstone trader before the zone's contribution is done).
         using var feedback = new GameCommands.Feedback();
-        await Game.RunLoggedIn(() =>
+        var npc = await Game.RunLoggedIn(() =>
         {
-            var npc = Svc.Objects.Where(o => o.BaseId == offer.NpcId && o.IsTargetable).OrderBy(o => Game.DistanceToPlayer(o.Position)).FirstOrDefault()
-                      ?? throw new ToolException($"{offer.Npc} is not nearby.");
-            unsafe
-            {
-                var native = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)npc.Address;
-                FFXIVClientStructs.FFXIV.Client.Game.Control.TargetSystem.Instance()->SetHardTarget(native, false, false, 0);
-                FFXIVClientStructs.FFXIV.Client.Game.Control.TargetSystem.Instance()->InteractWithObject(native, true);
-            }
-            return true;
+            var o = Svc.Objects.Where(o => o.BaseId == offer.NpcId && o.IsTargetable).OrderBy(o => Game.DistanceToPlayer(o.Position)).FirstOrDefault()
+                    ?? throw new ToolException($"{offer.Npc} is not nearby.");
+            InteractionTools.Interact(o.Address, lineOfSight: true);
+            return (o.Address, o.Position);
         }).ConfigureAwait(false);
         steps.Add($"Talking to {offer.Npc}.");
 
+        // Like interact_with_object: counters and furniture can fail the game's line-of-sight check ("Unable to execute action
+        // from this location.") although the vendor is in reach. Then talk again without the check, then from right next to them.
+        var attempts = 1;
+        var reacted = false;
+        var interactedAt = DateTime.UtcNow;
+        var path = ShopMenu.ParsePath(menuOption);
+        var used = new List<string>();     // names and entries taken on earlier menu levels
+        var selected = new List<string>(); // the entries selected, for the error
         var deadline = DateTime.UtcNow.AddSeconds(15);
         var lastAction = DateTime.UtcNow - TimeSpan.FromMilliseconds(600);
         while (DateTime.UtcNow < deadline)
@@ -505,19 +509,50 @@ internal static class ShopTools
                 if (RetainerUi.Ready("Talk")) { RetainerUi.ClickTalk(); return "talk"; }
                 var entries = MenuEntries(out var addon);
                 if (entries is null) return null;
-                var index = PickMenuEntry(entries, menuOption is not null ? [menuOption] : offer.ShopNames);
-                if (index < 0) return "menu:" + string.Join(" | ", entries);
-                FireMenu(addon, index);
-                return "selected:" + entries[index];
+                if (ShopMenu.Pick(entries, path, offer.ShopNames, used) is not { } choice)
+                {
+                    LeaveMenu(addon, entries); // don't leave the menu up for the next try
+                    return "menu:" + string.Join(" | ", entries);
+                }
+                used.Add(choice.Matched ?? entries[choice.Index]);
+                used.Add(entries[choice.Index]);
+                selected.Add(entries[choice.Index]);
+                FireMenu(addon, choice.Index);
+                return "selected:" + entries[choice.Index];
             }).ConfigureAwait(false);
             if (outcome is null)
             {
-                if (feedback.Messages.Count > 0 && DateTime.UtcNow - lastAction > TimeSpan.FromSeconds(2)) break;
+                if (!reacted && attempts < 3 && DateTime.UtcNow - interactedAt > TimeSpan.FromSeconds(2.5))
+                {
+                    attempts++;
+                    if (attempts == 2)
+                    {
+                        await Game.Run(() => InteractionTools.Interact(npc.Address, lineOfSight: false)).ConfigureAwait(false);
+                        steps.Add($"No answer; talking to {offer.Npc} again without the line-of-sight check.");
+                    }
+                    else if (await Game.Run(() => Navigation.VnavmeshLoaded).ConfigureAwait(false))
+                    {
+                        await Game.Run(() => Navigation.MoveCloseTo(npc.Position, 1.2f)).ConfigureAwait(false);
+                        var walkUntil = DateTime.UtcNow.AddSeconds(8);
+                        while (DateTime.UtcNow < walkUntil && await Game.Run(() => Navigation.PathRunning).ConfigureAwait(false))
+                            await Task.Delay(150, ct).ConfigureAwait(false);
+                        await Game.Run(() => { Navigation.StopMoving(); return InteractionTools.Interact(npc.Address, lineOfSight: false); }).ConfigureAwait(false);
+                        steps.Add($"Stepped up to {offer.Npc} and talked again.");
+                    }
+                    else attempts = 3;
+                    interactedAt = DateTime.UtcNow;
+                    var extended = DateTime.UtcNow.AddSeconds(8);
+                    if (extended > deadline) deadline = extended;
+                    continue;
+                }
+                if (feedback.Messages.Count > 0 && (reacted || attempts >= 3) && DateTime.UtcNow - lastAction > TimeSpan.FromSeconds(2)) break;
                 continue;
             }
+            reacted = true;
             if (outcome.StartsWith("open:")) { steps.Add($"Shop open ({outcome[5..]})."); await Task.Delay(400, ct).ConfigureAwait(false); return outcome[5..]; }
             if (outcome.StartsWith("menu:"))
-                throw new ToolException($"Couldn't tell which menu entry opens the shop. Entries: {outcome[5..]}. Retry with menu_option.");
+                throw new ToolException($"Couldn't tell which menu entry opens the shop{(selected.Count > 0 ? $" (after {string.Join(" > ", selected)})" : "")}. " +
+                                        $"Entries: {outcome[5..]}. Retry with menu_option: one entry, or a path through nested menus like \"First entry > Second entry\".");
             if (outcome.StartsWith("selected:")) steps.Add($"Menu: {outcome[9..]}.");
             lastAction = DateTime.UtcNow;
         }
@@ -527,21 +562,12 @@ internal static class ShopTools
         throw new ToolException($"The shop window didn't open after talking to {offer.Npc}. Windows open: {await Game.Run(OpenWindows).ConfigureAwait(false)}.");
     }
 
-    /// <summary>The menu entry that opens the wanted shop: exact/prefix match on the shop name, else the only "purchase"-like entry.</summary>
-    private static int PickMenuEntry(List<string> entries, List<string> shopNames)
+    /// <summary>Closes a vendor menu with its Cancel/Nothing/Quit entry (or by closing the window). Framework thread.</summary>
+    private static unsafe void LeaveMenu(nint addon, List<string> entries)
     {
-        foreach (var shopName in shopNames.Where(n => n.Length > 0))
-        {
-            var exact = entries.FindIndex(e => e.Equals(shopName, StringComparison.OrdinalIgnoreCase));
-            if (exact >= 0) return exact;
-            var prefix = entries.FindIndex(e => e.StartsWith(shopName, StringComparison.OrdinalIgnoreCase) || shopName.StartsWith(e, StringComparison.OrdinalIgnoreCase) && e.Length > 4);
-            if (prefix >= 0) return prefix;
-            var contains = entries.FindIndex(e => e.Contains(shopName, StringComparison.OrdinalIgnoreCase));
-            if (contains >= 0) return contains;
-        }
-        var buying = entries.Select((e, i) => (e, i)).Where(x => x.e.Contains("Purchase", StringComparison.OrdinalIgnoreCase) || x.e.Contains("Buy", StringComparison.OrdinalIgnoreCase) ||
-                                                              x.e.Contains("Exchange", StringComparison.OrdinalIgnoreCase) || x.e.Contains("Trade", StringComparison.OrdinalIgnoreCase)).ToList();
-        return buying.Count == 1 ? buying[0].i : -1;
+        var quit = entries.FindIndex(e => e.StartsWith("Cancel", StringComparison.OrdinalIgnoreCase) || e.StartsWith("Nothing", StringComparison.OrdinalIgnoreCase) ||
+                                          e.StartsWith("Quit", StringComparison.OrdinalIgnoreCase));
+        if (quit >= 0) FireMenu(addon, quit); else ((AtkUnitBase*)addon)->Close(true);
     }
 
     /// <summary>
@@ -555,13 +581,15 @@ internal static class ShopTools
         var failures = 0;
         long? unitCost = null;
         var budget = approval?.Remaining ?? 0;
+        // Gear doesn't stack: a gil shop takes it one piece per purchase.
+        var stackSize = (int)await Game.Run(() => Items.StackSize(itemId)).ConfigureAwait(false);
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var have = await Game.Run(() => Items.CountInBags(itemId)).ConfigureAwait(false);
+            var have = await Game.Run(() => Items.CountReceived(itemId)).ConfigureAwait(false);
             if (have >= target) return have - before;
             var remainingUnits = (int)Math.Ceiling((target - have) / (double)offer.UnitsPerTrade);
-            var batch = Math.Min(MaxBatch, remainingUnits);
+            var batch = ShopMenu.BatchSize(remainingUnits, stackSize, MaxBatch);
             if (approval is not null)
             {
                 batch = unitCost is { } cost ? (int)Math.Min(batch, budget / Math.Max(1, cost)) : 1;
@@ -596,7 +624,7 @@ internal static class ShopTools
             while (DateTime.UtcNow < deadline)
             {
                 await Task.Delay(250, ct).ConfigureAwait(false);
-                var now = await Game.Run(() => { ConfirmDialogs(); return Items.CountInBags(itemId); }).ConfigureAwait(false);
+                var now = await Game.Run(() => { ConfirmDialogs(); return Items.CountReceived(itemId); }).ConfigureAwait(false);
                 if (now > have)
                 {
                     arrived = true;
@@ -608,7 +636,7 @@ internal static class ShopTools
                             throw new ToolException($"That purchase was not paid with {Items.Name(approval.CurrencyId)}, so approval {approval.Id} doesn't cover it; stopped.");
                         Approvals.Spend(approval.Id, spent);
                         budget -= spent;
-                        var got = await Game.Run(() => Items.CountInBags(itemId)).ConfigureAwait(false) - have;
+                        var got = await Game.Run(() => Items.CountReceived(itemId)).ConfigureAwait(false) - have;
                         unitCost = Math.Max(1, spent / Math.Max(1, got));
                         steps.Add($"Paid {spent:N0} {Items.Name(approval.CurrencyId)} ({budget:N0} approved left).");
                     }
@@ -714,11 +742,7 @@ internal static class ShopTools
         {
             unsafe
             {
-                if (MenuEntries(out var menu) is { } entries && menu != 0)
-                {
-                    var quit = entries.FindIndex(e => e.StartsWith("Cancel", StringComparison.OrdinalIgnoreCase) || e.StartsWith("Nothing", StringComparison.OrdinalIgnoreCase) || e.StartsWith("Quit", StringComparison.OrdinalIgnoreCase));
-                    if (quit >= 0) FireMenu(menu, quit); else ((AtkUnitBase*)menu)->Close(true);
-                }
+                if (MenuEntries(out var menu) is { } entries && menu != 0) LeaveMenu(menu, entries);
             }
             return true;
         }).ConfigureAwait(false);
