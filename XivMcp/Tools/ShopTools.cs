@@ -34,7 +34,7 @@ internal static class ShopTools
 
     /// <summary>How long a standing approval question stays up in game (the call that asks returns long before).</summary>
     private static readonly TimeSpan ApprovalQuestionTimeout = TimeSpan.FromMinutes(5);
-    private static readonly string[] ShopAddons = ["Shop", "ShopExchangeItem", "ShopExchangeCurrency", "InclusionShop"];
+    private static readonly string[] ShopAddons = ["Shop", "ShopExchangeItem", "ShopExchangeCurrency", "InclusionShop", "GrandCompanyExchange"];
     private static readonly string[] ConfirmAddons = ["ShopExchangeItemDialog", "ShopExchangeCurrencyDialog"];
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
@@ -82,7 +82,8 @@ internal static class ShopTools
                           "bag slots (and gil for gil shops) first and verifies what arrived. Gil shops buy directly. Any other shop (tomestones, " +
                           "scrips, seals, items) shows an approval popup in game while its window is open, and only buys when the player clicks " +
                           "Approve. Supported shop windows: gil shops, the common exchange windows and the scrip exchanges with several pages, where " +
-                          "it picks the page and sub-page that sell the item (not grand company shops). Requires 'Market & purchases' in /xivmcp.",
+                          "it picks the page and sub-page that sell the item, and the Grand Company seal exchange (your own company's Quartermaster; " +
+                          "it picks the rank and category tab). Requires 'Market & purchases' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
@@ -166,6 +167,7 @@ internal static class ShopTools
 
                             var gilBefore = await Game.Run(Gil).ConfigureAwait(false);
                             if (window == "InclusionShop") await ShowInInclusionShop(item.RowId, steps, ct).ConfigureAwait(false);
+                            if (window == "GrandCompanyExchange") await ShowInGcExchange(item.RowId, steps, ct).ConfigureAwait(false);
                             var bought = await Purchase(item.RowId, quantity, offer, check.Before, steps, ct, approval, args.Bool("up_to", false)).ConfigureAwait(false);
                             await CloseShop(ct).ConfigureAwait(false);
                             var after = await Game.Run(() => (Count: Items.CountInBags(item.RowId), Gil: Gil())).ConfigureAwait(false);
@@ -390,6 +392,13 @@ internal static class ShopTools
     {
         var offers = Offers(itemId);
         if (offers.Count == 0) throw new ToolException("No NPC vendor sells this item (according to Item Vendor Location).");
+        // A Quartermaster only trades with members of its own Grand Company.
+        var gc = (int)Svc.PlayerState.GrandCompany.RowId;
+        if (offers.Any(o => GcExchange.GrandCompanyOf(o.NpcId) is not null))
+        {
+            offers = offers.Where(o => GcExchange.GrandCompanyOf(o.NpcId) is not { } own || own == gc).ToList();
+            if (offers.Count == 0) throw new ToolException("Only the Grand Company Quartermasters sell this item, and you aren't in a Grand Company.");
+        }
         if (npc is not null)
         {
             offers = offers.Where(o => uint.TryParse(npc, out var id) ? o.NpcId == id : Game.Matches(o.Npc, npc)).ToList();
@@ -626,6 +635,23 @@ internal static class ShopTools
                 }
             return "The item is not in this gil shop's list (wrong vendor or the item isn't unlocked for you yet).";
         }
+        if (Addon("GrandCompanyExchange") is var gcx && gcx != null && gcx->IsVisible)
+        {
+            if (GcExchange.Find(i => Value(gcx, i), itemId) is not { } row) return "The item is not on the seal exchange page that is shown.";
+            if (row.CurrencyDialog) return "This seal exchange item opens a separate quantity dialog, which buy_item doesn't drive yet.";
+            var rank = Svc.PlayerState.GetGrandCompanyRank(Svc.PlayerState.GrandCompany.Value);
+            if (rank < row.RankNeeded) return $"Your Grand Company rank ({rank}) is too low for this item (needs rank {row.RankNeeded}).";
+            // As AutoRetainer buys: 0, row, amount, then (zero, can buy, opens the currency dialog, zero, zero, zero).
+            var atk = stackalloc AtkValue[9];
+            for (var i = 0; i < 9; i++) atk[i] = default;
+            atk[0].Type = AtkValueType.Int; atk[0].Int = 0;
+            atk[1].Type = AtkValueType.Int; atk[1].Int = row.Index;
+            atk[2].Type = AtkValueType.Int; atk[2].Int = row.Stackable ? quantity : 1;
+            atk[4].Type = AtkValueType.Bool; atk[4].Byte = 1;
+            atk[5].Type = AtkValueType.Bool; atk[5].Byte = 0;
+            gcx->FireCallback(9, atk, true);
+            return null;
+        }
         if (Addon("InclusionShop") is var inclusion && inclusion != null && inclusion->IsVisible)
         {
             var index = InclusionIndex(inclusion, itemId);
@@ -674,7 +700,7 @@ internal static class ShopTools
                 {
                     if (AnyVisible(ShopAddons) is not { } name) return false;
                     var addon = Addon(name);
-                    if (name == "Shop") Fire(addon, true, -1);
+                    if (name is "Shop" or "GrandCompanyExchange") Fire(addon, true, -1);
                     else addon->Close(true);
                     return true;
                 }
@@ -793,6 +819,49 @@ internal static class ShopTools
             + (shops.Count > 0 ? $" (it is sold in: {string.Join(", ", shops)})." : "."));
     }
 
+    // ------------------------------------------------------------------ the Grand Company seal exchange (GrandCompanyExchange)
+
+    /// <summary>
+    /// Shows the page of the open seal exchange that lists the item: clicks through the rank tabs and category tabs (Materials first)
+    /// until the item list has it, as a player would.
+    /// </summary>
+    private static async Task ShowInGcExchange(uint itemId, List<string> steps, CancellationToken ct)
+    {
+        bool Visible() { unsafe { var a = Addon("GrandCompanyExchange"); return a != null && a->IsVisible && GcExchange.Find(i => Value(a, i), itemId) is not null; } }
+        if (await Game.Run(Visible).ConfigureAwait(false)) return;
+        var rankShown = -1;
+        foreach (var (rank, category) in GcExchange.Pages())
+        {
+            if (rank != rankShown)
+            {
+                if (!await Game.Run(() => ClickGcTab(GcExchange.RankTabNode + rank)).ConfigureAwait(false))
+                    throw new ToolException("The seal exchange's rank tabs could not be clicked (the window may have changed).");
+                rankShown = rank;
+                await Task.Delay(500, ct).ConfigureAwait(false);
+            }
+            if (!await Game.Run(() => ClickGcTab(GcExchange.CategoryTabNode + category)).ConfigureAwait(false)) continue;
+            await Task.Delay(500, ct).ConfigureAwait(false);
+            if (await Game.Run(Visible).ConfigureAwait(false))
+            {
+                steps.Add($"Seal exchange: rank tab {rank + 1}, category tab {category + 1}.");
+                return;
+            }
+        }
+        throw new ToolException($"{Items.Name(itemId)} is not on any page of this seal exchange.");
+    }
+
+    /// <summary>Clicks a rank or category tab (a radio button by node id) of the seal exchange. Framework thread.</summary>
+    private static unsafe bool ClickGcTab(int nodeId)
+    {
+        var addon = Addon("GrandCompanyExchange");
+        if (addon == null || !addon->IsVisible) throw new ToolException("The seal exchange window closed.");
+        var node = addon->GetNodeById((uint)nodeId);
+        if (node == null || (int)node->Type < 1000 || !node->IsVisible()) return false;
+        var component = ((AtkComponentNode*)node)->Component;
+        if (component == null || component->GetComponentType() != ComponentType.RadioButton) return false;
+        return VentureTools.Click(addon, (AtkComponentButton*)component);
+    }
+
     /// <summary>Row of an item among the exchange's visible items (AtkValues: count at 298, item ids from 300 in steps of 18).</summary>
     private static unsafe int InclusionIndex(AtkUnitBase* addon, uint itemId)
     {
@@ -826,7 +895,7 @@ internal static class ShopTools
     {
         if (index >= addon->AtkValuesCount) return 0;
         var v = addon->AtkValues[index];
-        return v.Type switch { AtkValueType.UInt => v.UInt, AtkValueType.Int => (uint)v.Int, _ => 0 };
+        return v.Type switch { AtkValueType.UInt => v.UInt, AtkValueType.Int => (uint)v.Int, AtkValueType.Bool => v.Byte != 0 ? 1u : 0u, _ => 0 };
     }
 
     /// <summary>Entries of an open SelectString or SelectIconString menu.</summary>
