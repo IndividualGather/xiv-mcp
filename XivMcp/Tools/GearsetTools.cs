@@ -40,7 +40,7 @@ internal static class GearsetTools
             Name = "switch_gearset",
             Description = "Changes job by equipping a gearset, like clicking it in the Gear Set list: give its number, name or a job " +
                           "(\"WAR\", \"Warrior\"; the highest item level set of that job). When an item of the set is missing, the game " +
-                          "asks whether to replace it with another it found; replace_missing answers that (default Yes). Not in combat, " +
+                          "asks whether to replace it with another it found; replace_missing answers that (default Yes). Returns once the job has changed (up to 30 seconds) and the set's pieces are on. Not in combat, " +
                           "while crafting or gathering. Needs 'Game & navigation' in /xivmcp.",
             InputSchema = """
                 {

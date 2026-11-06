@@ -385,7 +385,7 @@ internal static class InventoryActionTools
     }
 
     /// <summary>True while the game still waits for the server to answer an earlier inventory operation.</summary>
-    private static unsafe bool HasPendingOperation()
+    internal static unsafe bool HasPendingOperation()
     {
         var im = InventoryManager.Instance();
         if (im == null) return false;

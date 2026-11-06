@@ -13,6 +13,7 @@ using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Excel.Sheets;
 using XivMcp.Fashion;
+using XivMcp.Gear;
 using XivMcp.Maps;
 using XivMcp.Mcp;
 using XivMcp.Permissions;
@@ -50,7 +51,7 @@ internal static class FashionTools
         {
             Name = "equip_items",
             Description = "Puts on pieces of gear from the bags or the armoury chest, each into its slot (rings into a free ring slot; name a ring " +
-                          "twice to wear it on both hands), as if the player equipped them, one after another as the server confirms each. Checks that the current job and level can wear each one. Out of combat only. Requires 'Items & " +
+                          "twice to wear it on both hands), as if the player equipped them, one after another as the server confirms each. Waits for a gear change still in progress (e.g. right after switch_gearset) to finish first and tries a piece the game drops up to 3 times; concurrent calls wait for each other. Checks that the current job and level can wear each one. Out of combat only. Requires 'Items & " +
                           "retainers' in /xivmcp.",
             InputSchema = """
                 {
@@ -65,15 +66,7 @@ internal static class FashionTools
             Handler = async (args, ct) =>
             {
                 var items = (args.Node("items")?.AsArray() ?? throw new ToolException("'items' is required.")).Select(n => n?.ToString() ?? "").ToList();
-                var done = new List<object>();
-                var asked = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-                foreach (var item in items)
-                {
-                    // Naming a ring twice puts on two copies, one per hand.
-                    asked[item.Trim()] = asked.GetValueOrDefault(item.Trim()) + 1;
-                    done.Add(await Equip(item, ct, asked[item.Trim()]).ConfigureAwait(false));
-                }
-                return new { equipped = done };
+                return new { equipped = await EquipAll(items, ct).ConfigureAwait(false) };
             },
         };
 
@@ -155,11 +148,7 @@ internal static class FashionTools
                 var vipCard = args.Node("use_vip_card") is { } v ? v.GetValue<bool>() : config.FashionReportVipCard;
                 if (!FashionSchedule.IsJudgingOpen(DateTime.UtcNow)) throw new ToolException("The Masked Rose only judges from Friday 08:00 UTC until the weekly reset on Tuesday.");
                 var steps = new List<string>();
-                foreach (var item in args.Array("items")?.Select(n => n?.ToString() ?? "") ?? [])
-                {
-                    await Equip(item, ct).ConfigureAwait(false);
-                    steps.Add($"Put on {item}.");
-                }
+                await EquipAll(args.Array("items")?.Select(n => n?.ToString() ?? "") ?? [], ct, item => steps.Add($"Put on {item}.")).ConfigureAwait(false);
                 // Only what complete_fashion_report bought for the report, never items a caller names.
                 var discard = config.FashionReportDiscard ? BoughtForReport.Keys.ToList() : [];
                 return await Present(steps, vipCard, discard, config.FashionReportDiscardMaxValue, config.AllowOnlineData, ct).ConfigureAwait(false);
@@ -431,14 +420,52 @@ internal static class FashionTools
     /// </summary>
     private static async Task<object> Equip(string query, CancellationToken ct, int copies = 1)
     {
-        if (!await InventoryActionTools.WaitForNoPendingOperation(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
-            throw new ToolException("The game is still busy with an earlier inventory change.");
-        var (itemId, name, target, wanted) = await Game.RunLoggedIn(() => PrepareEquip(query, copies)).ConfigureAwait(false);
-        if (target is null) return new { item = name, already = true };
-        if (!await WaitFor(() => WornCount(itemId) >= wanted, TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
-            throw new ToolException($"{name} was not put on (the game may have refused it).");
-        await InventoryActionTools.WaitForNoPendingOperation(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
-        return new { item = name, slot = target };
+        // Right after a job change the game drops gear moves (e.g. the first piece after switch_gearset): try again after a moment.
+        int? slot = null;
+        for (var attempt = 1; ; attempt++)
+        {
+            if (!await InventoryActionTools.WaitForNoPendingOperation(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
+                throw new ToolException("The game is still busy with an earlier inventory change.");
+            var (itemId, name, target, wanted) = await Game.RunLoggedIn(() => PrepareEquip(query, copies)).ConfigureAwait(false);
+            if (target is null) return slot is null ? new { item = name, already = true } : (object)new { item = name, slot, attempts = attempt - 1 };
+            slot = target;
+            var worn = await WaitFor(() => WornCount(itemId) >= wanted, TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
+            switch (EquipRetry.Next(attempt, worn))
+            {
+                case EquipStep.Done:
+                    await InventoryActionTools.WaitForNoPendingOperation(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
+                    return attempt == 1 ? new { item = name, slot = target } : (object)new { item = name, slot = target, attempts = attempt };
+                case EquipStep.GiveUp:
+                    throw new ToolException(EquipRetry.Refused(name, attempt));
+            }
+            Svc.Log.Information($"[MCP] equip: {name} was not put on (attempt {attempt}); trying again.");
+            await Task.Delay(EquipRetry.Delay, ct).ConfigureAwait(false);
+            await Gearsets.WaitUntilSettled(null, GearSettle.SettleTimeout, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Puts on several items, one after another, once a gear change still in progress (e.g. switch_gearset) has finished. One
+    /// inventory action at a time: concurrent calls wait for each other.
+    /// </summary>
+    private static async Task<List<object>> EquipAll(IEnumerable<string> items, CancellationToken ct, Action<string>? onEach = null)
+    {
+        await InventoryActionTools.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await Gearsets.WaitUntilSettled(null, GearSettle.SettleTimeout, ct).ConfigureAwait(false);
+            var done = new List<object>();
+            var asked = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var item in items)
+            {
+                // Naming a ring twice puts on two copies, one per hand.
+                asked[item.Trim()] = asked.GetValueOrDefault(item.Trim()) + 1;
+                done.Add(await Equip(item, ct, asked[item.Trim()]).ConfigureAwait(false));
+                onEach?.Invoke(item);
+            }
+            return done;
+        }
+        finally { InventoryActionTools.Gate.Release(); }
     }
 
     /// <summary>

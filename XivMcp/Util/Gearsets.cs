@@ -87,10 +87,19 @@ internal static class Gearsets
             if (result < 0) throw new ToolException($"The game refused to equip gearset {set.Number} ({set.Name}).");
         }
         var answered = 0;
-        for (var i = 0; i < 40; i++)
+        // The job changes after the server confirms, which can take a while (longer after answering a prompt); the deadline
+        // starts again after each answer (one prompt per missing item at most).
+        var deadline = DateTime.UtcNow + Gear.GearSettle.JobChangeTimeout;
+        for (var first = true; ; first = false)
         {
-            if (i > 0) await Task.Delay(250, ct).ConfigureAwait(false);
-            if (await Game.Run(CurrentJob).ConfigureAwait(false) == set.JobId) return set with { Current = true };
+            if (!first) await Task.Delay(250, ct).ConfigureAwait(false);
+            if (await Game.Run(CurrentJob).ConfigureAwait(false) == set.JobId)
+            {
+                // The set's pieces still move in after the job changed; gear moves sent meanwhile get dropped.
+                await WaitUntilSettled(set.JobId, Gear.GearSettle.SettleTimeout, ct).ConfigureAwait(false);
+                return set with { Current = true };
+            }
+            if (DateTime.UtcNow > deadline) break;
             var prompt = await Game.Run(GameWindows.YesNoPrompt).ConfigureAwait(false);
             if (prompt is null) continue;
             if (!AsksToReplace(prompt))
@@ -98,9 +107,47 @@ internal static class Gearsets
             if (++answered > 14) throw new ToolException($"The game keeps asking \"{prompt}\" while equipping gearset {set.Number} ({set.Name}).");
             await Game.Run(() => { GameWindows.AnswerYesNo(replaceMissing); return true; }).ConfigureAwait(false);
             steps?.Add($"The game asked: \"{prompt}\" Answered {(replaceMissing ? "Yes" : "No")}.");
-            i = 0; // the job changes after the answer (one prompt per missing item at most)
+            deadline = DateTime.UtcNow + Gear.GearSettle.JobChangeTimeout;
         }
-        throw new ToolException($"Equipped gearset {set.Number} ({set.Name}), but the job did not change to {set.Job}.");
+        throw new ToolException($"Equipped gearset {set.Number} ({set.Name}), but the job did not change to {set.Job} within " +
+                                $"{Gear.GearSettle.JobChangeTimeout.TotalSeconds:0} seconds.");
+    }
+
+    /// <summary>
+    /// Waits until a gear change has finished: the job is <paramref name="jobId"/> (any when null), no inventory change is pending,
+    /// no prompt is open, the character may change gear and the worn gear stayed the same for a moment. False when that did
+    /// not happen within <paramref name="timeout"/>.
+    /// </summary>
+    public static async Task<bool> WaitUntilSettled(uint? jobId, TimeSpan timeout, CancellationToken ct)
+    {
+        var settle = new Gear.GearSettle(Gear.GearSettle.DefaultQuiet);
+        var deadline = DateTime.UtcNow + timeout;
+        while (true)
+        {
+            var state = await Game.Run(() => new Gear.GearState(jobId is null || CurrentJob() == jobId, GearBusy(), EquippedSignature())).ConfigureAwait(false);
+            if (settle.Observe(DateTime.UtcNow, state)) return true;
+            if (DateTime.UtcNow > deadline) return false;
+            await Task.Delay(100, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>An inventory change is pending, a prompt is open or the character's state forbids changing gear. Framework thread.</summary>
+    private static bool GearBusy()
+    {
+        var c = Svc.Condition;
+        return Tools.InventoryActionTools.HasPendingOperation() || GameWindows.YesNoPrompt() is not null
+               || c[ConditionFlag.Casting] || c[ConditionFlag.BetweenAreas] || c[ConditionFlag.BetweenAreas51] || c[ConditionFlag.Occupied]
+               || c[ConditionFlag.Occupied39] || c[ConditionFlag.OccupiedInCutSceneEvent] || c[ConditionFlag.Crafting] || c[ConditionFlag.Gathering];
+    }
+
+    /// <summary>The worn items' ids, to notice the game still moving gear. Framework thread.</summary>
+    private static unsafe string EquippedSignature()
+    {
+        var equipped = FFXIVClientStructs.FFXIV.Client.Game.InventoryManager.Instance()->GetInventoryContainer(FFXIVClientStructs.FFXIV.Client.Game.InventoryType.EquippedItems);
+        if (equipped == null) return "";
+        var ids = new uint[equipped->Size];
+        for (var i = 0; i < equipped->Size; i++) ids[i] = equipped->GetInventorySlot(i)->ItemId;
+        return string.Join(",", ids);
     }
 
     /// <summary>Gear can't change in combat, while crafting, gathering, casting, in a cutscene or a zone change. Framework thread.</summary>
