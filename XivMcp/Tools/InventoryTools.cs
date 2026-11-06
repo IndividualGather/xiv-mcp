@@ -31,6 +31,10 @@ internal static class InventoryTools
 
     private static readonly string[] DefaultSearchGroups = ["bags", "equipped", "armory", "currency", "crystals", "key_items", "saddlebag"];
 
+    /// <summary>Items of the "Currency" category (ItemUICategory 100), such as ventures.</summary>
+    private static readonly Lazy<HashSet<uint>> CurrencyItems = new(() =>
+        Svc.Data.GetExcelSheet<Item>().Where(i => i.ItemUICategory.RowId == 100).Select(i => i.RowId).ToHashSet());
+
     private static GameInventoryType[] ByPrefix(string prefix) =>
         Enum.GetValues<GameInventoryType>().Where(t => t.ToString().StartsWith(prefix, StringComparison.Ordinal)).ToArray();
 
@@ -116,6 +120,22 @@ internal static class InventoryTools
                         if (item.IsEmpty || !Wanted(item.BaseItemId, out var name)) continue;
                         hits.Add((item.BaseItemId, name, item.Quantity,
                             new { container = item.ContainerType.ToString(), slot = item.InventorySlot, quantity = item.Quantity, hq = item.IsHq }));
+                    }
+                }
+
+                // Some currencies (ventures among them) are held without a slot the inventory lists: count them instead.
+                if (args.StringList("containers").Count == 0)
+                {
+                    unsafe
+                    {
+                        var im = InventoryManager.Instance();
+                        foreach (var id in CurrencyItems.Value)
+                        {
+                            if (hits.Any(h => h.ItemId == id) || !Wanted(id, out var name)) continue;
+                            var held = im == null ? 0 : im->GetInventoryItemCount(id);
+                            if (held > 0)
+                                hits.Add((id, name, held, new { container = "Currency", slot = (int?)null, quantity = held, hq = false }));
+                        }
                     }
                 }
 
