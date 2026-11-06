@@ -163,7 +163,7 @@ internal static class LoginTools
                 {
                   "type": "object",
                   "properties": {
-                    "world": { "type": "string", "description": "Destination world (e.g. \"Shiva\"); your home world returns you home." },
+                    "world": { "type": "string", "description": "Destination world name; your home world returns you home." },
                     "timeout_seconds": { "type": "integer", "description": "How long to wait (default 600; data center travel can queue)." }
                   },
                   "required": ["world"]

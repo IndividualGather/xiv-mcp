@@ -57,8 +57,8 @@ public class PlayerGuidanceTests
             PlayerGuidance.TeleportTo("Mist", "Mist", "Mist Shard"),
             PlayerGuidance.OpenShop("Grade 8 Tincture of Strength"),
             PlayerGuidance.FindAppraiser,
-            PlayerGuidance.VisitWorld("Shiva", "Light", true),
-            PlayerGuidance.VisitWorld("Gilgamesh", "Aether", false),
+            PlayerGuidance.VisitWorld("Exampleworld", "Exampledc", true),
+            PlayerGuidance.VisitWorld("Farworld", "Fardc", false),
         }.Concat(new[] { "inn", "fc", "workshop", "home", "apartment" }.Select(PlayerGuidance.GoTo));
         Assert.All(texts, t => Assert.DoesNotMatch(@"(n't|'re|'ve|'ll|'d|(it|that|there|what)'s|I'm)", t));
     }
@@ -66,12 +66,12 @@ public class PlayerGuidanceTests
     [Fact]
     public void World_travel_names_the_world_and_how_to_get_there()
     {
-        var visit = PlayerGuidance.VisitWorld("Shiva", "Light", sameDataCenter: true);
-        Assert.Contains("Shiva", visit);
+        var visit = PlayerGuidance.VisitWorld("Exampleworld", "Exampledc", sameDataCenter: true);
+        Assert.Contains("Exampleworld", visit);
         Assert.Contains("World Visit", visit);
-        var travel = PlayerGuidance.VisitWorld("Gilgamesh", "Aether", sameDataCenter: false);
-        Assert.Contains("Gilgamesh", travel);
-        Assert.Contains("Aether", travel);
+        var travel = PlayerGuidance.VisitWorld("Farworld", "Fardc", sameDataCenter: false);
+        Assert.Contains("Farworld", travel);
+        Assert.Contains("Fardc", travel);
         Assert.Contains("Data Center Travel", travel);
     }
 

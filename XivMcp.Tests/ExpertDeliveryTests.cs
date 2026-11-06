@@ -8,8 +8,8 @@ public class ExpertDeliveryTests
     private const string Config = """
         {
           "OfflineData": [
-            { "CID": 111, "Name": "Estelle Shabi", "GCDeliveryType": 1 },
-            { "CID": 222, "Name": "Shib Shynx", "GCDeliveryType": 2 },
+            { "CID": 111, "Name": "Example Bagsonly", "GCDeliveryType": 1 },
+            { "CID": 222, "Name": "Example Noset", "GCDeliveryType": 2 },
             { "CID": 333, "Name": "Someone", "GCDeliveryType": 0 },
             { "CID": 444, "Name": "Everything", "GCDeliveryType": 3 }
           ],

@@ -32,7 +32,7 @@ public class MarketPurchaseTests
     [Fact]
     public void A_small_dearer_listing_beats_a_cheap_big_stack()
     {
-        // Shiva Mogpom: 96 at 1,897 would cost 182k for 2 wanted; the pair at 2,000 costs 4k.
+        // 96 at 1,897 would cost 182k for 2 wanted; the pair at 2,000 costs 4k.
         var offers = new[] { Offer(1, 1897, 96), Offer(2, 1998, 35), Offer(3, 2000, 2), Offer(4, 2000, 2) };
         var chosen = MarketPurchase.Cheapest(offers, wanted: 2);
         Assert.Single(chosen);
