@@ -158,7 +158,8 @@ internal static class InteractionTools
             Description = "Targets and interacts with a nearby object, exactly like clicking it: summoning bell, company chest, voyage control panel, " +
                           "NPCs, aetherytes, ... Choose by name (nearest match) or gameObjectId from get_nearby_objects. The character does not move: " +
                           $"the object must be within about {MaxInteractDistance} yalms. Summoning bell: retainer automation and dialogue-skipping plugins, " +
-                          "if running, are paused while XIV MCP uses the bell (so they don't start processing ventures) and resume when the bell is closed. " +
+                          "if running, are paused while XIV MCP uses the bell (so they don't start processing ventures) and resume when the bell is closed; " +
+                          "dialogue boxes the bell shows before the retainer list are advanced (summoningBell.dialogueAdvanced has their text). " +
                           "Returns which windows opened. Requires 'Game & navigation' in /xivmcp.",
             InputSchema = """
                 {
@@ -214,9 +215,11 @@ internal static class InteractionTools
                 }
                 await Task.Delay(300, ct).ConfigureAwait(false);
                 // At a bell the game reports the player "at the bell" before the retainer list is shown and the retainer data has
-                // arrived; a following open_retainer would find no retainers. Wait for the list.
+                // arrived; a following open_retainer would find no retainers. Wait for the list, advancing the dialogue boxes some
+                // bells (the Mizzenmast Inn's) show first.
+                List<string>? bellSaid = null;
                 if (reacted && target.IsBell)
-                    await WaitFor(RetainerUi.RetainerListReady, TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+                    bellSaid = (await RetainerUi.WaitForList(null, ct).ConfigureAwait(false)).Said;
                 if (!reacted)
                     throw new ToolException($"The game did not react to interacting with {target.Name} ({target.Distance:0.#} yalms away, result {target.Result}). " +
                                             "It is most likely out of interaction range or line of sight; move closer (within ~3 yalms is safe) and retry.");
@@ -233,6 +236,7 @@ internal static class InteractionTools
                         ? new
                         {
                             retainerListOpen = RetainerUi.RetainerListOpen,
+                            dialogueAdvanced = bellSaid is { Count: > 0 } ? bellSaid : null,
                             autoRetainer = compat.AutoRetainerLoaded ? "paused while XIV MCP uses the bell; resumes when the bell is closed" : "not installed",
                             next = "Use open_retainer / get_retainers / transfer_retainer_items; close_retainer with close_list=true closes the bell.",
                         }

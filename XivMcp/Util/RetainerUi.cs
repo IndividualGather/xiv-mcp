@@ -216,6 +216,51 @@ internal static class RetainerUi
         }
     }
 
+    /// <summary>
+    /// Waits for the retainer list after a summoning bell was used, advancing the dialogue boxes some bells show first (see
+    /// <see cref="Ui.BellOpening"/>). <paramref name="interactAgain"/> uses the bell once more (framework thread) when it didn't
+    /// answer at all; null when the caller already retried. Returns whether the list opened, and what the dialogues said.
+    /// </summary>
+    public static async Task<(bool Open, List<string> Said)> WaitForList(Func<bool>? interactAgain, CancellationToken ct)
+    {
+        var said = new List<string>();
+        var start = DateTime.UtcNow;
+        var lastInteract = start;
+        var lastAction = DateTime.MinValue;
+        var interactions = interactAgain is null ? 2 : 1;
+        var reacted = false;
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            var (list, talk, atBell) = await Svc.Framework.RunOnFrameworkThread(() => (RetainerListReady(), Ready("Talk"), AtBell)).ConfigureAwait(false);
+            reacted |= talk || atBell;
+            var now = DateTime.UtcNow;
+            switch (Ui.BellOpening.Next(new Ui.BellState(list, talk, reacted, now - start, now - lastInteract, now - lastAction, interactions)))
+            {
+                case Ui.BellStep.Done: return (true, said);
+                case Ui.BellStep.GiveUp: return (false, said);
+                case Ui.BellStep.AdvanceTalk:
+                    await Svc.Framework.RunOnFrameworkThread(() =>
+                    {
+                        if (TalkText() is { } text && (said.Count == 0 || said[^1] != text)) said.Add(text);
+                        ClickTalk();
+                    }).ConfigureAwait(false);
+                    lastAction = now;
+                    break;
+                case Ui.BellStep.InteractAgain:
+                    await Svc.Framework.RunOnFrameworkThread(interactAgain!).ConfigureAwait(false);
+                    interactions++;
+                    lastInteract = now;
+                    break;
+            }
+            await Task.Delay(150, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>The text of the dialogue box that is shown, or null. Framework thread.</summary>
+    private static unsafe string? TalkText() =>
+        Ready("Talk") ? GameWindows.AllTexts(GameWindows.Addon("Talk")).OrderByDescending(t => t.Length).FirstOrDefault() : null;
+
     /// <summary>The game's "occupied at the summoning bell" state (also set at the company chest).</summary>
     public static bool AtBell => Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.OccupiedSummoningBell];
 

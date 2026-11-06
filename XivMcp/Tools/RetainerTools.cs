@@ -240,16 +240,27 @@ internal static class RetainerTools
                 try
                 {
                     // At the bell: open it ourselves if needed (with AutoRetainer etc. paused first).
-                    var openedBell = await Game.RunLoggedIn(() =>
+                    var bell = await Game.RunLoggedIn(() =>
                     {
                         InventoryActionTools.EnsureNotBusy();
                         compat.AcquireBell();
-                        if (RetainerUi.RetainerListOpen || RetainerUi.ActiveRetainerName is not null) return false;
-                        InteractWithNearestBell();
-                        return true;
+                        if (RetainerUi.RetainerListOpen || RetainerUi.ActiveRetainerName is not null) return (nint)0;
+                        return InteractWithNearestBell();
                     }).ConfigureAwait(false);
-                    if (openedBell && !await WaitFor(() => RetainerUi.RetainerListOpen, TimeSpan.FromSeconds(8), ct).ConfigureAwait(false))
-                        throw new ToolException("The summoning bell did not open the retainer list.");
+                    if (bell != 0)
+                    {
+                        // Some bells (the Mizzenmast Inn's) show one or two dialogue boxes before the list: advance them while waiting.
+                        var (open, said) = await RetainerUi.WaitForList(() =>
+                        {
+                            compat.AcquireBell();
+                            InteractionTools.Interact(bell, lineOfSight: false);
+                            return true;
+                        }, ct).ConfigureAwait(false);
+                        if (!open)
+                            throw new ToolException("The summoning bell did not open the retainer list" +
+                                                    (said.Count > 0 ? $"; the bell said: \"{string.Join(" / ", said)}\"" : "") +
+                                                    ". Stand within ~3 yalms of the bell and try again.");
+                    }
                     await Task.Delay(1500, ct).ConfigureAwait(false); // the retainer list data arrives right after opening
 
                     var character = await Game.RunLoggedIn(() => tracker.Get(Svc.PlayerState.ContentId)).ConfigureAwait(false)
@@ -302,8 +313,8 @@ internal static class RetainerTools
 
     private sealed record RefreshResult(string Retainer, bool Refreshed, int? Items, int? Market, string? Error);
 
-    /// <summary>Targets and interacts with the nearest summoning bell within reach. Framework thread.</summary>
-    private static unsafe void InteractWithNearestBell()
+    /// <summary>Targets and interacts with the nearest summoning bell within reach; returns its address. Framework thread.</summary>
+    private static nint InteractWithNearestBell()
     {
         var self = Svc.Objects.LocalPlayer!;
         var bell = Svc.Objects
@@ -312,9 +323,8 @@ internal static class RetainerTools
             .FirstOrDefault() ?? throw new ToolException("No summoning bell nearby.");
         var distance = System.Numerics.Vector3.Distance(bell.Position, self.Position);
         if (distance > 8) throw new ToolException($"The nearest summoning bell is {distance:0.#} yalms away; walk within ~8 yalms (3 is safe).");
-        var native = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)bell.Address;
-        FFXIVClientStructs.FFXIV.Client.Game.Control.TargetSystem.Instance()->SetHardTarget(native, false, false, 0);
-        FFXIVClientStructs.FFXIV.Client.Game.Control.TargetSystem.Instance()->InteractWithObject(native, true);
+        InteractionTools.Interact(bell.Address, lineOfSight: true);
+        return bell.Address;
     }
 
     private static async Task<bool> WaitFor(Func<bool> condition, TimeSpan timeout, CancellationToken ct)
