@@ -32,8 +32,10 @@ internal static class MarketBoardTools
         {
             Name = "buy_from_market_board",
             Description = "Buys an item on the market board of the current world: walks to a market board in the current zone (where there is " +
-                          "none, it travels to a town with one), opens it, reads the listings and buys the cheapest ones until " +
-                          "'quantity' is reached, never above 'max_unit_price' gil per item. Listings are bought whole, so it may buy a few more. " +
+                          "none, it travels to a town with one), opens it, reads the listings and buys the ones that reach 'quantity' for the least gil " +
+                          "in total, never above 'max_unit_price' gil per item. Listings are bought whole, so it may buy a few more; a small listing " +
+                          "at a higher price beats a big cheap stack when that costs less overall. With an 'approval' it never starts a purchase " +
+                          "that costs more than is left of it. " +
                           "If fewer are listed within the limit, it buys those and then fails, saying how many are still missing (a job then waits). " +
                           "Gil purchases above the limit in /xivmcp ask in game first (or use a standing 'approval'). Requires 'Market & " +
                           "purchases' in /xivmcp.",
@@ -74,13 +76,12 @@ internal static class MarketBoardTools
 
         // 2. The listings for the item.
         var listings = await RequestListings(item.RowId, ct).ConfigureAwait(false);
-        var fitting = listings.Where(l => l.UnitPrice <= maxPrice && (hq is null || l.Hq == hq)).OrderBy(l => l.UnitPrice).ToList();
-        var plan = new List<Listing>();
-        foreach (var l in fitting)
-        {
-            if (plan.Sum(p => p.Quantity) >= quantity) break;
-            plan.Add(l);
-        }
+        // Listings are bought whole: pick the set that reaches the quantity for the least gil in total, not cheapest-first
+        // (for 2 wanted, a pair at 2,000 beats a stack of 96 at 1,897).
+        var fitting = listings.Where(l => l.UnitPrice <= maxPrice && (hq is null || l.Hq == hq)).ToList();
+        var byId = fitting.ToDictionary(l => l.ListingId);
+        var plan = MarketPurchase.Cheapest(fitting.Select(l => new MarketOffer(l.ListingId, l.UnitPrice, l.Quantity, l.Tax)).ToList(), quantity)
+            .Select(o => byId[o.Id]).OrderBy(l => l.UnitPrice).ToList();
         if (plan.Count == 0)
         {
             await Game.Run(CloseMarketBoard).ConfigureAwait(false);
@@ -97,6 +98,13 @@ internal static class MarketBoardTools
         {
             try { approval = Approvals.Get(approvalId, item.RowId, args.Caller?.ApprovalOwner ?? "assistant"); }
             catch (ToolException) { await Game.Run(CloseMarketBoard).ConfigureAwait(false); throw; }
+            // An approval caps what may be spent: never start a purchase that would go past what is left of it.
+            if (total > approval.Remaining)
+            {
+                await Game.Run(CloseMarketBoard).ConfigureAwait(false);
+                throw new ToolException($"Buying {plan.Sum(p => p.Quantity)} {name} costs {total:N0} gil, more than the {approval.Remaining:N0} gil left " +
+                                        $"on approval {approval.Id}. Ask for a new approval or buy fewer.");
+            }
         }
         if (approval is null && config.AskAboveGil > 0 && total > config.AskAboveGil)
             await Consent.Require($"Buy {name} on the market board?",
