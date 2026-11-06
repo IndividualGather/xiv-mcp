@@ -209,6 +209,9 @@ internal static class LongRunningTools
                 finally
                 {
                     await Game.Run(() => { try { Svc.PluginInterface.GetIpcSubscriber<bool, object>("GatherBuddyReborn.SetAutoGatherEnabled").InvokeAction(false); } catch { } return true; }).ConfigureAwait(false);
+                    // The goal can be reached in the middle of a node: leave it, or the next step (a craft) is refused.
+                    try { await LeaveGatheringNode(CancellationToken.None).ConfigureAwait(false); }
+                    catch (Exception ex) { Svc.Log.Warning($"[MCP] Could not leave the gathering node: {ex.Message}"); }
                     // Put the player's lists back as they were (and drop the temporary one).
                     try
                     {
@@ -260,6 +263,8 @@ internal static class LongRunningTools
                 var listArg = args.String("list") ?? throw new ToolException("'list' is required.");
                 var timeout = TimeSpan.FromMinutes(args.Int("timeout_minutes", 600, 1, 24 * 60));
                 var stallAfter = TimeSpan.FromMinutes(args.Int("stall_minutes", 5, 0, 120));
+                // Crafting is refused while a gathering node is open (e.g. right after a gather_until step).
+                await LeaveGatheringNode(ct).ConfigureAwait(false);
                 var (listId, listName, current) = await Game.RunLoggedIn(() =>
                 {
                     CraftGatherTools.RequireArtisan();
@@ -386,6 +391,20 @@ internal static class LongRunningTools
     /// What the character is doing for the stall check: gathering, fishing/spearfishing, mounted or flying, walking a path,
     /// teleporting or loading a zone counts as busy. Framework thread.
     /// </summary>
+    /// <summary>
+    /// Gets the character away from a gathering node: GatherBuddy can be switched off while the node's window is still open, and
+    /// the game then refuses crafting and most other commands ("Unable to execute command while gathering"). Waits for a running
+    /// gathering action to finish, then closes the node window.
+    /// </summary>
+    internal static async Task LeaveGatheringNode(CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+        while (DateTime.UtcNow < deadline && await Game.Run(() => Svc.Condition[ConditionFlag.ExecutingGatheringAction]).ConfigureAwait(false))
+            await Task.Delay(250, ct).ConfigureAwait(false);
+        if (await Game.Run(() => Svc.Condition[ConditionFlag.Gathering]).ConfigureAwait(false))
+            await Recovery.Run(ct).ConfigureAwait(false);
+    }
+
     private static GatherActivity GatherActivityNow(bool waiting)
     {
         var c = Svc.Condition;
