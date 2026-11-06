@@ -10,6 +10,7 @@ using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using Lumina.Excel.Sheets;
 using XivMcp.Mcp;
+using XivMcp.Ui;
 using XivMcp.Util;
 
 namespace XivMcp.Tools;
@@ -283,23 +284,45 @@ internal static class InteractionTools
                 if (!await WaitFor(BellAnswered, TimeSpan.FromSeconds(3), ct).ConfigureAwait(false))
                     await Game.Run(() => Interact(bell.Address, lineOfSight: false)).ConfigureAwait(false);
 
-                // AutoRetainer starts as the bell opens; then wait until it is done and the bell is closed again.
-                // The bell can answer with a message instead of the retainer list ("You have not yet hired a retainer."), which a
-                // dialogue plugin may click away at once: catch it while waiting for AutoRetainer to start.
+                // AutoRetainer starts once the retainer list is open. The bell can show dialogue first (a venture report, an inn
+                // bell's greeting): click it through like a player instead of taking it for "nothing to do". A message that never
+                // leads to the list ("You have not yet hired a retainer.") ends in GiveUp and is reported.
                 string? said = null;
-                var started = await WaitFor(() => compat.AutoRetainerBusy || (said ??= TalkText()) is not null, TimeSpan.FromSeconds(10), ct).ConfigureAwait(false)
-                              && said is null;
-                if (!started)
+                var begun = DateTime.UtcNow;
+                var lastClick = DateTime.MinValue;
+                DateTime? listSince = null;
+                var step = AutoRetainerStartStep.Wait;
+                while (step is AutoRetainerStartStep.Wait or AutoRetainerStartStep.AdvanceTalk)
                 {
-                    if (said is not null)
+                    step = await Game.Run(() =>
                     {
-                        await Recovery.Run(ct).ConfigureAwait(false);
-                        throw new ToolException($"The bell answered \"{said}\"; AutoRetainer has nothing to do here.");
-                    }
+                        var now = DateTime.UtcNow;
+                        var talk = TalkText();
+                        if (talk is not null) said = talk;
+                        var listOpen = RetainerUi.Ready("RetainerList");
+                        if (listOpen) listSince ??= now;
+                        var next = AutoRetainerStart.Next(new AutoRetainerStartState(compat.AutoRetainerBusy, talk is not null, listOpen,
+                            now - begun, now - lastClick, listSince is { } since ? now - since : null));
+                        if (next == AutoRetainerStartStep.AdvanceTalk)
+                        {
+                            RetainerUi.ClickTalk();
+                            lastClick = now;
+                        }
+                        return next;
+                    }).ConfigureAwait(false);
+                    if (step is AutoRetainerStartStep.Wait or AutoRetainerStartStep.AdvanceTalk) await Task.Delay(100, ct).ConfigureAwait(false);
+                }
+                if (step != AutoRetainerStartStep.Started)
+                {
                     var open = await Game.Run(() => Svc.Condition[ConditionFlag.OccupiedSummoningBell]).ConfigureAwait(false);
-                    throw new ToolException(open
-                        ? "The bell opened, but AutoRetainer didn't start: it may have nothing to do (no ventures back) or be set not to act when a bell opens. Close the bell with close_retainer close_list=true."
-                        : "The bell didn't open. Move closer to it and try again.");
+                    if (open || said is not null) await Recovery.Run(ct).ConfigureAwait(false);
+                    throw new ToolException(step == AutoRetainerStartStep.NothingToDo
+                        ? "The retainer list opened, but AutoRetainer didn't start: it may have nothing to do (no ventures back) or be set not to act when a bell opens."
+                        : said is not null && listSince is null
+                            ? $"The bell answered \"{said}\" and the retainer list never opened; AutoRetainer can't work here."
+                            : open
+                                ? "The bell opened, but AutoRetainer didn't start. Close the bell with close_retainer close_list=true."
+                                : "The bell didn't open. Move closer to it and try again.");
                 }
                 // Done once AutoRetainer has stayed idle for a few seconds (it is briefly idle between retainers). It can leave the
                 // retainer list open, which holds the character: close it then.

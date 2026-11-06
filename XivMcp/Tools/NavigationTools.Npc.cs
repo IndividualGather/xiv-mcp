@@ -87,6 +87,36 @@ internal static partial class NavigationTools
         else if (plan is not null)
         {
             phase = $"travelling to {plan.Value.Label}";
+            // Lifestream can't leave an inn room; the game's own teleport can.
+            var exit = await Game.Run(() =>
+            {
+                var sheet = Svc.Data.GetExcelSheet<Aetheryte>();
+                var target = sheet.GetRow(plan.Value.AetheryteId);
+                uint? city = plan.Value.Shard && target.AethernetGroup != 0 &&
+                             sheet.FirstOrDefault(a => a.IsAetheryte && a.AethernetGroup == target.AethernetGroup) is { RowId: not 0 } c ? c.RowId : null;
+                return (Plan: XivMcp.Maps.InnExit.Plan(CurrentIntendedUse(), plan.Value.AetheryteId, plan.Value.Shard, city),
+                        CityName: city is { } id ? Excel.Name(sheet.GetRow(id).PlaceName) : null);
+            }).ConfigureAwait(false);
+            if (exit.Plan.Teleport is { } first)
+            {
+                var room = await Game.Run(() => Svc.ClientState.TerritoryType).ConfigureAwait(false);
+                var teleported = await Game.Run(() => GameTeleport(first)).ConfigureAwait(false);
+                if (!teleported) throw new ToolException($"The teleport out of the inn room to {exit.CityName ?? plan.Value.Label} was refused (is the aetheryte attuned, is there enough gil?).");
+                steps.Add($"Teleported out of the inn room to {exit.CityName ?? plan.Value.Label}.");
+                var left = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+                while (await Game.Run(() => Svc.ClientState.TerritoryType).ConfigureAwait(false) == room)
+                {
+                    if (DateTime.UtcNow > left) throw new ToolException("The teleport out of the inn room did not happen (interrupted?).");
+                    await Task.Delay(250, ct).ConfigureAwait(false);
+                }
+                await WaitUntilSettled(ct).ConfigureAwait(false);
+                if (!exit.Plan.ThenAethernet)
+                {
+                    if (await Game.Run(() => Svc.ClientState.TerritoryType).ConfigureAwait(false) != spot.Territory)
+                        throw new ToolException($"Ended up in {await Game.Run(() => TerritoryName(Svc.ClientState.TerritoryType)).ConfigureAwait(false)} instead of {TerritoryName(spot.Territory)}.");
+                    return;
+                }
+            }
             var ok = await Game.Run(() =>
             {
                 try
@@ -104,6 +134,10 @@ internal static partial class NavigationTools
                 throw new ToolException($"Ended up in {await Game.Run(() => TerritoryName(Svc.ClientState.TerritoryType)).ConfigureAwait(false)} instead of {TerritoryName(spot.Territory)}.");
         }
     }
+
+    /// <summary>Teleports with the game's own teleport, as the Teleport window does. Framework thread.</summary>
+    private static unsafe bool GameTeleport(uint aetheryteId) =>
+        FFXIVClientStructs.FFXIV.Client.Game.UI.Telepo.Instance()->Teleport(aetheryteId, 0);
 
     private static async Task WaitForMesh(CancellationToken ct)
     {

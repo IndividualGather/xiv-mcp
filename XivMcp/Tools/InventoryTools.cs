@@ -29,7 +29,7 @@ internal static class InventoryTools
         ["housing"] = ByPrefix("Housing"),
     };
 
-    private static readonly string[] DefaultSearchGroups = ["bags", "equipped", "armory", "crystals", "key_items", "saddlebag"];
+    private static readonly string[] DefaultSearchGroups = ["bags", "equipped", "armory", "currency", "crystals", "key_items", "saddlebag"];
 
     private static GameInventoryType[] ByPrefix(string prefix) =>
         Enum.GetValues<GameInventoryType>().Where(t => t.ToString().StartsWith(prefix, StringComparison.Ordinal)).ToArray();
@@ -82,7 +82,7 @@ internal static class InventoryTools
         {
             Name = "search_inventory",
             Description = "Finds items by (partial) name or item id across the character's containers — by default bags, equipped gear, armory chest, " +
-                          "crystals, key items and saddlebag (live) plus every retainer (from the retainer cache, each with its snapshot age) — " +
+                          "currency (gil, ventures, tomestones), crystals, key items and saddlebag (live) plus every retainer (from the retainer cache, each with its snapshot age) — " +
                           "and reports where each stack is and the total count. " + ContainerHelp,
             InputSchema = """
                 {
