@@ -150,8 +150,10 @@ internal static class InventoryActionTools
                           "SaddleBag1/2, PremiumSaddleBag1/2, RetainerPage1-7, FreeCompanyPage1-5, and for crystals Crystals, RetainerCrystals and " +
                           "FreeCompanyCrystals). Saddlebag/retainer/company chest windows must be open; the chest's item tabs a move needs are selected " +
                           "automatically (the game only sends a tab once it is selected). 'quantity' moves part of a stack: it is split off " +
-                          "first (needs an empty slot in the source container). Crystals move between crystal containers only, as whole stacks, into the " +
-                          "slot of their kind. " +
+                          "first (needs an empty slot in the source container). Crystals move between crystal containers only, into the " +
+                          "slot of their kind; a slot holds at most 9,999, so only what fits moves (the result says how many). Part of a crystal " +
+                          "stack (a 'quantity', or what fits) moves between your crystals and a retainer's through the crystal's Entrust/Retrieve " +
+                          "Quantity menu; the company chest takes whole stacks. " +
                           "Armory containers only accept matching gear. " +
                           "Stops at the first failed move unless continue_on_error=true. Requires 'Items & retainers' in /xivmcp.",
             InputSchema = """
@@ -167,7 +169,7 @@ internal static class InventoryActionTools
                           "from_container": { "type": "string" },
                           "from_slot": { "type": "integer", "description": "0-based slot index." },
                           "item_id": { "type": "integer", "description": "Alternative to from_slot: move the first stack of this item." },
-                          "quantity": { "type": "integer", "minimum": 1, "description": "Move only this many of the stack (default: the whole stack). Not for crystals." },
+                          "quantity": { "type": "integer", "minimum": 1, "description": "Move only this many of the stack (default: the whole stack). Crystals: between your crystals and a retainer's." },
                           "hq": { "type": "boolean", "description": "With item_id: only HQ (true) or only NQ (false) stacks." },
                           "if_at_least": { "type": "integer", "minimum": 1, "description": "Only move when the source stack holds at least this many; otherwise the move is skipped (not failed). E.g. crystals near the cap, as a job step." },
                           "to_container": { "type": "string" },
@@ -424,15 +426,16 @@ internal static class InventoryActionTools
                 return MoveResult.Fail(req.Index, $"The company chest's tab {string.Join(", ", unloaded)} isn't shown in the chest window (the company rank gives no access to it).");
         }
 
-        // Part of a stack: split it off first, then move the new stack.
-        if (req.Quantity is not null)
+        // Part of a stack: split it off first, then move the new stack. Crystals can't be split; they take a quantity in the move.
+        if (req.Quantity is not null && !IsCrystalContainer(req.To))
         {
             try { req = await SplitOff(req, ct).ConfigureAwait(false); }
             catch (ToolException ex) { return MoveResult.Fail(req.Index, ex.Message); }
         }
 
         // Resolve and validate against the current state, then issue the move — all in one framework tick.
-        (GameInventoryType From, int FromSlot, GameInventoryType To, int ToSlot, uint ItemId, int Quantity, uint DstItemId, int DstQuantity, string? Name)? plan;
+        (GameInventoryType From, int FromSlot, GameInventoryType To, int ToSlot, uint ItemId, int Quantity, uint DstItemId, int DstQuantity, string? Name,
+            int Amount, bool Partial, string? Note)? plan;
         try
         {
             plan = await Game.RunLoggedIn(() =>
@@ -460,13 +463,23 @@ internal static class InventoryActionTools
                 EnsureFitsArmory(src.BaseItemId, to);
                 if (!dst.IsEmpty) EnsureFitsArmory(dst.BaseItemId, from); // the swapped item lands in the source container
 
-                unsafe
-                {
-                    var rc = InventoryManager.Instance()->MoveItemSlot((InventoryType)from, (ushort)fromSlot, (InventoryType)to, (ushort)toSlot, true);
-                    if (rc != 0) Svc.Log.Debug($"MoveItemSlot returned {rc}");
-                }
-                return ((GameInventoryType, int, GameInventoryType, int, uint, int, uint, int, string?)?)
-                    (from, fromSlot, to, toSlot, src.ItemId, src.Quantity, dst.ItemId, dst.Quantity, InventoryTools.ItemName(src.BaseItemId));
+                // A crystal slot holds at most 9,999 and the game rejects a move over that: only what fits moves, and part of a stack
+                // goes through the context menu's quantity entry.
+                var crystals = IsCrystalContainer(to)
+                    ? Transfers.CrystalMove.For(req.Quantity, (int)src.Quantity, dst.IsEmpty || dst.ItemId != src.ItemId ? 0 : (int)dst.Quantity)
+                    : new Transfers.CrystalMove.Plan((int)src.Quantity, null, null);
+                if (crystals.Problem is { } problem) throw new ToolException(problem);
+                var partial = crystals.Partial((int)src.Quantity);
+
+                if (!partial)
+                    unsafe
+                    {
+                        var rc = InventoryManager.Instance()->MoveItemSlot((InventoryType)from, (ushort)fromSlot, (InventoryType)to, (ushort)toSlot, true);
+                        if (rc != 0) Svc.Log.Debug($"MoveItemSlot returned {rc}");
+                    }
+                return ((GameInventoryType, int, GameInventoryType, int, uint, int, uint, int, string?, int, bool, string?)?)
+                    (from, fromSlot, to, toSlot, src.ItemId, (int)src.Quantity, dst.ItemId, (int)dst.Quantity, InventoryTools.ItemName(src.BaseItemId),
+                     crystals.Amount, partial, crystals.Note);
             }).ConfigureAwait(false);
         }
         catch (SkipMove skip)
@@ -482,7 +495,14 @@ internal static class InventoryActionTools
         var fromText = $"{p.From}[{p.FromSlot}]";
         var toText = $"{p.To}[{p.ToSlot}]";
 
-        // Wait for the server to confirm: the target slot must now hold the moved item.
+        if (p.Partial)
+        {
+            try { await MoveCrystalQuantity(p.From, p.FromSlot, p.To, p.Amount, ct).ConfigureAwait(false); }
+            catch (ToolException ex) { return MoveResult.Fail(req.Index, ex.Message, p.Name, fromText, toText); }
+        }
+        var note = p.Partial || p.Note is not null ? $"{p.Amount:N0} moved{(p.Note is null ? "" : $": {p.Note}")}" : null;
+
+        // Wait for the server to confirm: the target slot must now hold the moved item (or, for part of a crystal stack, that many more).
         var deadline = DateTime.UtcNow.AddSeconds(4);
         while (DateTime.UtcNow < deadline)
         {
@@ -491,13 +511,76 @@ internal static class InventoryActionTools
             {
                 if (HasPendingOperation()) return false;
                 var dst = Slot(p.To, p.ToSlot);
+                if (p.Partial) return dst.ItemId == p.ItemId && dst.Quantity == (p.DstItemId == p.ItemId ? p.DstQuantity : 0) + p.Amount;
                 var merged = p.DstItemId == p.ItemId && dst.ItemId == p.ItemId && dst.Quantity != p.DstQuantity;
                 return (dst.ItemId == p.ItemId && dst.ItemId != p.DstItemId) || merged;
             }).ConfigureAwait(false);
             if (confirmed)
-                return new MoveResult(req.Index, true, p.DstItemId != 0 && p.DstItemId != p.ItemId ? "swapped" : "moved", p.Name, fromText, toText, null);
+                return new MoveResult(req.Index, true, p.DstItemId != 0 && p.DstItemId != p.ItemId ? "swapped" : "moved", p.Name, fromText, toText, note);
         }
         return MoveResult.Fail(req.Index, "The game did not confirm the move within 4 seconds (it may have been rejected, e.g. item not allowed there).", p.Name, fromText, toText);
+    }
+
+    private static readonly string[] PlayerInventoryAddons = ["InventoryExpansion", "InventoryLarge", "Inventory"];
+    private static readonly string[] RetainerInventoryAddons = ["InventoryRetainerLarge", "InventoryRetainer"];
+    private const uint EntrustQuantityText = 772, RetrieveQuantityText = 773;
+
+    /// <summary>
+    /// Moves part of a crystal stack between your crystals and a retainer's, as the player would: the crystal's context menu,
+    /// "Entrust Quantity" or "Retrieve Quantity", then the number.
+    /// </summary>
+    private static async Task MoveCrystalQuantity(GameInventoryType from, int fromSlot, GameInventoryType to, int amount, CancellationToken ct)
+    {
+        var entry = (from, to) switch
+        {
+            (GameInventoryType.Crystals, GameInventoryType.RetainerCrystals) => EntrustQuantityText,
+            (GameInventoryType.RetainerCrystals, GameInventoryType.Crystals) => RetrieveQuantityText,
+            _ => throw new ToolException("Part of a crystal stack only moves between your crystals and a retainer's; the company chest takes whole stacks."),
+        };
+        await Game.Run(() => OpenItemContextMenu(from, fromSlot)).ConfigureAwait(false);
+        if (!await GameWindows.WaitFor(() => GameWindows.Ready("ContextMenu"), TimeSpan.FromSeconds(3), ct).ConfigureAwait(false))
+            throw new ToolException("The crystal's context menu did not open.");
+        await Game.Run(() => PickContextEntry(GameWindows.Texts(entry))).ConfigureAwait(false);
+        if (!await GameWindows.WaitFor(() => GameWindows.Ready("InputNumeric"), TimeSpan.FromSeconds(3), ct).ConfigureAwait(false))
+            throw new ToolException("The game did not ask how many crystals to move.");
+        await Game.Run(() => GameWindows.EnterNumber(amount)).ConfigureAwait(false);
+    }
+
+    private static unsafe bool OpenItemContextMenu(GameInventoryType container, int slot)
+    {
+        var names = container == GameInventoryType.RetainerCrystals ? RetainerInventoryAddons : PlayerInventoryAddons;
+        uint ownerId = 0;
+        foreach (var name in names)
+        {
+            var a = GameWindows.Addon(name);
+            if (a != null && a->IsVisible) { ownerId = a->Id; break; }
+        }
+        if (ownerId == 0) throw new ToolException("The inventory window the crystals are in isn't open.");
+        FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentInventoryContext.Instance()->OpenForItemSlot((InventoryType)container, slot, 0, ownerId);
+        return true;
+    }
+
+    /// <summary>Picks a context menu entry by its text; closes the menu and names its entries when none matches.</summary>
+    private static unsafe bool PickContextEntry(IReadOnlySet<string> texts)
+    {
+        var menu = GameWindows.Addon("ContextMenu");
+        var count = (int)menu->AtkValues[0].UInt;
+        var seen = new List<string>();
+        for (var i = 0; i < count && 8 + i < menu->AtkValuesCount; i++)
+        {
+            var v = menu->AtkValues[8 + i];
+            if (v.Type is not (FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.String or FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.ManagedString
+                or FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.String8) || v.String.Value == null) continue;
+            var text = Dalamud.Memory.MemoryHelper.ReadSeStringNullTerminated((nint)v.String.Value).TextValue.Trim();
+            seen.Add(text);
+            if (texts.Contains(text))
+            {
+                RetainerUi.Fire(menu, true, 0, i, 0u);
+                return true;
+            }
+        }
+        RetainerUi.Fire(menu, true, -1);
+        throw new ToolException($"The context menu has no \"{string.Join("\" or \"", texts)}\" entry (it has: {string.Join(", ", seen)}).");
     }
 
     private static (GameInventoryType Container, int Slot) ResolveSource(MoveRequest req)
@@ -572,7 +655,7 @@ internal static class InventoryActionTools
             var src = Slot(from, fromSlot);
             if (src.IsEmpty) throw new ToolException($"{from}[{fromSlot}] is empty.");
             if (req.Quantity >= src.Quantity) return ((List<(GameInventoryType Container, int Slot)> empty, uint ItemId)?)null;
-            if (IsCrystalContainer(from)) throw new ToolException("Crystals can only be moved as whole stacks.");
+            if (IsCrystalContainer(from)) throw new ToolException("Crystals only move between crystal containers (Crystals, RetainerCrystals, FreeCompanyCrystals).");
             // Check the target first, so a failed move does not leave a split stack behind.
             EnsureContainerUsable(req.To);
             if (req.ToSlot is null && FirstEmptySlot(Svc.Inventory.GetInventoryItems(req.To)) is null)

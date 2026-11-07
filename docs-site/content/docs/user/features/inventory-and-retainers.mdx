@@ -64,7 +64,7 @@ Things to ask:
 
 None of this needs another plugin:
 
-- **Crystals** move as whole stacks between your crystals and a retainer's or the FC chest's, each into the slot of its kind.
+- **Crystals** move between your crystals and a retainer's or the FC chest's, each into the slot of its kind. A slot holds at most 9,999, so only what fits moves: moving 9,999 Water Crystals onto a retainer's 9,450 moves 549, and the result says so. Part of a crystal stack (a `quantity`, or what fits) moves between you and a retainer through the crystal's *Entrust Quantity* or *Retrieve Quantity*; the FC chest takes whole stacks.
 - **Part of a stack:** give `move_items` a `quantity`. The stack is split first, so the bag it comes from needs a free slot.
 - **Gil:** `move_gil` deposits or withdraws with the game's own Gil Transfer window: an amount like `15k`, `1.5m`, `50%` or `all`. For a retainer, you need to be at a summoning bell; for the FC chest, with the chest open. Your rank decides whether you may take gil out of the FC chest.
 
