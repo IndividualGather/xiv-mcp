@@ -182,8 +182,8 @@ internal static class MarketTools
         yield return new McpTool
         {
             Name = "sell_item",
-            Description = "Puts an item up for sale on the market board through a retainer, from your bags or that retainer's inventory (one stack " +
-                          "= one listing). Without 'price' it checks the live market board (\"Compare prices\") and undercuts the cheapest competing " +
+            Description = "Puts an item up for sale on the market board through a retainer, from your bags or that retainer's inventory, crystals " +
+                          "included (one stack = one listing, at most 9,999). Without 'price' it checks the live market board (\"Compare prices\") and undercuts the cheapest competing " +
                           "listing — never your own retainers — using Penny Pincher's settings if installed (undercut amount, rounding, minimum), " +
                           "else 1 gil. Refuses a price far below the item's recent Universalis average unless allowed. The retainer list must be " +
                           "open. Requires 'Market & purchases' in /xivmcp.",
@@ -542,12 +542,16 @@ internal static class MarketTools
 
     private sealed record Stack(InventoryType Container, int Slot, int Quantity, bool Hq, bool FromBags);
 
-    /// <summary>A stack of the item: bags first, then the open retainer's pages; HQ preferred unless hq=false. Framework thread.</summary>
+    /// <summary>
+    /// A stack of the item: bags (and your crystals) first, then the open retainer's pages (and its crystals); HQ preferred unless
+    /// hq=false. Framework thread.
+    /// </summary>
     private static unsafe Stack? FindStack(uint itemId, bool? hq)
     {
         var im = InventoryManager.Instance();
         var found = new List<Stack>();
-        foreach (var (types, fromBags) in new[] { (Bags, true), (RetainerPages, false) })
+        // Crystals sell from your crystals or the retainer's, like any other stack.
+        foreach (var (types, fromBags) in new[] { (Bags, true), ([InventoryType.Crystals], true), (RetainerPages, false), ([InventoryType.RetainerCrystals], false) })
             foreach (var type in types)
             {
                 var c = im->GetInventoryContainer(type);
