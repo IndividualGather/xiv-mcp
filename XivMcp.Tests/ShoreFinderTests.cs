@@ -47,4 +47,20 @@ public class ShoreFinderTests
         Assert.Empty(ShoreFinder.Candidates(0, 0, 30, (_, _) => true, 0, 0));
         Assert.Empty(ShoreFinder.Candidates(0, 0, 30, (_, _) => false, 0, 0));
     }
+
+    [Fact]
+    public void Walkable_everywhere_finds_no_shore()
+    {
+        // A shallow river bed is navmesh too: the ground never ends, so there is no edge to find.
+        Assert.Empty(ShoreFinder.Candidates(0, 0, 30, (_, _) => true, 0, 0));
+    }
+
+    [Fact]
+    public void The_sweep_walks_out_in_every_direction_to_the_search_radius()
+    {
+        var targets = ShoreFinder.Sweep(100, 200, 40, directions: 8);
+        Assert.Equal(8, targets.Count);
+        Assert.All(targets, t => Assert.Equal(40, Math.Sqrt((t.X - 100) * (t.X - 100) + (t.Z - 200) * (t.Z - 200)), 3));
+        Assert.Equal(8, targets.Select(t => (Math.Round(t.X), Math.Round(t.Z))).Distinct().Count());
+    }
 }

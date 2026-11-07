@@ -53,5 +53,15 @@ public static class ShoreFinder
         return found.OrderBy(p => (p.X - fromX) * (p.X - fromX) + (p.Z - fromZ) * (p.Z - fromZ)).ToList();
     }
 
+    /// <summary>
+    /// Points to walk out to from a spot's centre, one per direction, when no edge was found: a shallow river bed is walkable,
+    /// so the ground never ends. Walking towards the water, Cast becomes usable at the edge, facing it.
+    /// </summary>
+    public static IReadOnlyList<(double X, double Z)> Sweep(double centreX, double centreZ, double radius, int directions = 8) =>
+        Enumerable.Range(0, directions)
+            .Select(d => 2 * Math.PI * d / directions)
+            .Select(a => (centreX + Math.Sin(a) * radius, centreZ + Math.Cos(a) * radius))
+            .ToList();
+
     private static double Normalize(double a) => (a % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
 }

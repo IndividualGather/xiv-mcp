@@ -138,6 +138,33 @@ internal static partial class NavigationTools
                 return;
             }
         }
+        // No edge found (a shallow river bed is walkable, so the ground never ends): walk out from the centre in every direction
+        // and stop where Cast becomes usable, facing the water.
+        foreach (var (x, z) in XivMcp.Fishing.ShoreFinder.Sweep(place.Centre.X, place.Centre.Z, ShoreSearch))
+        {
+            ct.ThrowIfCancellationRequested();
+            phase = $"looking for the water at {place.Name}";
+            var height = await Game.Run(PlayerHeight).ConfigureAwait(false);
+            var target = await Game.Run(() =>
+                Ipc<Vector3, float, float, Vector3?>("vnavmesh.Query.Mesh.NearestPointReachable", new Vector3((float)x, height, (float)z), 8f, 60f)
+                ?? new Vector3((float)x, height, (float)z)).ConfigureAwait(false);
+            if (!await Game.Run(() => MoveCloseTo(target, 0.5f)).ConfigureAwait(false)) continue;
+            await Task.Delay(300, ct).ConfigureAwait(false);
+            var until = DateTime.UtcNow.AddSeconds(25);
+            var cast = false;
+            while (await Game.Run(() => PathRunning).ConfigureAwait(false) && DateTime.UtcNow < until)
+            {
+                if (cast = await Game.Run(() => AtSpot(place)).ConfigureAwait(false)) break;
+                await Task.Delay(150, ct).ConfigureAwait(false);
+            }
+            await Game.Run(() => { StopMoving(); return true; }).ConfigureAwait(false);
+            await Task.Delay(400, ct).ConfigureAwait(false);
+            if (cast || await Game.Run(() => AtSpot(place)).ConfigureAwait(false))
+            {
+                steps.Add($"vnavmesh: walked out to the water at {place.Name}.");
+                return;
+            }
+        }
         steps.Add($"Could not find a place to cast at {place.Name}; step to the water and face it.");
     }
 }
