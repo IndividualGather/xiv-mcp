@@ -62,7 +62,7 @@ public class CreditShopTests
     [Fact]
     public void A_row_is_bought_with_its_index_and_the_quantity()
     {
-        // The window's own purchase: row 1 (Magitek Repair Materials after the Ceruleum Tanks), 99 at once.
+        // The window's own purchase: the second row, 99 at once.
         Assert.Equal([0, 1, 99], CreditShop.BuyCommand(rowIndex: 1, quantity: 99));
     }
 }

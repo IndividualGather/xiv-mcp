@@ -14,7 +14,7 @@ using XivMcp.Util;
 namespace XivMcp.Tools;
 
 /// <summary>
-/// Buying with company credits (Ceruleum Tanks, Magitek Repair Materials and the rest of the exchange) from the mammet in the FC workshop (Mammet Voyager #004A, "Company Credit Exchange",
+/// Buying with company credits (Ceruleum Tanks and the rest of the exchange) from the mammet in the FC workshop (Mammet Voyager #004A, "Company Credit Exchange",
 /// FccShop 2752515). Its window (FreeCompanyCreditShop) takes the quantity in the row's number field and buys on a click on the row,
 /// then asks to confirm — the steps AutoRetainer's fuel purchase takes in the same window.
 /// </summary>
@@ -52,7 +52,8 @@ internal static class CreditShopTools
         {
             Name = "buy_with_company_credits",
             Description = "Buys an item of the FC workshop's Company Credit Exchange (Mammet Voyager #004A) with the free company's credits: " +
-                          "Ceruleum Tanks, Magitek Repair Materials (to repair submersible parts) or anything else the exchange lists. Walks to " +
+                          "Ceruleum Tanks or anything else the exchange lists (not Magitek Repair Materials: those are crafted or bought on the " +
+                          "market board). Walks to " +
                           "the mammet in the workshop, opens the exchange and buys in purchases of up to 99, as far as the credits go. Company " +
                           "credits are not gil, so it asks in game first; the player approves there. Be in the workshop (navigate_to " +
                           "destination workshop). Requires 'Market & purchases' in /xivmcp.",
@@ -60,7 +61,7 @@ internal static class CreditShopTools
                 {
                   "type": "object",
                   "properties": {
-                    "item": { "type": "string", "description": "Item name or id, e.g. Magitek Repair Materials or Ceruleum Tank." },
+                    "item": { "type": "string", "description": "Item name or id of something the exchange lists, e.g. Ceruleum Tank." },
                     "quantity": { "type": "integer", "minimum": 1, "maximum": 9999, "description": "How many to buy." }
                   },
                   "required": ["item", "quantity"]
