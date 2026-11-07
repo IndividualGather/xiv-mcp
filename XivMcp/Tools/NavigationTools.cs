@@ -41,7 +41,7 @@ internal static partial class NavigationTools
                           "otherwise XIV MCP shows the player the way and waits: it puts the flag on the map and asks them to walk, names the " +
                           "aetheryte to teleport to, or asks them to enter the inn room or house. Tell the player when that happens. Destinations: " +
                           "summoning_bell (nearby one, otherwise the preferred bell location from /xivmcp, falling back to the inn), company_chest (FC " +
-                          "house), workshop (FC workshop, walks to the voyage control panel), inn, home, fc_house, apartment, object (by name in the " +
+                          "house, or its workshop if the chest stands there), workshop (FC workshop, walks to the voyage control panel), inn, home, fc_house, apartment, object (by name in the " +
                           "current zone), npc (an NPC anywhere in the world by name, from the game data: travels to its zone and walks up to it), or fishing_spot (a fishing spot by name or id, as find_fish names it: travels there and walks to the water until Cast can be used, as a Fisher). Waits until arrived and returns the steps taken; then use interact_with_object. Fails with the reason and the steps so far when it can't get there or times out (a job then waits). " +
                           "stop_navigation aborts. Teleports cost gil as usual. Requires 'Game & navigation' in /xivmcp.",
             InputSchema = $$"""
@@ -193,8 +193,12 @@ internal static partial class NavigationTools
             {
                 if (await WalkTo("Company Chest", IsObject(CompanyChestIds), steps, ct) is { } here) return here;
                 await TravelTo("fc", steps, ct).ConfigureAwait(false);
+                if (await WalkToWhenLoaded("Company Chest", IsObject(CompanyChestIds), steps, ct) is { } inHouse) return inHouse;
+                // Many free companies keep the chest in the workshop rather than in the house itself.
+                steps.Add("No company chest in the house; looking in the workshop.");
+                await TravelTo("workshop", steps, ct).ConfigureAwait(false);
                 return await WalkToWhenLoaded("Company Chest", IsObject(CompanyChestIds), steps, ct)
-                       ?? throw new ToolException("Arrived at the FC house, but no company chest was found.");
+                       ?? throw new ToolException("Neither the FC house nor its workshop has a company chest.");
             }
 
             case "workshop":
