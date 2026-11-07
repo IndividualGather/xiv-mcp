@@ -510,6 +510,10 @@ internal static class InventoryActionTools
             var confirmed = await Svc.Framework.RunOnFrameworkThread(() =>
             {
                 if (HasPendingOperation()) return false;
+                // The source must have changed too: a container the game loads late (the company chest) can show the same item in the
+                // target without the move having happened.
+                var src = Slot(p.From, p.FromSlot);
+                if (!src.IsEmpty && src.ItemId == p.ItemId && src.Quantity == p.Quantity) return false;
                 var dst = Slot(p.To, p.ToSlot);
                 if (p.Partial) return dst.ItemId == p.ItemId && dst.Quantity == (p.DstItemId == p.ItemId ? p.DstQuantity : 0) + p.Amount;
                 var merged = p.DstItemId == p.ItemId && dst.ItemId == p.ItemId && dst.Quantity != p.DstQuantity;
