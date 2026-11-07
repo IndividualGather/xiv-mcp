@@ -152,8 +152,8 @@ internal static class InventoryActionTools
                           "automatically (the game only sends a tab once it is selected). 'quantity' moves part of a stack: it is split off " +
                           "first (needs an empty slot in the source container). Crystals move between crystal containers only, into the " +
                           "slot of their kind; a slot holds at most 9,999, so only what fits moves (the result says how many). Part of a crystal " +
-                          "stack (a 'quantity', or what fits) moves between your crystals and a retainer's through the crystal's Entrust/Retrieve " +
-                          "Quantity menu; the company chest takes whole stacks. " +
+                          "stack (a 'quantity', or what fits) moves between your crystals and a retainer's through the crystal's Entrust to " +
+                          "Retainer / Retrieve from Retainer menu; the company chest takes whole stacks. " +
                           "Armory containers only accept matching gear. " +
                           "Stops at the first failed move unless continue_on_error=true. Requires 'Items & retainers' in /xivmcp.",
             InputSchema = """
@@ -523,18 +523,19 @@ internal static class InventoryActionTools
 
     private static readonly string[] PlayerInventoryAddons = ["InventoryExpansion", "InventoryLarge", "Inventory"];
     private static readonly string[] RetainerInventoryAddons = ["InventoryRetainerLarge", "InventoryRetainer"];
-    private const uint EntrustQuantityText = 772, RetrieveQuantityText = 773;
+    // Items offer "Entrust/Retrieve Quantity"; crystals only "Entrust to Retainer" / "Retrieve from Retainer", which asks how many.
+    private static readonly uint[] EntrustTexts = [772, 97], RetrieveTexts = [773, 98];
 
     /// <summary>
     /// Moves part of a crystal stack between your crystals and a retainer's, as the player would: the crystal's context menu,
-    /// "Entrust Quantity" or "Retrieve Quantity", then the number.
+    /// "Entrust to Retainer" or "Retrieve from Retainer" (or an item's "... Quantity"), then the number the game asks for.
     /// </summary>
     private static async Task MoveCrystalQuantity(GameInventoryType from, int fromSlot, GameInventoryType to, int amount, CancellationToken ct)
     {
         var entry = (from, to) switch
         {
-            (GameInventoryType.Crystals, GameInventoryType.RetainerCrystals) => EntrustQuantityText,
-            (GameInventoryType.RetainerCrystals, GameInventoryType.Crystals) => RetrieveQuantityText,
+            (GameInventoryType.Crystals, GameInventoryType.RetainerCrystals) => EntrustTexts,
+            (GameInventoryType.RetainerCrystals, GameInventoryType.Crystals) => RetrieveTexts,
             _ => throw new ToolException("Part of a crystal stack only moves between your crystals and a retainer's; the company chest takes whole stacks."),
         };
         await Game.Run(() => OpenItemContextMenu(from, fromSlot)).ConfigureAwait(false);
