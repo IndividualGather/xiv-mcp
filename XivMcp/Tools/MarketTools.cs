@@ -195,7 +195,7 @@ internal static class MarketTools
                     "item": { "type": "string", "description": "Item name or id." },
                     "hq": { "type": "boolean", "description": "Sell the HQ stack (default: HQ if you have one)." },
                     "quantity": { "type": "integer", "description": "How many from the stack (default the whole stack)." },
-                    "price": { "type": "integer", "description": "Price per unit; omit to undercut the live market." },
+                    "price": { "type": "integer", "description": "Price per unit; omit to undercut the live market. A listing totals at most 999,999,999 gil." },
                     "allow_low_price": { "type": "boolean", "description": "Allow a price under half the recent Universalis average (default false)." },
                     "min_price": { "type": "integer", "description": "Lowest price per unit to accept when undercutting: below it, nothing is listed." }
                   },
@@ -229,6 +229,8 @@ internal static class MarketTools
                     var stack = await Game.Run(() => FindStack(plan.Item, args.Node("hq") is null ? null : args.Bool("hq", false))).ConfigureAwait(false)
                                 ?? throw new ToolException($"No {plan.ItemName} in your bags or {plan.Retainer}'s inventory.");
                     var quantity = Math.Clamp(args.Int("quantity", stack.Quantity, 1, 9999), 1, stack.Quantity);
+                    if (args.Node("price") is not null && Shops.ListingPrice.Problem(args.Int("price", 0, 1, 999_999_999), quantity) is { } tooHigh)
+                        throw new ToolException(tooHigh);
                     await SelectAndWait(stack.FromBags ? AddonSellFromBags : AddonSellFromRetainer, "RetainerSellList", ct).ConfigureAwait(false);
                     await Game.Run(() => { unsafe { OpenRetainerSell(stack.Container, (ushort)stack.Slot); } return true; }).ConfigureAwait(false);
                     await WaitFor("RetainerSell", ct).ConfigureAwait(false);
