@@ -33,6 +33,9 @@ public sealed record CreditShop(long Credits, bool MaySpend, IReadOnlyList<Credi
     /// The purchases that buy <paramref name="quantity"/> items, each at most <paramref name="perPurchase"/>, as far as the credits
     /// pay for them.
     /// </summary>
+    /// <summary>The window's purchase of one row: [0, row index, quantity] (the game then asks to confirm).</summary>
+    public static int[] BuyCommand(int rowIndex, int quantity) => [0, rowIndex, quantity];
+
     public static IReadOnlyList<int> Batches(int quantity, long credits, int price, int perPurchase)
     {
         if (quantity <= 0) throw new ArgumentOutOfRangeException(nameof(quantity), "Buy at least one.");

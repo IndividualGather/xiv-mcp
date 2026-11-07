@@ -58,4 +58,11 @@ public class CreditShopTests
         Assert.Throws<ArgumentOutOfRangeException>(() => CreditShop.Batches(5, 1000, 0, 99));
         Assert.Throws<ArgumentOutOfRangeException>(() => CreditShop.Batches(5, 1000, 100, 0));
     }
+
+    [Fact]
+    public void A_row_is_bought_with_its_index_and_the_quantity()
+    {
+        // The window's own purchase: row 1 (Magitek Repair Materials after the Ceruleum Tanks), 99 at once.
+        Assert.Equal([0, 1, 99], CreditShop.BuyCommand(rowIndex: 1, quantity: 99));
+    }
 }

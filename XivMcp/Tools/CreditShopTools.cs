@@ -14,7 +14,7 @@ using XivMcp.Util;
 namespace XivMcp.Tools;
 
 /// <summary>
-/// Buying Ceruleum Tanks with company credits from the mammet in the FC workshop (Mammet Voyager #004A, "Company Credit Exchange",
+/// Buying with company credits (Ceruleum Tanks, Magitek Repair Materials and the rest of the exchange) from the mammet in the FC workshop (Mammet Voyager #004A, "Company Credit Exchange",
 /// FccShop 2752515). Its window (FreeCompanyCreditShop) takes the quantity in the row's number field and buys on a click on the row,
 /// then asks to confirm — the steps AutoRetainer's fuel purchase takes in the same window.
 /// </summary>
@@ -45,60 +45,89 @@ internal static class CreditShopTools
                 }
                 """,
             ReadOnly = false,
+            Handler = (args, ct) => Buy(config, Ceruleum, args.Int("quantity", 0, 0, 9999), ct),
+        };
+
+        yield return new McpTool
+        {
+            Name = "buy_with_company_credits",
+            Description = "Buys an item of the FC workshop's Company Credit Exchange (Mammet Voyager #004A) with the free company's credits: " +
+                          "Ceruleum Tanks, Magitek Repair Materials (to repair submersible parts) or anything else the exchange lists. Walks to " +
+                          "the mammet in the workshop, opens the exchange and buys in purchases of up to 99, as far as the credits go. Company " +
+                          "credits are not gil, so it asks in game first; the player approves there. Be in the workshop (navigate_to " +
+                          "destination workshop). Requires 'Market & purchases' in /xivmcp.",
+            InputSchema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "item": { "type": "string", "description": "Item name or id, e.g. Magitek Repair Materials or Ceruleum Tank." },
+                    "quantity": { "type": "integer", "minimum": 1, "maximum": 9999, "description": "How many to buy." }
+                  },
+                  "required": ["item", "quantity"]
+                }
+                """,
+            ReadOnly = false,
             Handler = async (args, ct) =>
             {
-                if (!config.AllowMarketPurchases)
-                    throw new ToolException("Buying is disabled. Enable \"Market & purchases\" in the XIV MCP settings window (/xivmcp) in game.");
-                var quantity = args.Int("quantity", 0, 0, 9999);
-                if (quantity <= 0) throw new ToolException("'quantity' must be at least 1.");
-                if (!await Gate.WaitAsync(0, ct).ConfigureAwait(false)) throw new ToolException("Another tank purchase is running.");
-                var steps = new List<string>();
-                try
-                {
-                    var before = await Game.RunLoggedIn(() =>
-                    {
-                        InventoryActionTools.EnsureNotBusy();
-                        var slots = Items.SlotsNeeded(Ceruleum, quantity);
-                        if (slots > Items.FreeBagSlots()) throw new ToolException($"{quantity} Ceruleum Tanks need {slots} free bag slots; only {Items.FreeBagSlots()} are free.");
-                        return Items.CountInBags(Ceruleum);
-                    }).ConfigureAwait(false);
-
-                    await GoToMammet(config, steps, ct).ConfigureAwait(false);
-                    await OpenExchange(steps, ct).ConfigureAwait(false);
-                    try
-                    {
-                        var shop = await Game.Run(ReadShop).ConfigureAwait(false);
-                        if (!shop.MaySpend) throw new ToolException("This character is not allowed to spend company credits (the free company's rank permissions).");
-                        var row = shop.Find(Ceruleum) ?? throw new ToolException("The exchange doesn't list Ceruleum Tanks.");
-                        if (row.Index != 0) throw new ToolException("Ceruleum Tanks are not the exchange's first row; buying from other rows is not supported.");
-                        var batches = CreditShop.Batches(quantity, shop.Credits, row.Price, row.PerPurchase);
-                        if (batches.Count == 0) throw new ToolException($"The company has {shop.Credits:N0} credits; a tank costs {row.Price:N0}.");
-                        var total = batches.Sum();
-
-                        steps.Add("Waiting for approval in game.");
-                        await Consent.Require("Buy Ceruleum Tanks with company credits?",
-                        [
-                            $"Buy {total} Ceruleum Tanks from Mammet Voyager #004A" + (total < quantity ? $" (asked for {quantity}; the credits pay for {total})" : ""),
-                            $"{(long)total * row.Price:N0} of the company's {shop.Credits:N0} credits ({row.Price:N0} each)",
-                        ], ConsentTimeout, ct).ConfigureAwait(false);
-                        steps.Add("Approved in game.");
-
-                        foreach (var batch in batches) await BuyBatch(batch, steps, ct).ConfigureAwait(false);
-                        var credits = (await Game.Run(ReadShop).ConfigureAwait(false)).Credits;
-                        var now = await Game.Run(() => Items.CountInBags(Ceruleum)).ConfigureAwait(false);
-                        return new { bought = now - before, requested = quantity, creditsSpent = shop.Credits - credits, creditsLeft = credits, nowInBags = now, steps };
-                    }
-                    finally
-                    {
-                        await CloseExchange(ct).ConfigureAwait(false);
-                    }
-                }
-                finally
-                {
-                    Gate.Release();
-                }
+                var item = args.String("item") ?? throw new ToolException("'item' is required.");
+                var itemId = await Game.Run(() => Items.Resolve(item).RowId).ConfigureAwait(false);
+                return await Buy(config, itemId, args.Int("quantity", 0, 0, 9999), ct).ConfigureAwait(false);
             },
         };
+    }
+
+    /// <summary>Buys <paramref name="quantity"/> of one item from the exchange, after the player approved in game.</summary>
+    private static async Task<object> Buy(Configuration config, uint itemId, int quantity, CancellationToken ct)
+    {
+        if (!config.AllowMarketPurchases)
+            throw new ToolException("Buying is disabled. Enable \"Market & purchases\" in the XIV MCP settings window (/xivmcp) in game.");
+        if (quantity <= 0) throw new ToolException("'quantity' must be at least 1.");
+        if (!await Gate.WaitAsync(0, ct).ConfigureAwait(false)) throw new ToolException("Another company credit purchase is running.");
+        var steps = new List<string>();
+        try
+        {
+            var (before, name) = await Game.RunLoggedIn(() =>
+            {
+                InventoryActionTools.EnsureNotBusy();
+                var slots = Items.SlotsNeeded(itemId, quantity);
+                var itemName = Items.Name(itemId);
+                if (slots > Items.FreeBagSlots()) throw new ToolException($"{quantity} {itemName} need {slots} free bag slots; only {Items.FreeBagSlots()} are free.");
+                return (Items.CountInBags(itemId), itemName);
+            }).ConfigureAwait(false);
+
+            await GoToMammet(config, steps, ct).ConfigureAwait(false);
+            await OpenExchange(steps, ct).ConfigureAwait(false);
+            try
+            {
+                var shop = await Game.Run(ReadShop).ConfigureAwait(false);
+                if (!shop.MaySpend) throw new ToolException("This character is not allowed to spend company credits (the free company's rank permissions).");
+                var row = shop.Find(itemId) ?? throw new ToolException($"The exchange doesn't list {name}: it sells {string.Join(", ", shop.Rows.Select(r => r.Name))}.");
+                var batches = CreditShop.Batches(quantity, shop.Credits, row.Price, row.PerPurchase);
+                if (batches.Count == 0) throw new ToolException($"The company has {shop.Credits:N0} credits; one {name} costs {row.Price:N0}.");
+                var total = batches.Sum();
+
+                steps.Add("Waiting for approval in game.");
+                await Consent.Require($"Buy {name} with company credits?",
+                [
+                    $"Buy {total} {name} from Mammet Voyager #004A" + (total < quantity ? $" (asked for {quantity}; the credits pay for {total})" : ""),
+                    $"{(long)total * row.Price:N0} of the company's {shop.Credits:N0} credits ({row.Price:N0} each)",
+                ], ConsentTimeout, ct).ConfigureAwait(false);
+                steps.Add("Approved in game.");
+
+                foreach (var batch in batches) await BuyBatch(itemId, row.Index, batch, steps, ct).ConfigureAwait(false);
+                var credits = (await Game.Run(ReadShop).ConfigureAwait(false)).Credits;
+                var now = await Game.Run(() => Items.CountInBags(itemId)).ConfigureAwait(false);
+                return new { item = name, bought = now - before, requested = quantity, creditsSpent = shop.Credits - credits, creditsLeft = credits, nowInBags = now, steps };
+            }
+            finally
+            {
+                await CloseExchange(ct).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            Gate.Release();
+        }
     }
 
     /// <summary>Walks to the mammet in the workshop, unless it is already at hand.</summary>
@@ -163,11 +192,12 @@ internal static class CreditShopTools
     }
 
     /// <summary>One purchase: the quantity into the row's number field, a click on the row, Yes to the game's question.</summary>
-    private static async Task BuyBatch(int quantity, List<string> steps, CancellationToken ct)
+    private static async Task BuyBatch(uint itemId, int rowIndex, int quantity, List<string> steps, CancellationToken ct)
     {
-        var have = await Game.Run(() => Items.CountInBags(Ceruleum)).ConfigureAwait(false);
-        await Game.Run(() => { ClickRow(quantity); return true; }).ConfigureAwait(false);
-        var names = await Game.Run(() => Svc.Data.GetExcelSheet<Item>().GetRow(Ceruleum) is var item
+        var have = await Game.Run(() => Items.CountInBags(itemId)).ConfigureAwait(false);
+        // The first row is clicked like the mouse does (checked in game); other rows take the window's own purchase command.
+        await Game.Run(() => { if (rowIndex == 0) ClickRow(quantity); else FireBuy(rowIndex, quantity); return true; }).ConfigureAwait(false);
+        var names = await Game.Run(() => Svc.Data.GetExcelSheet<Item>().GetRow(itemId) is var item
             ? new[] { item.Name.ExtractText(), item.Singular.ExtractText(), item.Plural.ExtractText() }.Where(n => n.Length > 0).ToArray() : []).ConfigureAwait(false);
 
         var deadline = DateTime.UtcNow.AddSeconds(10);
@@ -177,7 +207,7 @@ internal static class CreditShopTools
             var arrived = await Game.Run(() =>
             {
                 ConfirmPurchase(names);
-                return Items.CountInBags(Ceruleum) > have;
+                return Items.CountInBags(itemId) > have;
             }).ConfigureAwait(false);
             if (arrived)
             {
@@ -206,14 +236,22 @@ internal static class CreditShopTools
         addon->ReceiveEvent((AtkEventType)35, 0, &evt, &data);
     }
 
-    /// <summary>Answers Yes to the game's question, but only when it is about the tanks.</summary>
+    /// <summary>Buys from a row through the window's purchase command [0, row, quantity].</summary>
+    private static unsafe void FireBuy(int rowIndex, int quantity)
+    {
+        var addon = GameWindows.Addon(Window);
+        if (addon == null || !addon->IsVisible) throw new ToolException("The Company Credit Exchange closed.");
+        RetainerUi.Fire(addon, true, CreditShop.BuyCommand(rowIndex, quantity).Cast<object?>().ToArray());
+    }
+
+    /// <summary>Answers Yes to the game's question, but only when it is about the item being bought.</summary>
     private static unsafe void ConfirmPurchase(string[] names)
     {
         var yesno = (AddonSelectYesno*)GameWindows.Addon("SelectYesno");
         if (yesno == null || !yesno->AtkUnitBase.IsVisible || yesno->PromptText == null || yesno->YesButton == null || !yesno->YesButton->IsEnabled) return;
         var prompt = Dalamud.Game.Text.SeStringHandling.SeString.Parse(yesno->PromptText->NodeText).TextValue;
         if (!names.Any(n => prompt.Contains(n, StringComparison.OrdinalIgnoreCase)))
-            throw new ToolException($"The game asks \"{prompt}\", which is not about Ceruleum Tanks; not answering it.");
+            throw new ToolException($"The game asks \"{prompt}\", which is not about the item being bought; not answering it.");
         RetainerUi.Fire(&yesno->AtkUnitBase, true, 0);
     }
 

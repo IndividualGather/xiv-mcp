@@ -55,6 +55,7 @@ public static class BuiltInCapabilities
         ["dye_item"] = [GameUi, MoveItems, SpendCurrency],
         ["buy_item"] = [GameUi, MoveCharacter, SpendGil, SpendCurrency],
         ["buy_ceruleum_tanks"] = [GameUi, MoveCharacter, SpendCurrency],
+        ["buy_with_company_credits"] = [GameUi, MoveCharacter, SpendCurrency],
         ["buy_from_market_board"] = [GameUi, MoveCharacter, SpendGil],
         ["sell_item"] = [GameUi, TradeItems],
         ["reprice_listings"] = [GameUi, TradeItems],
