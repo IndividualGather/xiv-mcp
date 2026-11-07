@@ -70,7 +70,7 @@ The same applies to tools that take you somewhere on the way, such as `buy_item`
 | Tool | What it does |
 |---|---|
 | `list_characters` | The characters XIV MCP has seen (in the lobby lists and in the game): worlds, data center, service account, and whether each is on the account in use |
-| `switch_character` | Logs out and into another character of the account, on any world, data center and service account, and waits until it is in the game |
+| `switch_character` | Logs out and into another character of the account, on any world, data center and service account, and waits until it is in the game. After a lost connection (error 90002 and the like) it presses OK and logs back in; other lobby errors, such as maintenance, stop it |
 | `refresh_character_list` | Logs out and straight back in, so XIV MCP learns this data center's character list |
 | `visit_world` | World visit or data center travel for the current character. A travel plugin travels for you; without one, XIV MCP asks you to use World Visit or Data Center Travel and waits until you arrive. |
 | `switch_gearset` | Changes job by equipping a gear set, by number, name or job (the set with the highest item level of that job). When an item of the set is missing and the game offers a replacement, it answers Yes (or No with `replace_missing: false`). It returns once the job has changed and the set's pieces are on |

@@ -68,6 +68,21 @@ internal static class LobbyLogin
     /// <summary>When this login left another data center's character list for the title screen.</summary>
     private static DateTime returnedToTitleAt = DateTime.MinValue;
 
+    /// <summary>Clicks the first visible button of a window (the lobby's error box has only OK).</summary>
+    private static unsafe bool PressFirstButton(AtkUnitBase* addon)
+    {
+        var uld = &addon->UldManager;
+        for (var i = 0; i < uld->NodeListCount; i++)
+        {
+            var node = uld->NodeList[i];
+            if (node == null || (int)node->Type < 1000 || !node->IsVisible()) continue;
+            var component = ((AtkComponentNode*)node)->Component;
+            if (component == null || component->GetComponentType() != ComponentType.Button) continue;
+            if (Tools.VentureTools.Click(addon, (AtkComponentButton*)component)) return true;
+        }
+        return false;
+    }
+
     private static string DataCenterName(uint id) =>
         Svc.Data.GetExcelSheet<WorldDCGroupType>().GetRowOrDefault(id)?.Name.ExtractText() is { Length: > 0 } name ? name : $"data center {id}";
 
@@ -133,7 +148,11 @@ internal static class LobbyLogin
                 if (n != null && n->Type == NodeType.Text && ((AtkTextNode*)n)->NodeText.ToString().Trim() is { Length: > 0 } t) parts.Add(t);
             }
             var text = string.Join(" ", parts);
-            throw new ToolException($"The lobby shows an error: {text}");
+            // After a lost connection the player presses OK and logs in again; anything else (maintenance, a full world) stops here.
+            if (!LobbyError.IsDisconnect(text)) throw new ToolException($"The lobby shows an error: {text}");
+            if (throttled) return TickResult.Wait();
+            if (!PressFirstButton(dialogue)) throw new ToolException($"The lobby shows an error and its OK button wasn't found: {text}");
+            return TickResult.Did($"Pressed OK on \"{text}\"; logging in again.");
         }
 
         // Confirmation for the character: only if the prompt names it.
