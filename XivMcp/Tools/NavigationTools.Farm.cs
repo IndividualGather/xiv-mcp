@@ -81,6 +81,9 @@ internal static partial class NavigationTools
             await Game.RunLoggedIn(() => { EnsureCanTravel(); return true; }).ConfigureAwait(false);
             await TravelNear(target.Spot, steps, ct).ConfigureAwait(false);
             await WaitForMesh(ct).ConfigureAwait(false);
+            // Map positions have no height: walk to the nearest reachable ground there.
+            var spawn = await Game.Run(() => GroundNear(target.Spot.Position)).ConfigureAwait(false)
+                        ?? throw new ToolException($"vnavmesh finds no ground to walk to where {target.Name} lives.");
             phase = $"farming {target.Name}";
 
             var started = DateTime.UtcNow;
@@ -94,7 +97,7 @@ internal static partial class NavigationTools
                 while (true)
                 {
                     ct.ThrowIfCancellationRequested();
-                    var view = await Game.Run(() => Look(target.NameId, target.Spot.Position, fighting, item.RowId)).ConfigureAwait(false);
+                    var view = await Game.Run(() => Look(target.NameId, spawn, fighting, item.RowId)).ConfigureAwait(false);
                     if (view.Have != have) { have = view.Have; progressAt = DateTime.UtcNow; }
                     if (fighting is not null && !view.FightingAlive) { kills++; fighting = null; progressAt = DateTime.UtcNow; }
                     var now = DateTime.UtcNow;
@@ -130,7 +133,7 @@ internal static partial class NavigationTools
                             break;
                         case MobFarmAction.ReturnToSpawn:
                             if (!await Game.Run(() => PathRunning).ConfigureAwait(false))
-                                await Game.Run(() => MoveCloseTo(target.Spot.Position, 10f, Svc.Condition[ConditionFlag.Mounted])).ConfigureAwait(false);
+                                await Game.Run(() => MoveCloseTo(spawn, 10f, Svc.Condition[ConditionFlag.Mounted])).ConfigureAwait(false);
                             break;
                         case MobFarmAction.Rest:
                             await Game.Run(() => { if (PathRunning) StopMoving(); return true; }).ConfigureAwait(false);
@@ -196,6 +199,15 @@ internal static partial class NavigationTools
         return new FarmView(Items.CountInBags(itemId), hp, p is null || p.IsDead, Svc.Condition[ConditionFlag.InCombat], alive,
             nearest is null ? null : Game.DistanceToPlayer(nearest.Position),
             p is null ? 0 : Vector2.Distance(new(p.Position.X, p.Position.Z), new(spawn.X, spawn.Z)));
+    }
+
+    /// <summary>The nearest reachable mesh point at a map position (no height), searching wider and higher step by step. Framework thread.</summary>
+    private static Vector3? GroundNear(Vector3 position)
+    {
+        foreach (var (radius, height) in new[] { (10f, 60f), (30f, 300f), (60f, 600f) })
+            if (Ipc<Vector3, float, float, Vector3?>("vnavmesh.Query.Mesh.NearestPointReachable", position with { Y = PlayerHeight() }, radius, height) is { } p)
+                return p;
+        return null;
     }
 
     /// <summary>The nearest living, targetable monster of the kind. Framework thread.</summary>
