@@ -76,6 +76,7 @@ public static class ToolSummaries
         ["get_fashion_report"] = "Looks at this week's Fashion Report: theme, hints, ready-made sets and which items you have.",
         ["present_fashion_report"] = "Puts on your Fashion Report outfit and presents it to the Masked Rose for judging.",
         ["complete_fashion_report"] = "Gets, dyes and puts on this week's easy Fashion Report set, then presents it for judging.",
+        ["meld_materia"] = "Melds materia from your bags into a piece of your gear, overmelding included.",
         ["dye_item"] = "Dyes a piece of your gear in a color, using a dye from your bags.",
         ["capture_ui_events"] = "Records what game windows send while you click, for developing new tools.",
         ["take_screenshot"] = "Looks at your screen: takes a screenshot of the game or of the XIV MCP window.",
