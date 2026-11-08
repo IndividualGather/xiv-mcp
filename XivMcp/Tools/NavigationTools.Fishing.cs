@@ -57,9 +57,15 @@ internal static partial class NavigationTools
             {
                 await WaitForMesh(ct).ConfigureAwait(false);
                 // The centre is often out on the water: walk to the nearest ground, and stop as soon as the line can be cast.
+                // Cloud-sea spots (the Churning Mists, the Sea of Clouds) have their centre over the void, far from the island edge
+                // and at another height: widen the search before falling back to the centre, where nobody can land.
                 var target = await Game.Run(() =>
-                    Ipc<Vector3, float, float, Vector3?>("vnavmesh.Query.Mesh.NearestPointReachable", place.Centre with { Y = PlayerHeight() }, place.Radius, 60f)
-                    ?? place.Centre).ConfigureAwait(false);
+                {
+                    foreach (var (radius, height) in new[] { (place.Radius, 60f), (place.Radius * 2, 300f), (place.Radius * 4, 600f) })
+                        if (Ipc<Vector3, float, float, Vector3?>("vnavmesh.Query.Mesh.NearestPointReachable", place.Centre with { Y = PlayerHeight() }, radius, height) is { } ground)
+                            return ground;
+                    return place.Centre;
+                }).ConfigureAwait(false);
                 if (!await StartPath(target, 2f, steps, ct).ConfigureAwait(false))
                     throw new ToolException($"vnavmesh could not find a path to {place.Name}.");
                 steps.Add($"vnavmesh: walking to {place.Name}.");
