@@ -27,7 +27,7 @@ internal static partial class NavigationTools
     {
         Name = "farm_monster_drops",
         Description = "Kills monsters until the bags hold 'quantity' of an item they drop: switches to the combat gearset with the highest item " +
-                      "level, travels to where the monster lives (from Teamcraft's drop data; 'monster' picks one when several drop it), targets " +
+                      "level (or 'gearset'; when a set fails to equip, e.g. a missing weapon, the next best is tried), travels to where the monster lives (from Teamcraft's drop data; 'monster' picks one when several drop it), targets " +
                       "the nearest living one, walks into range and lets RotationSolver fight (its auto mode), and waits at the spawn area for " +
                       "respawns. Stops when enough are in the bags, on death, below 25% HP out of combat, at the timeout, or after 'stall_minutes' " +
                       "without a kill or a drop. RotationSolver is switched off again at the end. Meant as a job step. Requires RotationSolver, " +
@@ -39,6 +39,7 @@ internal static partial class NavigationTools
                 "item": { "type": "string", "description": "The item (name or id) the monster drops." },
                 "quantity": { "type": "integer", "minimum": 1, "description": "How many to have in the bags (default 1)." },
                 "monster": { "type": "string", "description": "Which monster to farm, when several drop the item (default: the first Teamcraft lists with a position)." },
+                "gearset": { "type": "string", "description": "Fight with this gearset (number, name or job) instead of the highest item level combat set." },
                 "timeout_minutes": { "type": "integer", "minimum": 1, "maximum": 600, "description": "Give up after this long (default 120)." },
                 "stall_minutes": { "type": "integer", "minimum": 1, "maximum": 120, "description": "Give up after this long without a kill or a drop (default 10)." }
               },
@@ -62,11 +63,20 @@ internal static partial class NavigationTools
             var target = await Game.Run(() => PickDrop(sources, monsterArg, item.Name.ExtractText())).ConfigureAwait(false);
             var steps = new List<string> { $"{target.Name} in {TerritoryName(target.Spot.Territory)} drops {item.Name.ExtractText()}." };
 
-            // The strongest combat job.
-            var gearset = await Game.Run(() => CombatGearset.Best(Gearsets.All().Select(s => new GearsetChoice(s.Number, s.CombatJob, s.ItemLevel, s.MissingItems))))
-                          .ConfigureAwait(false) ?? throw new ToolException("No combat gearset is saved.");
-            var set = await Gearsets.Switch(gearset.ToString(), ct, steps: steps).ConfigureAwait(false);
-            steps.Add($"Gearset {set.Number} {set.Name} ({set.Job}, item level {set.ItemLevel}).");
+            // The strongest combat job; a set that turns out to miss a piece (the game only notices when equipping it) gives way to the next.
+            var chosen = args.String("gearset");
+            var candidates = chosen is not null
+                ? new List<string> { chosen }
+                : (await Game.Run(() => CombatGearset.Ranked(Gearsets.All().Select(s => new GearsetChoice(s.Number, s.CombatJob, s.ItemLevel, s.MissingItems))))
+                      .ConfigureAwait(false)).Take(3).Select(n => n.ToString()).ToList();
+            if (candidates.Count == 0) throw new ToolException("No combat gearset is saved.");
+            Gearsets.Set? set = null;
+            foreach (var candidate in candidates)
+            {
+                try { set = await Gearsets.Switch(candidate, ct, steps: steps).ConfigureAwait(false); break; }
+                catch (ToolException e) when (candidate != candidates[^1]) { steps.Add($"{e.Message} Trying the next gearset."); }
+            }
+            steps.Add($"Gearset {set!.Number} {set.Name} ({set.Job}, item level {set.ItemLevel}).");
 
             await Game.RunLoggedIn(() => { EnsureCanTravel(); return true; }).ConfigureAwait(false);
             await TravelNear(target.Spot, steps, ct).ConfigureAwait(false);

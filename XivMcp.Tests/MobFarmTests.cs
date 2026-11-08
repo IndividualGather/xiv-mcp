@@ -34,6 +34,20 @@ public class MobFarmTests
         Assert.Equal(4, CombatGearset.Best(sets));
     }
 
+    [Fact]
+    public void Ranked_lists_every_combat_set_best_first_for_falling_back()
+    {
+        var sets = new[]
+        {
+            new GearsetChoice(1, true, 790, 0),  // looks complete until the game tries it
+            new GearsetChoice(2, false, 800, 0),
+            new GearsetChoice(3, true, 790, 0),
+            new GearsetChoice(4, true, 700, 1),
+            new GearsetChoice(5, true, 760, 0),
+        };
+        Assert.Equal([1, 3, 5, 4], CombatGearset.Ranked(sets));
+    }
+
     [Fact] public void No_combat_gearset_is_null() => Assert.Null(CombatGearset.Best([new GearsetChoice(1, false, 700, 0)]));
 
     [Theory]

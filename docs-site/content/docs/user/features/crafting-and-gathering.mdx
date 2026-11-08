@@ -55,7 +55,7 @@ Artisan always starts a list from the top. So when a job's `run_crafting_list` s
 
 ## Monster drops
 
-`farm_monster_drops` gets materials that only monsters drop: it switches to your combat gearset with the highest item level, travels to where the monster lives (from Teamcraft's drop data), targets the nearest living one, walks into range and lets RotationSolver fight in its auto mode, until your bags hold the quantity you asked for. Between kills it waits at the spawn area for respawns. It stops when you die, when your HP is below 25% out of combat, at the timeout, or after a while without a kill or a drop, and switches RotationSolver off again. It needs RotationSolver and vnavmesh.
+`farm_monster_drops` gets materials that only monsters drop: it switches to your combat gearset with the highest item level (or the one you name; if a set can't be equipped, for example because its weapon is gone, it tries the next best), travels to where the monster lives (from Teamcraft's drop data), targets the nearest living one, walks into range and lets RotationSolver fight in its auto mode, until your bags hold the quantity you asked for. Between kills it waits at the spawn area for respawns. It stops when you die, when your HP is below 25% out of combat, at the timeout, or after a while without a kill or a drop, and switches RotationSolver off again. It needs RotationSolver and vnavmesh.
 ## Good to know
 
 Stopping a crafting list (`crafting_control` with `stop`, or pausing or cancelling a job while it crafts) ends the list like Artisan's **Cancel** button. Artisan's own stop request would only pause it and keep Artisan busy.

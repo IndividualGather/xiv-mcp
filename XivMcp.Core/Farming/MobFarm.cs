@@ -10,10 +10,16 @@ public readonly record struct GearsetChoice(int Number, bool CombatJob, int Item
 public static class CombatGearset
 {
     /// <summary>The combat gearset with the highest item level, complete sets first; null without any combat set.</summary>
-    public static int? Best(IEnumerable<GearsetChoice> sets) =>
+    public static int? Best(IEnumerable<GearsetChoice> sets) => Ranked(sets).Select(n => (int?)n).FirstOrDefault();
+
+    /// <summary>
+    /// Every combat gearset, best first (complete sets, then by item level). The game only marks a piece missing once it tried
+    /// to equip the set, so a switch can still fail: then the next one is tried.
+    /// </summary>
+    public static List<int> Ranked(IEnumerable<GearsetChoice> sets) =>
         sets.Where(s => s.CombatJob)
             .OrderBy(s => s.MissingItems > 0).ThenByDescending(s => s.ItemLevel)
-            .Select(s => (int?)s.Number).FirstOrDefault();
+            .Select(s => s.Number).ToList();
 }
 
 public enum MobFarmAction
