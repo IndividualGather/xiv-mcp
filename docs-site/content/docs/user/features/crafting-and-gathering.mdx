@@ -53,6 +53,9 @@ Your assistant can run this as one [background job](/docs/user/features/jobs):
 
 Artisan always starts a list from the top. So when a job's `run_crafting_list` step runs again, after a pause or a retry, it continues instead: it remembers how many crafts of each recipe it already made (counted from the products arriving in your bags) and shrinks the Artisan list to the crafts still missing before it starts. Once everything is made, the list gets its original quantities back. The report always covers the whole list, including crafts from earlier runs. If you edit the list in between, the step starts over with the list as it is.
 
+## Monster drops
+
+`farm_monster_drops` gets materials that only monsters drop: it switches to your combat gearset with the highest item level, travels to where the monster lives (from Teamcraft's drop data), targets the nearest living one, walks into range and lets RotationSolver fight in its auto mode, until your bags hold the quantity you asked for. Between kills it waits at the spawn area for respawns. It stops when you die, when your HP is below 25% out of combat, at the timeout, or after a while without a kill or a drop, and switches RotationSolver off again. It needs RotationSolver and vnavmesh.
 ## Good to know
 
 Stopping a crafting list (`crafting_control` with `stop`, or pausing or cancelling a job while it crafts) ends the list like Artisan's **Cancel** button. Artisan's own stop request would only pause it and keep Artisan busy.

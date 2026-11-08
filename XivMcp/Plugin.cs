@@ -119,6 +119,7 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(LongRunningTools.Create(Config))
             .Concat(DutyTools.Create(Config, () => jobs!, () => Server?.LastClient))
             .Concat(GearsetTools.Create(Config))
+            .Append(NavigationTools.FarmMonsterDropsTool(Config))
             .Concat(MarketTools.Create(Config, retainers, sales, compat))
             .Concat(LoginTools.Create(Config, roster))
             .Concat(WindowInspectTools.Create())
