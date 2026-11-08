@@ -133,7 +133,7 @@ internal static partial class NavigationTools
                             break;
                         case MobFarmAction.ReturnToSpawn:
                             if (!await Game.Run(() => PathRunning).ConfigureAwait(false))
-                                await Game.Run(() => MoveCloseTo(spawn, 10f, Svc.Condition[ConditionFlag.Mounted])).ConfigureAwait(false);
+                                await StartPath(spawn, 10f, steps, ct).ConfigureAwait(false); // mounts up (and flies) for a longer way
                             break;
                         case MobFarmAction.Rest:
                             await Game.Run(() => { if (PathRunning) StopMoving(); return true; }).ConfigureAwait(false);
