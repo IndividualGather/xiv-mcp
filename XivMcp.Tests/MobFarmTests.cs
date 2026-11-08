@@ -12,7 +12,8 @@ public class MobFarmTests
 
     [Fact] public void Enough_in_the_bags_is_done() => Assert.Equal(MobFarmAction.Done, Next(have: 2, combat: true));
     [Fact] public void Death_stops_the_farm() => Assert.Equal(MobFarmAction.Fail, Next(dead: true));
-    [Fact] public void Low_hp_out_of_combat_stops_before_pulling_more() => Assert.Equal(MobFarmAction.Fail, Next(hp: 20, nearest: 10));
+    [Fact] public void Low_hp_out_of_combat_rests_before_pulling_more() => Assert.Equal(MobFarmAction.Rest, Next(hp: 20, nearest: 10));
+    [Fact] public void Mostly_full_hp_pulls_again() => Assert.Equal(MobFarmAction.Engage, Next(hp: 75, nearest: 10));
     [Fact] public void Low_hp_in_combat_keeps_fighting() => Assert.Equal(MobFarmAction.Fight, Next(hp: 20, combat: true));
     [Fact] public void A_fight_continues() => Assert.Equal(MobFarmAction.Fight, Next(target: true));
     [Fact] public void A_monster_in_sight_is_engaged() => Assert.Equal(MobFarmAction.Engage, Next(nearest: 25));

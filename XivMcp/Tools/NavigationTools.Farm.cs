@@ -29,7 +29,7 @@ internal static partial class NavigationTools
         Description = "Kills monsters until the bags hold 'quantity' of an item they drop: switches to the combat gearset with the highest item " +
                       "level (or 'gearset'; when a set fails to equip, e.g. a missing weapon, the next best is tried), travels to where the monster lives (from Teamcraft's drop data; 'monster' picks one when several drop it), targets " +
                       "the nearest living one, walks into range and lets RotationSolver fight (its auto mode), and waits at the spawn area for " +
-                      "respawns. Stops when enough are in the bags, on death, below 25% HP out of combat, at the timeout, or after 'stall_minutes' " +
+                      "respawns; below 70% HP out of combat it rests before pulling the next. Stops when enough are in the bags, on death, at the timeout, or after 'stall_minutes' " +
                       "without a kill or a drop. RotationSolver is switched off again at the end. Meant as a job step. Requires RotationSolver, " +
                       "vnavmesh, 'Game & navigation' and 'Online lookups'.",
         InputSchema = """
@@ -131,6 +131,9 @@ internal static partial class NavigationTools
                         case MobFarmAction.ReturnToSpawn:
                             if (!await Game.Run(() => PathRunning).ConfigureAwait(false))
                                 await Game.Run(() => MoveCloseTo(target.Spot.Position, 10f, Svc.Condition[ConditionFlag.Mounted])).ConfigureAwait(false);
+                            break;
+                        case MobFarmAction.Rest:
+                            await Game.Run(() => { if (PathRunning) StopMoving(); return true; }).ConfigureAwait(false);
                             break;
                         case MobFarmAction.Wait:
                             break;

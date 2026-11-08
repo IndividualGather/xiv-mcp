@@ -36,6 +36,8 @@ public enum MobFarmAction
     ReturnToSpawn,
     /// <summary>At the spawn area, none in sight: wait for one to respawn.</summary>
     Wait,
+    /// <summary>Out of combat with low HP: stand still until it has come back.</summary>
+    Rest,
 }
 
 public readonly record struct MobFarmDecision(MobFarmAction Action, string? Reason = null);
@@ -53,8 +55,8 @@ public sealed record MobFarmState(int Have, int Wanted, double HpPercent, bool D
 /// </summary>
 public static class MobFarm
 {
-    /// <summary>Below this HP (percent) the farm stops instead of pulling more.</summary>
-    public const double LowHp = 25;
+    /// <summary>Below this HP (percent) and out of combat the farm rests instead of pulling more.</summary>
+    public const double RestBelow = 70;
 
     /// <summary>Farther than this from the spawn area with nothing in sight means walking back.</summary>
     public const double SpawnRadius = 30;
@@ -63,9 +65,10 @@ public static class MobFarm
     {
         if (s.Have >= s.Wanted) return new(MobFarmAction.Done);
         if (s.Dead) return new(MobFarmAction.Fail, "The character died.");
-        if (s.HpPercent < LowHp && !s.InCombat) return new(MobFarmAction.Fail, $"HP is down to {s.HpPercent:0}%; stopped before pulling more.");
         if (s.Elapsed > s.Timeout) return new(MobFarmAction.Fail, "Timed out.");
         if (s.InCombat || s.TargetAlive) return new(MobFarmAction.Fight);
+        // HP comes back quickly out of combat (and is low right after a job change): rest instead of pulling the next one.
+        if (s.HpPercent < RestBelow) return new(MobFarmAction.Rest);
         if (s.SinceProgress > s.StallLimit)
             return new(MobFarmAction.Fail, $"No kill and no drop for {s.StallLimit.TotalMinutes:0} minutes (none spawn here, or they can't be reached).");
         if (s.NearestMob is not null) return new(MobFarmAction.Engage);
