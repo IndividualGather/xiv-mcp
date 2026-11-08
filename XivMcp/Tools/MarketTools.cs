@@ -333,6 +333,139 @@ internal static class MarketTools
                 }
             },
         };
+
+        yield return RetrieveListingTool(RequireMarket, compat);
+    }
+
+    private const uint ReturnToInventoryText = 976, ReturnToRetainerText = 958;
+
+    private static McpTool RetrieveListingTool(System.Action RequireMarket, PluginCompat compat) => new()
+    {
+        Name = "retrieve_listing",
+        Description = "Takes market listings of an item back from a retainer, as the listing's \"Return Items to Inventory\" (or \"Return to " +
+                      "Retainer\") does: to=inventory puts them in your bags (crystals into your crystals), to=retainer into the retainer's " +
+                      "inventory. Listings go one at a time, smallest first, while they fit (a crystal slot holds at most 9,999), up to " +
+                      "'max_quantity' in total. Use it to combine small listings into full stacks: take them back, then sell_item the stack. " +
+                      "The retainer list must be open. Requires 'Market & purchases' in /xivmcp.",
+        InputSchema = """
+            {
+              "type": "object",
+              "properties": {
+                "retainer": { "type": "string" },
+                "item": { "type": "string", "description": "Item name or id." },
+                "to": { "type": "string", "enum": ["inventory", "retainer"], "description": "Default inventory." },
+                "max_quantity": { "type": "integer", "minimum": 1, "description": "Take back at most this many in total (default: all that fit)." }
+              },
+              "required": ["retainer", "item"]
+            }
+            """,
+        ReadOnly = false,
+        Handler = async (args, ct) =>
+        {
+            RequireMarket();
+            var name = args.String("retainer") ?? throw new ToolException("'retainer' is required.");
+            var toRetainer = args.String("to") == "retainer";
+            var maxTotal = args.Node("max_quantity") is null ? int.MaxValue : args.Int("max_quantity", 1, 1, 999_999);
+            await InventoryActionTools.Gate.WaitAsync(ct).ConfigureAwait(false);
+            var taken = new List<object>();
+            var skipped = new List<string>();
+            try
+            {
+                var plan = await Game.RunLoggedIn(() =>
+                {
+                    RequireBell();
+                    InventoryActionTools.EnsureNotBusy();
+                    var item = Items.Resolve(args.String("item") ?? throw new ToolException("'item' is required."));
+                    var retainer = ResolveRetainer(name);
+                    compat.AcquireBell();
+                    return (Item: item.RowId, ItemName: item.Name.ExtractText(), Retainer: retainer);
+                }).ConfigureAwait(false);
+
+                await RetainerUi.OpenMenu(plan.Retainer, ct).ConfigureAwait(false);
+                await SelectAndWait(AddonSellFromBags, "RetainerSellList", ct).ConfigureAwait(false);
+                await Task.Delay(500, ct).ConfigureAwait(false);
+                var total = 0;
+                var listings = (await Game.Run(ReadListings).ConfigureAwait(false)).Where(l => l.ItemId == plan.Item).OrderBy(l => l.Quantity).ToList();
+                if (listings.Count == 0) throw new ToolException($"{plan.Retainer} has no {plan.ItemName} listed.");
+                foreach (var listing in listings)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (total + listing.Quantity > maxTotal) { skipped.Add($"{listing.Quantity:N0} (over max_quantity)"); continue; }
+                    var room = await Game.Run(() => CrystalRoom(plan.Item, toRetainer)).ConfigureAwait(false);
+                    if (room is { } r && listing.Quantity > r) { skipped.Add($"{listing.Quantity:N0} (only {r:N0} fit)"); continue; }
+                    await Game.Run(() => OpenListingMenu(listing.Slot)).ConfigureAwait(false);
+                    if (!await GameWindows.WaitFor(() => GameWindows.Ready("ContextMenu"), TimeSpan.FromSeconds(3), ct).ConfigureAwait(false))
+                        throw new ToolException("The listing's context menu did not open.");
+                    await Game.Run(() => PickMenuEntry(GameWindows.Texts(toRetainer ? ReturnToRetainerText : ReturnToInventoryText))).ConfigureAwait(false);
+                    var slot = listing.Slot;
+                    if (!await GameWindows.WaitFor(() => ListingGone(slot, listing.ItemId), TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
+                        throw new ToolException($"The game did not take back the listing of {listing.Quantity:N0} {plan.ItemName}.");
+                    total += listing.Quantity;
+                    taken.Add(new { quantity = listing.Quantity, price = listing.Price });
+                    await Task.Delay(Random.Shared.Next(500, 800), ct).ConfigureAwait(false);
+                }
+                await Game.Run(() => { CloseAddon("RetainerSellList"); return true; }).ConfigureAwait(false);
+                await RetainerUi.Close(ct).ConfigureAwait(false);
+                return new { retainer = plan.Retainer, item = plan.ItemName, to = toRetainer ? "retainer" : "inventory", total, taken, skipped };
+            }
+            finally
+            {
+                await Game.Run(() => { CloseAddon("ContextMenu"); CloseAddon("RetainerSellList"); return true; }).ConfigureAwait(false);
+                InventoryActionTools.Gate.Release();
+            }
+        },
+    };
+
+    /// <summary>For crystals: how many more fit in the destination crystal slot (9,999 per slot); null for other items.</summary>
+    private static unsafe int? CrystalRoom(uint itemId, bool toRetainer)
+    {
+        var container = InventoryManager.Instance()->GetInventoryContainer(toRetainer ? InventoryType.RetainerCrystals : InventoryType.Crystals);
+        if (container == null || !container->IsLoaded) return null;
+        var isCrystal = false;
+        var have = 0;
+        for (var i = 0; i < container->Size; i++)
+        {
+            var s = container->GetInventorySlot(i);
+            if (s == null || s->ItemId != itemId) continue;
+            isCrystal = true;
+            have += s->Quantity;
+        }
+        // An empty crystal slot doesn't show the item id; crystals are items 2-19.
+        if (!isCrystal && itemId is >= 2 and <= 19) isCrystal = true;
+        return isCrystal ? Math.Max(0, Transfers.CrystalMove.StackSize - have) : null;
+    }
+
+    private static unsafe bool OpenListingMenu(int slot)
+    {
+        var list = GameWindows.Addon("RetainerSellList");
+        if (list == null || !list->IsVisible) throw new ToolException("The retainer's market list isn't open.");
+        AgentInventoryContext.Instance()->OpenForItemSlot(InventoryType.RetainerMarket, slot, 0, list->Id);
+        return true;
+    }
+
+    private static unsafe bool PickMenuEntry(IReadOnlySet<string> texts)
+    {
+        var menu = GameWindows.Addon("ContextMenu");
+        var count = (int)menu->AtkValues[0].UInt;
+        var seen = new List<string>();
+        for (var i = 0; i < count && 8 + i < menu->AtkValuesCount; i++)
+        {
+            var v = menu->AtkValues[8 + i];
+            if (v.Type is not (AtkValueType.String or AtkValueType.ManagedString or AtkValueType.String8) || v.String.Value == null) continue;
+            var text = Dalamud.Memory.MemoryHelper.ReadSeStringNullTerminated((nint)v.String.Value).TextValue.Trim();
+            seen.Add(text);
+            if (texts.Contains(text)) { RetainerUi.Fire(menu, true, 0, i, 0u); return true; }
+        }
+        RetainerUi.Fire(menu, true, -1);
+        throw new ToolException($"The listing's menu has no \"{string.Join("\" or \"", texts)}\" entry (it has: {string.Join(", ", seen)}).");
+    }
+
+    private static unsafe bool ListingGone(int slot, uint itemId)
+    {
+        var market = InventoryManager.Instance()->GetInventoryContainer(InventoryType.RetainerMarket);
+        if (market == null) return false;
+        var s = market->GetInventorySlot(slot);
+        return s == null || s->ItemId != itemId;
     }
 
     // ------------------------------------------------------------------ pricing

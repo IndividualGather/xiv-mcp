@@ -58,6 +58,7 @@ public static class BuiltInCapabilities
         ["buy_with_company_credits"] = [GameUi, MoveCharacter, SpendCurrency],
         ["buy_from_market_board"] = [GameUi, MoveCharacter, SpendGil],
         ["sell_item"] = [GameUi, TradeItems],
+        ["retrieve_listing"] = [GameUi, TradeItems],
         ["reprice_listings"] = [GameUi, TradeItems],
         ["set_macro"] = [EditSettings, ChatSend],
         ["clear_macro"] = [EditSettings],
