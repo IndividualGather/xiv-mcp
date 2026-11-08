@@ -22,19 +22,52 @@ internal static class Gearsets
         if (module == null) return [];
         var jobs = Svc.Data.GetExcelSheet<ClassJob>();
         var current = module->CurrentGearsetIndex;
+        var owned = OwnedGear();
         var sets = new List<Set>();
         for (var i = 0; i < 100; i++)
         {
             if (!module->IsValidGearset(i)) continue;
             var e = module->GetGearset(i);
             var job = jobs.GetRowOrDefault(e->ClassJob);
+            // The game sets ItemMissing only after an equip attempt failed, so look for each piece ourselves (when the containers are loaded).
             var missing = 0;
             foreach (ref var item in e->Items)
-                if (item.ItemId != 0 && item.Flags.HasFlag(RaptureGearsetModule.GearsetItemFlag.ItemMissing)) missing++;
+                if (item.ItemId != 0 && (owned is null ? item.Flags.HasFlag(RaptureGearsetModule.GearsetItemFlag.ItemMissing) : !owned.Contains(item.ItemId % 1_000_000)))
+                    missing++;
             sets.Add(new Set(i + 1, e->NameString, e->ClassJob, job?.Abbreviation.ExtractText() ?? "?", job?.Name.ExtractText() ?? "?", e->ItemLevel,
                 i == current, job is { } j && j.DohDolJobIndex < 0, missing));
         }
         return sets;
+    }
+
+    private static readonly FFXIVClientStructs.FFXIV.Client.Game.InventoryType[] GearContainers =
+    [
+        FFXIVClientStructs.FFXIV.Client.Game.InventoryType.Inventory1, FFXIVClientStructs.FFXIV.Client.Game.InventoryType.Inventory2,
+        FFXIVClientStructs.FFXIV.Client.Game.InventoryType.Inventory3, FFXIVClientStructs.FFXIV.Client.Game.InventoryType.Inventory4,
+        FFXIVClientStructs.FFXIV.Client.Game.InventoryType.EquippedItems,
+        FFXIVClientStructs.FFXIV.Client.Game.InventoryType.ArmoryMainHand, FFXIVClientStructs.FFXIV.Client.Game.InventoryType.ArmoryOffHand,
+        FFXIVClientStructs.FFXIV.Client.Game.InventoryType.ArmoryHead, FFXIVClientStructs.FFXIV.Client.Game.InventoryType.ArmoryBody,
+        FFXIVClientStructs.FFXIV.Client.Game.InventoryType.ArmoryHands, FFXIVClientStructs.FFXIV.Client.Game.InventoryType.ArmoryWaist,
+        FFXIVClientStructs.FFXIV.Client.Game.InventoryType.ArmoryLegs, FFXIVClientStructs.FFXIV.Client.Game.InventoryType.ArmoryFeets,
+        FFXIVClientStructs.FFXIV.Client.Game.InventoryType.ArmoryEar, FFXIVClientStructs.FFXIV.Client.Game.InventoryType.ArmoryNeck,
+        FFXIVClientStructs.FFXIV.Client.Game.InventoryType.ArmoryWrist, FFXIVClientStructs.FFXIV.Client.Game.InventoryType.ArmoryRings,
+        FFXIVClientStructs.FFXIV.Client.Game.InventoryType.ArmorySoulCrystal,
+    ];
+
+    /// <summary>Item ids (without the HQ offset) in the bags, worn and in the armoury chest; null while a container isn't loaded. Framework thread.</summary>
+    private static unsafe HashSet<uint>? OwnedGear()
+    {
+        var inv = FFXIVClientStructs.FFXIV.Client.Game.InventoryManager.Instance();
+        if (inv == null) return null;
+        var ids = new HashSet<uint>();
+        foreach (var type in GearContainers)
+        {
+            var c = inv->GetInventoryContainer(type);
+            if (c == null || !c->IsLoaded) return null;
+            for (var i = 0; i < c->Size; i++)
+                if (c->GetInventorySlot(i)->ItemId is var id and not 0) ids.Add(id % 1_000_000);
+        }
+        return ids;
     }
 
     public static bool IsCombatJob(uint jobId) => Svc.Data.GetExcelSheet<ClassJob>().GetRowOrDefault(jobId) is { } j && j.DohDolJobIndex < 0 && jobId != 0;
