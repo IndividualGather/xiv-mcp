@@ -63,5 +63,17 @@ public static class ShoreFinder
             .Select(a => (centreX + Math.Sin(a) * radius, centreZ + Math.Cos(a) * radius))
             .ToList();
 
+    /// <summary>
+    /// Where to start walking to an edge point so the character arrives facing away from land, towards <paramref name="towardsX"/>/
+    /// <paramref name="towardsZ"/> (the water or the cloud sea): <paramref name="inland"/> yalms back from the edge, on the far side.
+    /// </summary>
+    public static (double X, double Z) ApproachFrom(double edgeX, double edgeZ, double towardsX, double towardsZ, double inland = 3)
+    {
+        var (dx, dz) = (edgeX - towardsX, edgeZ - towardsZ);
+        var length = Math.Sqrt(dx * dx + dz * dz);
+        if (length < 1e-6) return (edgeX, edgeZ);
+        return (edgeX + dx / length * inland, edgeZ + dz / length * inland);
+    }
+
     private static double Normalize(double a) => (a % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
 }

@@ -63,4 +63,16 @@ public class ShoreFinderTests
         Assert.All(targets, t => Assert.Equal(40, Math.Sqrt((t.X - 100) * (t.X - 100) + (t.Z - 200) * (t.Z - 200)), 3));
         Assert.Equal(8, targets.Select(t => (Math.Round(t.X), Math.Round(t.Z))).Distinct().Count());
     }
+
+    [Fact]
+    public void The_approach_starts_inland_so_the_character_arrives_facing_the_water()
+    {
+        // Edge at (10, 0), the cloud sea (spot centre) at the origin: start 3 yalms further out from the centre.
+        var (x, z) = ShoreFinder.ApproachFrom(10, 0, 0, 0, inland: 3);
+        Assert.Equal(13, x, 6);
+        Assert.Equal(0, z, 6);
+    }
+
+    [Fact]
+    public void The_approach_at_the_centre_itself_stays_put() => Assert.Equal((5.0, 5.0), ShoreFinder.ApproachFrom(5, 5, 5, 5));
 }

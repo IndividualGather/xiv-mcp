@@ -99,8 +99,62 @@ internal static partial class NavigationTools
     /// <summary>Near this spot (casting elsewhere fishes another spot), and as a Fisher, able to cast. Framework thread.</summary>
     internal static bool AtSpot(FishingPlace place) =>
         Svc.ClientState.TerritoryType == place.Territory && Svc.Objects.LocalPlayer is { } p &&
-        Vector2.Distance(new(p.Position.X, p.Position.Z), new(place.Centre.X, place.Centre.Z)) <= (p.ClassJob.RowId == FisherJob ? ShoreSearch : place.Radius) &&
+        Vector2.Distance(new(p.Position.X, p.Position.Z), new(place.Centre.X, place.Centre.Z)) <= (p.ClassJob.RowId == FisherJob ? ReachAsFisher(place) : place.Radius) &&
         (p.ClassJob.RowId != FisherJob || CanCast());
+
+    /// <summary>How far from a spot's centre a Fisher may cast and still fish it: the shore search radius, or farther where the
+    /// nearest edge lies farther out (cloud-sea spots, whose centre is over the void).</summary>
+    private static readonly Dictionary<uint, float> EdgeReach = new();
+
+    private static float ReachAsFisher(FishingPlace place) =>
+        EdgeReach.TryGetValue(place.Spot, out var edge) ? Math.Max(ShoreSearch, edge + 5) : ShoreSearch;
+
+    /// <summary>
+    /// Walks to the walkable point nearest the spot's centre, which is the edge of the land (a cloud-sea island, a pier) when the
+    /// centre lies off the mesh, arriving from a few yalms inland so the character faces the spot. Tries the points around the
+    /// ring at that distance as well. Returns whether Cast can be used. Framework calls inside.
+    /// </summary>
+    private static async Task<bool> WalkToEdge(FishingPlace place, List<string> steps, CancellationToken ct)
+    {
+        var edges = await Game.Run(() =>
+        {
+            var height = PlayerHeight();
+            var list = new List<Vector3>();
+            if (Ipc<Vector3, float, float, Vector3?>("vnavmesh.Query.Mesh.NearestPointReachable", place.Centre with { Y = height }, ShoreSearch * 4, 300f) is not { } nearest)
+                return list;
+            list.Add(nearest);
+            var ring = Vector2.Distance(new(nearest.X, nearest.Z), new(place.Centre.X, place.Centre.Z));
+            foreach (var (x, z) in XivMcp.Fishing.ShoreFinder.Sweep(place.Centre.X, place.Centre.Z, ring, 12))
+                if (Ipc<Vector3, float, float, Vector3?>("vnavmesh.Query.Mesh.NearestPointReachable", new Vector3((float)x, nearest.Y, (float)z), 8f, 30f) is { } point)
+                    list.Add(point);
+            return list;
+        }).ConfigureAwait(false);
+        if (edges.Count == 0) return false;
+        var reach = Vector2.Distance(new(edges[0].X, edges[0].Z), new(place.Centre.X, place.Centre.Z));
+        EdgeReach[place.Spot] = reach;
+        foreach (var edge in edges.Take(8))
+        {
+            ct.ThrowIfCancellationRequested();
+            phase = $"looking for the edge at {place.Name}";
+            var (ix, iz) = XivMcp.Fishing.ShoreFinder.ApproachFrom(edge.X, edge.Z, place.Centre.X, place.Centre.Z);
+            foreach (var target in new[] { new Vector3((float)ix, edge.Y, (float)iz), edge })
+            {
+                if (!await Game.Run(() => MoveCloseTo(target, 0.5f)).ConfigureAwait(false)) break;
+                await Task.Delay(300, ct).ConfigureAwait(false);
+                var until = DateTime.UtcNow.AddSeconds(20);
+                while (await Game.Run(() => PathRunning).ConfigureAwait(false) && DateTime.UtcNow < until)
+                    await Task.Delay(150, ct).ConfigureAwait(false);
+                await Game.Run(() => { StopMoving(); return true; }).ConfigureAwait(false);
+            }
+            await Task.Delay(400, ct).ConfigureAwait(false);
+            if (await Game.Run(() => AtSpot(place)).ConfigureAwait(false))
+            {
+                steps.Add($"vnavmesh: walked to the edge at {place.Name}, facing the spot.");
+                return true;
+            }
+        }
+        return false;
+    }
 
     private static float PlayerHeight() => Svc.Objects.LocalPlayer?.Position.Y ?? 0;
 
@@ -113,6 +167,7 @@ internal static partial class NavigationTools
     /// </summary>
     private static async Task WalkToShore(FishingPlace place, List<string> steps, CancellationToken ct)
     {
+        if (await WalkToEdge(place, steps, ct).ConfigureAwait(false)) return;
         var candidates = await Game.Run(() =>
         {
             var p = Svc.Objects.LocalPlayer!.Position;
