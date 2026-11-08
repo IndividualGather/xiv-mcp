@@ -437,16 +437,24 @@ internal static class MarketTools
 
     /// <summary>
     /// Opens a listing's context menu like a click on its row in the market list (the list's callback 0, row, 1, as AutoRetainer
-    /// uses). The row counts only filled market slots, in slot order. AgentInventoryContext on the market slot opens the menu of a
-    /// retainer item instead.
+    /// uses). The list shows its rows in its own order (by item, not by slot): AtkValues[9] is the row count, and each row has 13
+    /// values from index 10 on, the sixth being the market slot (recorded in game). AgentInventoryContext on the market slot opens
+    /// the menu of a retainer item instead.
     /// </summary>
     private static unsafe bool OpenListingMenu(int slot)
     {
         var list = GameWindows.Addon("RetainerSellList");
         if (list == null || !list->IsVisible) throw new ToolException("The retainer's market list isn't open.");
-        var row = ReadListings().Count(l => l.Slot < slot);
-        RetainerUi.Fire(list, true, 0, row, 1);
-        return true;
+        var rows = list->AtkValuesCount > 9 ? list->AtkValues[9].Int : 0;
+        for (var row = 0; row < rows; row++)
+        {
+            var i = 10 + 13 * row + 5;
+            if (i >= list->AtkValuesCount) break;
+            if (list->AtkValues[i].Type != AtkValueType.Int || list->AtkValues[i].Int != slot) continue;
+            RetainerUi.Fire(list, true, 0, row, 1);
+            return true;
+        }
+        throw new ToolException($"Market slot {slot} isn't shown in the retainer's market list.");
     }
 
     private static unsafe bool PickMenuEntry(IReadOnlySet<string> texts)
