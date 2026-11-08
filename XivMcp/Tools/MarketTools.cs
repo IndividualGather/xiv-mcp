@@ -435,11 +435,17 @@ internal static class MarketTools
         return isCrystal ? Math.Max(0, Transfers.CrystalMove.StackSize - have) : null;
     }
 
+    /// <summary>
+    /// Opens a listing's context menu like a click on its row in the market list (the list's callback 0, row, 1, as AutoRetainer
+    /// uses). The row counts only filled market slots, in slot order. AgentInventoryContext on the market slot opens the menu of a
+    /// retainer item instead.
+    /// </summary>
     private static unsafe bool OpenListingMenu(int slot)
     {
         var list = GameWindows.Addon("RetainerSellList");
         if (list == null || !list->IsVisible) throw new ToolException("The retainer's market list isn't open.");
-        AgentInventoryContext.Instance()->OpenForItemSlot(InventoryType.RetainerMarket, slot, 0, list->Id);
+        var row = ReadListings().Count(l => l.Slot < slot);
+        RetainerUi.Fire(list, true, 0, row, 1);
         return true;
     }
 
