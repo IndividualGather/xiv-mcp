@@ -289,6 +289,13 @@ internal static class AutoHookTools
                     case FishingAction.Stop:
                         throw new ToolException(decision.Reason!);
                     case FishingAction.Cast:
+                        // The preset's bait swap only happens once AutoHook acts; with no bait chosen in game the cast itself fails
+                        // ("No bait has been specified"), so put the first bait on before casting.
+                        if (await Game.Run(() => EnsureBait(guide.FirstBait)).ConfigureAwait(false))
+                        {
+                            log.Add($"Bait: {Items.Name(guide.FirstBait)}.");
+                            await Task.Delay(500, ct).ConfigureAwait(false);
+                        }
                         await Game.Run(() => { UseAction(NavigationTools.CastAction); return true; }).ConfigureAwait(false);
                         break;
                 }
@@ -314,6 +321,14 @@ internal static class AutoHookTools
         Svc.PluginInterface.GetIpcSubscriber<bool, object>("AutoHook.SetPluginState").InvokeAction(on);
 
     private static unsafe void UseAction(uint id) => ActionManager.Instance()->UseAction(ActionType.Action, id);
+
+    /// <summary>Puts <paramref name="bait"/> on through AutoHook when another (or none) is chosen; true when it switched. Framework thread.</summary>
+    private static unsafe bool EnsureBait(uint bait)
+    {
+        if (bait == 0 || FFXIVClientStructs.FFXIV.Client.Game.UI.PlayerState.Instance()->FishingBait == bait || Items.CountInBags(bait) == 0) return false;
+        Svc.PluginInterface.GetIpcSubscriber<uint, bool>("AutoHook.SwapBaitById").InvokeFunc(bait);
+        return true;
+    }
 
     /// <summary>AutoHook off and the line reeled in; with <paramref name="removePresets"/>, AutoHook's temporary presets are deleted too.</summary>
     private static async Task StopAll(bool removePresets = false)
