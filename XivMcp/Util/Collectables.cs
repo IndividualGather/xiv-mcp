@@ -17,6 +17,9 @@ internal static class Collectables
     /// <summary>What an appraiser pays for the item, or null if appraisers don't take it. Framework thread (reads the currency manager).</summary>
     public static unsafe Reward? RewardFor(uint itemId)
     {
+        // The shop sheet still lists items that can no longer be made as collectables (e.g. Heavensward lumber): only items the
+        // game marks as collectable can be turned in.
+        if (Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId) is not { } item || !(item.IsCollectable || item.AlwaysCollectable)) return null;
         foreach (var group in Svc.Data.GetSubrowExcelSheet<CollectablesShopItem>())
             foreach (var row in group)
             {
