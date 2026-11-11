@@ -91,6 +91,7 @@ internal static partial class NavigationTools
             var have = await Game.Run(() => Items.CountInBags(item.RowId)).ConfigureAwait(false);
             var kills = 0;
             ulong? fighting = null;
+            var lastAuto = DateTime.MinValue;
             var range = await Game.Run(() => MobFarm.Range((byte)(Svc.Objects.LocalPlayer?.ClassJob.ValueNullable?.Role ?? 3))).ConfigureAwait(false);
             try
             {
@@ -123,22 +124,29 @@ internal static partial class NavigationTools
                             break;
                         case MobFarmAction.Fight:
                             var pickedMob = fighting;
-                            await Game.Run(() =>
+                            var inCombat = view.InCombat;
+                            var sendAuto = DateTime.UtcNow - lastAuto > TimeSpan.FromSeconds(3);
+                            var autoSent = await Game.Run(() =>
                             {
                                 // The monster we picked: the game doesn't take a target that is far away, so keep setting it
                                 // while walking there, and fall back to the current target once a fight is on.
                                 var mob = pickedMob is { } id ? Svc.Objects.OfType<IBattleNpc>().FirstOrDefault(o => o.GameObjectId == id) : null;
                                 var t = mob ?? Svc.Targets.Target;
-                                if (t is null) return true;
+                                if (t is null) return false;
                                 if (mob is not null && Svc.Targets.Target?.GameObjectId != mob.GameObjectId) Svc.Targets.Target = mob;
                                 if (Game.DistanceToPlayer(t.Position) is { } d && d > range + t.HitboxRadius)
                                 {
                                     // Pathfinding again every half second would restart it each time and never move.
                                     if (!PathRunning) MoveCloseTo(t.Position, range + t.HitboxRadius - 0.5f);
+                                    return false;
                                 }
-                                else if (PathRunning) StopMoving();
-                                return true;
+                                if (PathRunning) StopMoving();
+                                // RotationSolver switches itself off after a fight, so the next monster is never attacked: in range
+                                // and not fighting yet, switch it on again (every few seconds, not every tick).
+                                if (!inCombat && sendAuto) { Svc.Commands.ProcessCommand("/rotation Auto"); return true; }
+                                return false;
                             }).ConfigureAwait(false);
+                            if (autoSent) lastAuto = DateTime.UtcNow;
                             break;
                         case MobFarmAction.ReturnToSpawn:
                             if (!await Game.Run(() => PathRunning).ConfigureAwait(false))
