@@ -122,12 +122,21 @@ internal static partial class NavigationTools
                             }).ConfigureAwait(false);
                             break;
                         case MobFarmAction.Fight:
+                            var pickedMob = fighting;
                             await Game.Run(() =>
                             {
-                                var t = Svc.Targets.Target;
-                                if (t is not null && Game.DistanceToPlayer(t.Position) is { } d && d > range + t.HitboxRadius)
-                                    MoveCloseTo(t.Position, range + t.HitboxRadius - 0.5f);
-                                else if (t is not null && !PathRunning) StopMoving();
+                                // The monster we picked: the game doesn't take a target that is far away, so keep setting it
+                                // while walking there, and fall back to the current target once a fight is on.
+                                var mob = pickedMob is { } id ? Svc.Objects.OfType<IBattleNpc>().FirstOrDefault(o => o.GameObjectId == id) : null;
+                                var t = mob ?? Svc.Targets.Target;
+                                if (t is null) return true;
+                                if (mob is not null && Svc.Targets.Target?.GameObjectId != mob.GameObjectId) Svc.Targets.Target = mob;
+                                if (Game.DistanceToPlayer(t.Position) is { } d && d > range + t.HitboxRadius)
+                                {
+                                    // Pathfinding again every half second would restart it each time and never move.
+                                    if (!PathRunning) MoveCloseTo(t.Position, range + t.HitboxRadius - 0.5f);
+                                }
+                                else if (PathRunning) StopMoving();
                                 return true;
                             }).ConfigureAwait(false);
                             break;

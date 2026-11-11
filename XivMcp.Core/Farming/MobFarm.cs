@@ -66,11 +66,14 @@ public static class MobFarm
         if (s.Have >= s.Wanted) return new(MobFarmAction.Done);
         if (s.Dead) return new(MobFarmAction.Fail, "The character died.");
         if (s.Elapsed > s.Timeout) return new(MobFarmAction.Fail, "Timed out.");
-        if (s.InCombat || s.TargetAlive) return new(MobFarmAction.Fight);
-        // HP comes back quickly out of combat (and is low right after a job change): rest instead of pulling the next one.
-        if (s.HpPercent < RestBelow) return new(MobFarmAction.Rest);
+        // Only a real fight runs past the stall limit: a chosen monster that is never fought (out of reach, the game didn't take
+        // the target) would otherwise keep the farm "fighting" forever.
+        if (s.InCombat) return new(MobFarmAction.Fight);
         if (s.SinceProgress > s.StallLimit)
             return new(MobFarmAction.Fail, $"No kill and no drop for {s.StallLimit.TotalMinutes:0} minutes (none spawn here, or they can't be reached).");
+        if (s.TargetAlive) return new(MobFarmAction.Fight);
+        // HP comes back quickly out of combat (and is low right after a job change): rest instead of pulling the next one.
+        if (s.HpPercent < RestBelow) return new(MobFarmAction.Rest);
         if (s.NearestMob is not null) return new(MobFarmAction.Engage);
         return s.DistanceToSpawn > SpawnRadius ? new(MobFarmAction.ReturnToSpawn) : new(MobFarmAction.Wait);
     }

@@ -22,6 +22,10 @@ public class MobFarmTests
     [Fact] public void Nothing_for_too_long_gives_up() => Assert.Equal(MobFarmAction.Fail, Next(sinceProgress: 11, nearest: 10));
     [Fact] public void The_timeout_stops_it() => Assert.Equal(MobFarmAction.Fail, Next(elapsed: 121));
 
+    // A chosen monster that is alive but never fought (out of reach, the game didn't take the target) must not hang the farm.
+    [Fact] public void A_target_never_fought_still_gives_up() => Assert.Equal(MobFarmAction.Fail, Next(target: true, sinceProgress: 11));
+    [Fact] public void A_real_fight_is_never_cut_off() => Assert.Equal(MobFarmAction.Fight, Next(combat: true, sinceProgress: 11));
+
     [Fact]
     public void The_best_combat_gearset_is_the_highest_complete_one()
     {
