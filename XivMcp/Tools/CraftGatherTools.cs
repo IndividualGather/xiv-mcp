@@ -462,6 +462,9 @@ internal static class CraftGatherTools
                 var used = lists.OfType<JsonObject>().Select(l => l["ID"]?.GetValue<int>() ?? 0).ToHashSet();
                 int id;
                 do id = Random.Shared.Next(10000, 99999); while (used.Contains(id));
+                // Artisan's own "new list" defaults (repair, materia extraction, skipping), as its UI applies them: without them
+                // a list never repairs and the gear breaks during a long list.
+                bool Default(string key, bool fallback) => root[key] is JsonValue v && v.TryGetValue<bool>(out var b) ? b : fallback;
                 list = new JsonObject
                 {
                     ["$type"] = "Artisan.CraftingLists.NewCraftingList, Artisan",
@@ -469,6 +472,12 @@ internal static class CraftGatherTools
                     ["Name"] = name,
                     ["Recipes"] = new JsonArray(),
                     ["ExpandedList"] = new JsonArray(),
+                    ["Repair"] = Default("DefaultListRepair", true),
+                    ["RepairPercent"] = root["DefaultListRepairPercent"] is JsonValue p && p.TryGetValue<int>(out var pct) ? pct : 50,
+                    ["Materia"] = Default("DefaultListMateria", false),
+                    ["SkipIfEnough"] = Default("DefaultListSkip", false),
+                    ["SkipLiteral"] = Default("DefaultListSkipLiteral", false),
+                    ["AddAsQuickSynth"] = Default("DefaultListQuickSynth", false),
                 };
                 lists.Add(list);
             }
