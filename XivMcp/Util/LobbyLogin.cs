@@ -277,7 +277,7 @@ internal static class LobbyLogin
         {
             var e = ptr.Value;
             if (e == null || e->ContentId == 0) continue;
-            dataCenters.Add(worlds.GetRowOrDefault(e->CurrentWorldId)?.DataCenter.RowId ?? 0);
+            dataCenters.Add((worlds.GetRowOrDefault(e->CurrentWorldId) is { } w ? Worlds.DataCenterId(w) : 0));
             if (!perWorld || e->CurrentWorldId == target.LobbyWorldId) onWorld.Add((e->ContentId, e->NameString, e->Index));
         }
         var ordered = onWorld.OrderBy(e => e.Index).ToList();

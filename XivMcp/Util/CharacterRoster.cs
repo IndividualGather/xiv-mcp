@@ -99,7 +99,7 @@ internal sealed class CharacterRoster : IDisposable
                     var current = worlds.GetRowOrDefault(f.Current);
                     var home = worlds.GetRowOrDefault(f.Home);
                     characters[f.Id] = new Character(f.Id, f.Name, f.Home, home?.Name.ExtractText() ?? "", f.Current, current?.Name.ExtractText() ?? "",
-                                                     current?.DataCenter.ValueNullable?.Name.ExtractText() ?? "", slot++, DateTime.UtcNow, key,
+                                                     Worlds.DataCenterName(current), slot++, DateTime.UtcNow, key,
                                                      serviceAccount >= 0 ? serviceAccount : characters.TryGetValue(f.Id, out var old) ? old.ServiceAccount : -1);
                 }
             }
@@ -126,7 +126,7 @@ internal sealed class CharacterRoster : IDisposable
             var home = worlds.GetRowOrDefault(Svc.PlayerState.HomeWorld.RowId);
             var cur = worlds.GetRowOrDefault(Svc.PlayerState.CurrentWorld.RowId);
             characters[me] = new Character(me, player.Name.TextValue, Svc.PlayerState.HomeWorld.RowId, home?.Name.ExtractText() ?? "",
-                                           Svc.PlayerState.CurrentWorld.RowId, cur?.Name.ExtractText() ?? "", cur?.DataCenter.ValueNullable?.Name.ExtractText() ?? "",
+                                           Svc.PlayerState.CurrentWorld.RowId, cur?.Name.ExtractText() ?? "", Worlds.DataCenterName(cur),
                                            -1, DateTime.UtcNow, key);
             Save();
         }

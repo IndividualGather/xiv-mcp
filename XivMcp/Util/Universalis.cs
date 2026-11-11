@@ -87,7 +87,7 @@ internal static class Universalis
     public static (string World, string DataCenter, string Region) HomeScopes()
     {
         var world = Svc.PlayerState.HomeWorld.ValueNullable ?? throw new ToolException("Home world unknown; log in first.");
-        var dc = world.DataCenter.ValueNullable;
+        var dc = Worlds.DataCenter(world);
         var region = dc?.Region.RowId switch { 1 => "Japan", 2 => "North-America", 3 => "Europe", 4 => "Oceania", 5 => "China", 6 => "Korea", _ => "Europe" };
         return (world.Name.ExtractText(), dc?.Name.ExtractText() ?? world.Name.ExtractText(), region);
     }

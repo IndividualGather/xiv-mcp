@@ -126,7 +126,7 @@ internal static class LoginTools
                         var me = Svc.PlayerState.ContentId;
                         var known = roster.All().FirstOrDefault(c => c.ContentId == me);
                         var world = Svc.PlayerState.CurrentWorld.Value;
-                        return new LobbyLogin.Target(Svc.Objects.LocalPlayer!.Name.TextValue, me, world.RowId, world.Name.ExtractText(), world.DataCenter.RowId,
+                        return new LobbyLogin.Target(Svc.Objects.LocalPlayer!.Name.TextValue, me, world.RowId, world.Name.ExtractText(), XivMcp.Util.Worlds.DataCenterId(world),
                                                      known is { ServiceAccount: >= 0 } k ? k.ServiceAccount : null);
                     }).ConfigureAwait(false);
                     var who = await LobbyLogin.Run(target, TimeSpan.FromMinutes(5), steps.Add, ct, relog: true).ConfigureAwait(false);
@@ -184,8 +184,8 @@ internal static class LoginTools
                         EnsureSafeToLogOut();
                         if (automatic) Svc.PluginInterface.GetIpcSubscriber<string, object>("Lifestream.ExecuteCommand").InvokeAction(world.Name.ExtractText());
                         var current = Svc.Data.GetExcelSheet<World>().GetRowOrDefault(Svc.PlayerState.CurrentWorld.RowId);
-                        return (world.RowId, Name: world.Name.ExtractText(), Dc: world.DataCenter.ValueNullable?.Name.ExtractText(),
-                                SameDc: current?.DataCenter.RowId == world.DataCenter.RowId);
+                        return (world.RowId, Name: world.Name.ExtractText(), Dc: XivMcp.Util.Worlds.DataCenterName(world),
+                                SameDc: current is { } cw && XivMcp.Util.Worlds.DataCenterId(cw) == XivMcp.Util.Worlds.DataCenterId(world));
                     }).ConfigureAwait(false);
                     if (!automatic) XivMcp.Util.PlayerGuide.Ask(XivMcp.Maps.PlayerGuidance.VisitWorld(target.Name, target.Dc ?? "", target.SameDc));
 
@@ -231,7 +231,7 @@ internal static class LoginTools
                 throw new ToolException($"{c.Name} ({c.HomeWorld}) was seen on a different account than the one in use; switching accounts needs " +
                                         "logging out to the launcher and signing in with that account.");
             var w = Svc.Data.GetExcelSheet<World>().GetRow(c.CurrentWorldId);
-            return new LobbyLogin.Target(c.Name, c.ContentId, w.RowId, w.Name.ExtractText(), w.DataCenter.RowId,
+            return new LobbyLogin.Target(c.Name, c.ContentId, w.RowId, w.Name.ExtractText(), XivMcp.Util.Worlds.DataCenterId(w),
                                          serviceAccount ?? (c.ServiceAccount >= 0 ? c.ServiceAccount : null));
         }
 
@@ -240,7 +240,7 @@ internal static class LoginTools
             throw new ToolException($"XIV MCP hasn't seen '{name}' in a character list yet; give its home 'world' " +
                                     "(and 'service_account' if your account has several).");
         var home = PublicWorld(world);
-        return new LobbyLogin.Target(name, 0, home.RowId, home.Name.ExtractText(), home.DataCenter.RowId, serviceAccount);
+        return new LobbyLogin.Target(name, 0, home.RowId, home.Name.ExtractText(), XivMcp.Util.Worlds.DataCenterId(home), serviceAccount);
     }
 
     private static World PublicWorld(string name)
