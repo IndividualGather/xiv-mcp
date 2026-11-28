@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 
@@ -65,14 +66,18 @@ public static class GearSlots
 /// <summary>One piece of a fashion report set: the slot, the item and (if the set dyes it) the dye color.</summary>
 public sealed record FashionPiece(string Slot, string Item, string? Dye);
 
-/// <summary>A ready-made set (easy 80 or easy 100 points): its pieces, dyes for slots it doesn't fill, and whether it is this week's.</summary>
-public sealed record FashionSet(IReadOnlyList<FashionPiece> Pieces, IReadOnlyList<(string Slot, string Dye)> OtherDyes, bool Fresh);
+/// <summary>
+/// A ready-made set (easy 80 or easy 100 points): its pieces, dyes for slots it doesn't fill, whether the site marks it as this week's,
+/// and when the site last updated it (UTC; null when the site does not say).
+/// </summary>
+public sealed record FashionSet(IReadOnlyList<FashionPiece> Pieces, IReadOnlyList<(string Slot, string Dye)> OtherDyes, bool Fresh, DateTime? PostedUtc = null);
 
 public sealed record FashionHint(string Hint, string Slot);
 
 /// <summary>This week's Fashion Report as fashionreportxiv.com publishes it (its /api/report-state).</summary>
 public sealed record WeeklyReport(int Week, string Theme, IReadOnlyList<FashionHint> Hints, FashionSet Easy80, FashionSet Easy100, string? Theorycraft)
 {
+
     public static WeeklyReport Parse(string json)
     {
         using var doc = JsonDocument.Parse(json);
@@ -102,7 +107,10 @@ public sealed record WeeklyReport(int Week, string Theme, IReadOnlyList<FashionH
             : [];
         var other = dyes.Where(x => pieces.All(p => p.Slot != x.Slot)).Select(x => (x.Slot, x.Dye!)).ToList();
         var fresh = root.TryGetProperty(name + "Fresh", out var f) && f.ValueKind == JsonValueKind.True;
-        return new FashionSet(pieces, other, fresh);
+        DateTime? posted = set.TryGetProperty("_updatedAt", out var u) && u.ValueKind == JsonValueKind.Number && u.TryGetInt64(out var ms)
+            ? DateTimeOffset.FromUnixTimeMilliseconds(ms).UtcDateTime
+            : null;
+        return new FashionSet(pieces, other, fresh, posted);
     }
 
     /// <summary>"Snow White Dye" → "Snow White" (the game's color name); empty → null.</summary>
@@ -143,11 +151,84 @@ public static class FashionPlan
 /// <summary>When the Masked Rose judges: from Friday 08:00 UTC until the weekly reset on Tuesday 08:00 UTC.</summary>
 public static class FashionSchedule
 {
-    public static bool IsJudgingOpen(DateTime utc)
+    private static readonly TimeSpan Week = TimeSpan.FromDays(7), ResetToOpening = TimeSpan.FromDays(3);
+
+    /// <summary>The reset that began week 0, a week before the first Fashion Report (patch 4.2), so weeks count as the guides number them.</summary>
+    private static readonly DateTime WeekZero = new(2018, 1, 23, 8, 0, 0, DateTimeKind.Utc);
+
+    /// <summary>The Fashion Report week at <paramref name="utc"/>, numbered as fashionreportxiv.com and the weekly guides do.</summary>
+    public static int WeekAt(DateTime utc) => (int)((LastReset(utc) - WeekZero).Ticks / Week.Ticks);
+
+    public static bool IsJudgingOpen(DateTime utc) => utc >= LastReset(utc) + ResetToOpening;
+
+    /// <summary>The weekly reset at or before <paramref name="utc"/>: Tuesday 08:00 UTC, when the week's themes change.</summary>
+    public static DateTime LastReset(DateTime utc)
     {
-        var hoursSinceMonday = ((int)utc.DayOfWeek + 6) % 7 * 24 + utc.Hour; // Monday 00:00 = 0
-        const int tuesdayReset = 24 + 8, fridayOpen = 4 * 24 + 8;
-        return hoursSinceMonday >= fridayOpen || hoursSinceMonday < tuesdayReset;
+        var tuesday = utc.Date.AddDays(-(((int)utc.DayOfWeek - (int)DayOfWeek.Tuesday + 7) % 7)).AddHours(8);
+        return tuesday > utc ? tuesday - Week : tuesday;
+    }
+
+    /// <summary>This week's judging: from Friday 08:00 UTC after the last reset until the next reset. Both lie ahead before Friday.</summary>
+    public static (DateTime Opens, DateTime Closes) JudgingPeriod(DateTime utc)
+    {
+        var reset = LastReset(utc);
+        return (reset + ResetToOpening, reset + Week);
+    }
+
+}
+
+/// <summary>
+/// The site's guide seen at one moment: its week and the week it is now, whether its theme and hints are this week's, whether the
+/// set is, and when judging runs. The site posts a week's hints first, then the dyes, then the sets, so for a while on Friday the
+/// hints are this week's and the set is not. A set counts as this week's when the site shows this week and marks the set as
+/// posted; a guide kept from before the reset turns old at the reset.
+/// </summary>
+public sealed record ReportStatus(int Week, int CurrentWeek, bool HintsAreThisWeeks, bool SetIsThisWeeks, DateTime? SetPostedUtc, bool JudgingOpen,
+                                  DateTime JudgingOpensUtc, DateTime JudgingClosesUtc)
+{
+    public static ReportStatus Of(WeeklyReport report, FashionSet set, DateTime utc)
+    {
+        var (opens, closes) = FashionSchedule.JudgingPeriod(utc);
+        var current = FashionSchedule.WeekAt(utc);
+        var hints = report.Week == current;
+        return new ReportStatus(report.Week, current, hints, hints && set.Fresh, set.PostedUtc, FashionSchedule.IsJudgingOpen(utc), opens, closes);
+    }
+}
+
+/// <summary>What the player is asked in game before the Fashion Report job starts for a set that is not ready to present.</summary>
+public static class FashionApproval
+{
+    public const string Title = "Start the Fashion Report job anyway?";
+
+    /// <summary>
+    /// Why to ask: judging is closed, or the set is not this week's (then also <paramref name="outfit"/>, the lines saying what would be
+    /// worn, bought and dyed, so the player sees it). Empty when judging is open and the set is this week's: then nobody is asked.
+    /// </summary>
+    public static IReadOnlyList<string> Reasons(ReportStatus status, IReadOnlyList<string> outfit)
+    {
+        var reasons = new List<string>();
+        if (!status.JudgingOpen)
+            reasons.Add($"Judging is closed until {status.JudgingOpensUtc.ToString("ddd d MMM HH:mm", CultureInfo.InvariantCulture)} UTC: " +
+                        "the outfit would be prepared, not presented.");
+        if (!status.SetIsThisWeeks)
+        {
+            reasons.Add(!status.HintsAreThisWeeks
+                ? $"This outfit is for week {status.Week}, an earlier week. This week is week {status.CurrentWeek}."
+                : $"fashionreportxiv.com has this week's hints but has not posted this week's set yet: this one is from an earlier week.");
+            reasons.AddRange(outfit);
+        }
+        return reasons;
+    }
+
+    /// <summary>A ready-made set as approval lines: its pieces (with their dyes) and the dyes for slots it has no piece for.</summary>
+    public static IReadOnlyList<string> SetLines(FashionSet set)
+    {
+        var lines = new List<string>();
+        if (set.Pieces.Count > 0)
+            lines.Add("Pieces: " + string.Join(", ", set.Pieces.Select(p => $"{p.Item} ({p.Slot}{(p.Dye is null ? "" : $", {p.Dye}")})")) + ".");
+        if (set.OtherDyes.Count > 0)
+            lines.Add("Dyes: " + string.Join(", ", set.OtherDyes.Select(d => $"{d.Slot} {d.Dye}")) + ".");
+        return lines;
     }
 }
 

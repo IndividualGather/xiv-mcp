@@ -12,6 +12,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Excel.Sheets;
+using XivMcp.Caching;
 using XivMcp.Fashion;
 using XivMcp.Gear;
 using XivMcp.Maps;
@@ -29,6 +30,14 @@ internal static class FashionTools
 {
     private const string ReportUrl = "https://fashionreportxiv.com/api/report-state";
     private const uint MaskedRose = 1025176;
+
+    /// <summary>"Passion for Fashion", the quest that unlocks the Fashion Report.</summary>
+    private const uint UnlockQuest = 68617;
+
+    /// <summary>The site's guide (theme, hints and sets), shared by the tools for a few minutes so calls one after another download it once.</summary>
+    private static readonly TimedCache<string, WeeklyReport> Reports = new(TimeSpan.FromMinutes(5));
+    private static readonly TimeSpan ReportTimeout = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan ConsentTimeout = TimeSpan.FromMinutes(2);
 
     /// <summary>The Gold Saucer VIP Card (item) and the bonus it grants (status).</summary>
     private const uint VipCardItem = 14947, VipCardStatus = 1079;
@@ -124,25 +133,50 @@ internal static class FashionTools
             Name = "get_fashion_report",
             Description = "This week's Fashion Report from fashionreportxiv.com: the theme, the hint per slot, and the ready-made 'easy 80' and 'easy " +
                           "100' sets with their dyes. For each piece: whether the player has it and where (bags, armoury chest, a retainer, the " +
-                          "glamour dresser, the armoire), whether a vendor sells it, and whether the player has the dye. Also whether judging is " +
-                          "open (Friday to the Tuesday reset), and the attempts left and high score once the Masked Rose was talked to this " +
-                          "session. complete_fashion_report does the rest. Goes online (Online lookups in /xivmcp).",
+                          "glamour dresser, the armoire), whether a vendor sells it, and whether the player has the dye. 'week' is the site's " +
+                          "week and 'currentWeek' the week it is now. From the Tuesday reset until the site posts the new week (some time after " +
+                          "judging opens) the theme, hints and set are left out, as they are an earlier week's; the site posts the hints first, " +
+                          "so for a while the theme and hints are there and the set is not (setIsThisWeeks false). Also when judging opens and " +
+                          "closes (Friday 08:00 UTC to the Tuesday reset; both ahead before Friday), " +
+                          "whether the player unlocked the Fashion Report, and the attempts left and high score once the Masked Rose was talked " +
+                          "to this session. The site's guide is kept for 5 minutes ('fetchedAt'), shared with complete_fashion_report. " +
+                          "complete_fashion_report does the rest. Goes online (Online lookups in /xivmcp).",
             InputSchema = """{ "type": "object", "properties": { "set": { "type": "string", "enum": ["easy80", "easy100"], "description": "Which set to check (default easy80)." } } }""",
             Handler = async (args, ct) =>
             {
-                var report = await FetchReport(ct).ConfigureAwait(false);
-                var set = args.String("set") == "easy100" ? report.Easy100 : report.Easy80;
-                var pieces = await Game.RunLoggedIn(() => set.Pieces.Select(p => Inspect(p, retainers)).ToList()).ConfigureAwait(false);
+                var (report, fetchedAt) = await FetchReport(ct).ConfigureAwait(false);
+                var setName = args.String("set") ?? "easy80";
+                var set = setName == "easy100" ? report.Easy100 : report.Easy80;
+                var status = ReportStatus.Of(report, set, DateTime.UtcNow);
+                var unlocked = await Game.RunLoggedIn(Unlocked).ConfigureAwait(false);
                 var state = await Game.Run(ReportState).ConfigureAwait(false);
+                var facts = new
+                {
+                    week = status.Week, currentWeek = status.CurrentWeek, hintsAreThisWeeks = status.HintsAreThisWeeks, set = setName, setIsThisWeeks = status.SetIsThisWeeks,
+                    setPostedAt = status.SetPostedUtc, fetchedAt,
+                    judgingOpen = status.JudgingOpen, judgingOpensAt = status.JudgingOpensUtc, judgingClosesAt = status.JudgingClosesUtc,
+                    unlocked, unlockQuest = unlocked ? null : await Game.Run(UnlockQuestText).ConfigureAwait(false),
+                    attemptsLeft = state?.Remaining, highScore = state?.HighScore,
+                };
+                if (!status.HintsAreThisWeeks) return facts;
+                if (!status.SetIsThisWeeks)
+                    return new
+                    {
+                        facts.week, facts.currentWeek, theme = report.Theme, hints = report.Hints.Select(h => new { h.Slot, h.Hint }),
+                        facts.hintsAreThisWeeks, facts.set, facts.setIsThisWeeks, facts.setPostedAt, facts.fetchedAt,
+                        facts.judgingOpen, facts.judgingOpensAt, facts.judgingClosesAt, facts.unlocked, facts.unlockQuest,
+                        facts.attemptsLeft, facts.highScore,
+                    };
+                var pieces = await Game.RunLoggedIn(() => set.Pieces.Select(p => Inspect(p, retainers)).ToList()).ConfigureAwait(false);
                 return new
                 {
-                    week = report.Week, theme = report.Theme,
+                    facts.week, facts.currentWeek, theme = report.Theme,
                     hints = report.Hints.Select(h => new { h.Slot, h.Hint }),
-                    set = args.String("set") ?? "easy80", setIsThisWeeks = set.Fresh,
+                    facts.hintsAreThisWeeks, facts.set, facts.setIsThisWeeks, facts.setPostedAt, facts.fetchedAt,
                     pieces = pieces.Select(p => p.Describe()),
                     otherDyes = set.OtherDyes.Select(d => new { slot = d.Slot, dye = d.Dye }),
-                    judgingOpen = FashionSchedule.IsJudgingOpen(DateTime.UtcNow),
-                    attemptsLeft = state?.Remaining, highScore = state?.HighScore,
+                    facts.judgingOpen, facts.judgingOpensAt, facts.judgingClosesAt, facts.unlocked, facts.unlockQuest,
+                    facts.attemptsLeft, facts.highScore,
                     theorycraft = report.Theorycraft,
                 };
             },
@@ -153,7 +187,8 @@ internal static class FashionTools
             Name = "present_fashion_report",
             Description = "Presents the player's outfit to the Masked Rose at the Gold Saucer for this week's Fashion Report (Friday to the Tuesday " +
                           "reset): puts on the given 'items' first (from the bags or armoury chest), goes to the Masked Rose, chooses to be " +
-                          "judged and confirms, and returns the score. Right before talking to her it uses a Gold Saucer VIP Card (more MGP) unless " +
+                          "judged and confirms, and returns the score. For an outfit of the player's choosing; complete_fashion_report gets and dyes the " +
+                          "site's ready-made set and ends with this. Right before talking to her it uses a Gold Saucer VIP Card (more MGP) unless " +
                           "its bonus is already active, if the setting in /xivmcp says so (on by default) or 'use_vip_card' is true. " +
                           "Pieces complete_fashion_report bought for the report are thrown away after judging when cheap enough, if the setting says so and the player approves in game. The look counts as worn, including glamours and dyes. Each week has 4 " +
                           "attempts; the best one counts.",
@@ -186,8 +221,10 @@ internal static class FashionTools
                           "plans how to get each piece the player doesn't carry (from a retainer at a summoning bell, the glamour dresser or " +
                           "armoire in an inn room, a vendor, the market board up to 'max_market_price', or a dungeon with AutoDuty), the dyes, and starts one background job that gets the pieces, dyes them, puts " +
                           "them on and presents the outfit to the Masked Rose. Pieces with no known way to get them stop it before it starts " +
-                          "(see get_item_sources). Follow it with get_job. Goes online for the report (Online lookups in /xivmcp); each step " +
-                          "follows its own module.",
+                          "(see get_item_sources). When judging is closed (then the job only prepares the outfit) or the site's set is not this " +
+                          "week's yet (see get_fashion_report), the player is asked in game first, with the reasons; if they decline, the error " +
+                          "repeats what they were told. Follow it with get_job. Goes online for the site's guide (Online lookups in /xivmcp; it is " +
+                          "kept for 5 minutes, shared with get_fashion_report); each step follows its own module.",
             InputSchema = """
                 {
                   "type": "object",
@@ -203,9 +240,10 @@ internal static class FashionTools
                 if (config.CorePolicy.ModeFor("online", Access.Read) == PolicyMode.Deny)
                     throw new ToolException("This reads the weekly report online: allow 'Online lookups' in /xivmcp → Modules.");
                 var setName = args.String("set") ?? "easy80";
-                var report = await FetchReport(ct).ConfigureAwait(false);
+                var (report, _) = await FetchReport(ct).ConfigureAwait(false);
                 var set = setName == "easy100" ? report.Easy100 : report.Easy80;
                 if (set.Pieces.Count == 0) throw new ToolException($"fashionreportxiv.com has no {setName} set this week yet.");
+                await ApproveUnready(ReportStatus.Of(report, set, DateTime.UtcNow), set, args.Caller, ct).ConfigureAwait(false);
                 var pieces = await Game.RunLoggedIn(() => set.Pieces.Select(p => Inspect(p, retainers)).ToList()).ConfigureAwait(false);
                 // Pieces with no other way: a dungeon that drops them, if AutoDuty can run one.
                 var duties = new Dictionary<uint, (uint TerritoryType, string Name, string Mode)>();
@@ -337,20 +375,56 @@ internal static class FashionTools
         };
     }
 
-    private static async Task<WeeklyReport> FetchReport(CancellationToken ct)
+    private static Task<Fetched<WeeklyReport>> FetchReport(CancellationToken ct) => Reports.Get(ReportUrl, DownloadReport, ct);
+
+    /// <summary>
+    /// Downloads the site's guide. It has a timeout of its own rather than a caller's token: other calls may be waiting for the same download
+    /// (see <see cref="Reports"/>).
+    /// </summary>
+    private static async Task<WeeklyReport> DownloadReport()
     {
+        using var timeout = new CancellationTokenSource(ReportTimeout);
         try
         {
             using var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, ReportUrl);
-            using var response = await Teamcraft.Http.SendAsync(request, ct).ConfigureAwait(false);
+            using var response = await Teamcraft.Http.SendAsync(request, timeout.Token).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
-            return WeeklyReport.Parse(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+            return WeeklyReport.Parse(await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false));
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            throw new ToolException($"fashionreportxiv.com did not answer within {ReportTimeout.TotalSeconds:0} seconds.");
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not ToolException)
         {
             throw new ToolException($"Could not read this week's report from fashionreportxiv.com: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// Asks the player in game before preparing a set that can't be presented as it is: judging is closed, or the set is an earlier
+    /// week's. Nothing is asked when neither is true. Declining (or no answer) stops the call, and the error repeats what the player
+    /// was told so the assistant knows why.
+    /// </summary>
+    private static async Task ApproveUnready(ReportStatus status, FashionSet set, Permissions.Caller? caller, CancellationToken ct)
+    {
+        var reasons = FashionApproval.Reasons(status, FashionApproval.SetLines(set));
+        if (reasons.Count == 0) return;
+        var request = new Consent.Request(FashionApproval.Title, reasons)
+        {
+            Deadline = DateTime.UtcNow + ConsentTimeout,
+            Source = caller?.Name ?? "your AI assistant",
+        };
+        if (await Consent.Ask(request, ConsentTimeout, ct).ConfigureAwait(false) != ApprovalDecision.Denied) return;
+        var told = $"The approval said: {string.Join(" ", reasons)}";
+        throw new ToolException(DateTime.UtcNow >= request.Deadline
+            ? $"No answer in game within {ConsentTimeout.TotalSeconds:0} s; nothing was done. Ask the player to watch for the XIV MCP approval window. {told}"
+            : $"The player declined in game; nothing was done. {told}");
+    }
+
+    private static unsafe bool Unlocked() => QuestManager.IsQuestComplete(UnlockQuest);
+
+    private static string UnlockQuestText() => $"{Excel.NameOf<Quest>(UnlockQuest) ?? "Passion for Fashion"}, from Lewena in the Gold Saucer";
 
     private static unsafe (int Remaining, int HighScore)? ReportState()
     {

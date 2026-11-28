@@ -12,9 +12,11 @@ These tools have their own module, **Gold Saucer**, under **Integrations maintai
 
 ## Fashion Report
 
+fashionreportxiv.com posts two ready-made outfits each week: one with easy-to-get pieces that scores 80 points, which is enough for the full MGP reward, and one that scores 100 and may need harder pieces.
+
 | Tool | What it does |
 |---|---|
-| `get_fashion_report` | This week's theme, hints and ready-made sets from [fashionreportxiv.com](https://fashionreportxiv.com), with where you have each piece and whether you have its dye. Goes online (*Online lookups*). |
+| `get_fashion_report` | This week's theme, hints and ready-made sets from [fashionreportxiv.com](https://fashionreportxiv.com), with where you have each piece and whether you have its dye. Also when judging opens and closes, and whether you unlocked the Fashion Report. Until the site posts this week's set, it only says which week the site shows and which week it is now. Goes online (*Online lookups*). |
 | `complete_fashion_report` | Starts one background job for the "easy 80" set (or "easy 100"): gets the pieces, dyes them, puts them on and presents the outfit. |
 | `present_fashion_report` | Puts on the given pieces, walks to the Masked Rose and presents your outfit for judging. |
 
@@ -33,6 +35,14 @@ Right before presenting, XIV MCP uses a **Gold Saucer VIP Card** from your bags 
 After the judging, the job puts your gearset back on and, once you approve in game (the approval lists the pieces), **throws away the pieces it bought** (from a vendor or the market board) that are worth 5,000 gil or less: the vendor price, otherwise the lowest market board listing on your world. Only pieces the job itself bought can be thrown away: pieces you had already, or took from a retainer, the glamour dresser or the armoire, never are, and neither is a piece whose value is unknown. Turn this off or change the limit in `/xivmcp` → Modules → Gold Saucer → *Discard cheap pieces bought for the Fashion Report*. The gearset's glamour plate can't be applied in the Gold Saucer, so put it on again somewhere else.
 
 The Masked Rose judges from Friday 08:00 UTC until the weekly reset on Tuesday. Outside that, the job only prepares the outfit.
+
+### When the set is not ready
+
+fashionreportxiv.com posts each week some time after judging opens on Friday: first the hints, then the dyes once players have found them, then the ready-made sets. From the Tuesday reset until then, it still shows the week before. XIV MCP counts the weeks since the first Fashion Report in January 2018, the way the weekly guides number them, so it knows which week it is; a set counts as this week's when the site shows this week and has posted the set.
+
+Before `complete_fashion_report` starts a job while judging is closed, or for a set that is not this week's, XIV MCP asks you in game. The approval says why: when judging opens, and which week the set is for, with its pieces and dyes. If you decline, nothing is done, and your assistant is told what the approval said.
+
+The site's guide is kept for 5 minutes, so `get_fashion_report` and `complete_fashion_report` called one after another download it once.
 
 ## Triple Triad
 
