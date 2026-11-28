@@ -74,6 +74,7 @@ public class GearSlotTests
     [InlineData("ear", GearSlots.Ears)]
     [InlineData("wrist", GearSlots.Wrists)]
     [InlineData("ring", GearSlots.RingRight)]
+    [InlineData("left_ring", GearSlots.RingLeft)]
     public void Fashion_report_slot_names_map_to_gear_slots(string name, int slot)
     {
         Assert.Equal(slot, GearSlots.FromName(name));
@@ -133,42 +134,6 @@ public class WeeklyReportTests
         Assert.Null(easy100.Pieces.Single(p => p.Slot == "body").Dye);
         Assert.Equal(("head", "Snow White"), Assert.Single(easy100.OtherDyes));
         Assert.False(easy100.Fresh);
-    }
-}
-
-public class FashionSourceTests
-{
-    private static ItemWhereabouts Where(bool bags = false, string? retainer = null, bool dresser = false, bool armoire = false,
-                                         bool vendor = false, bool duty = false, bool market = false) =>
-        new(bags, retainer, dresser, armoire, vendor, duty, market);
-
-    [Fact]
-    public void An_item_you_carry_needs_nothing()
-    {
-        Assert.Equal(ItemSource.Have, FashionPlan.Choose(Where(bags: true, retainer: "Retainer A", vendor: true)));
-    }
-
-    [Fact]
-    public void Stored_items_come_before_buying()
-    {
-        Assert.Equal(ItemSource.Retainer, FashionPlan.Choose(Where(retainer: "Retainer A", dresser: true, vendor: true)));
-        Assert.Equal(ItemSource.GlamourDresser, FashionPlan.Choose(Where(dresser: true, armoire: true, vendor: true)));
-        Assert.Equal(ItemSource.Armoire, FashionPlan.Choose(Where(armoire: true, vendor: true)));
-    }
-
-    [Fact]
-    public void The_market_board_comes_after_vendors_and_before_dungeons()
-    {
-        Assert.Equal(ItemSource.Vendor, FashionPlan.Choose(Where(vendor: true, market: true)));
-        Assert.Equal(ItemSource.Market, FashionPlan.Choose(Where(market: true, duty: true)));
-    }
-
-    [Fact]
-    public void Buying_comes_before_running_a_dungeon_and_nothing_means_missing()
-    {
-        Assert.Equal(ItemSource.Vendor, FashionPlan.Choose(Where(vendor: true, duty: true)));
-        Assert.Equal(ItemSource.Duty, FashionPlan.Choose(Where(duty: true)));
-        Assert.Equal(ItemSource.None, FashionPlan.Choose(Where()));
     }
 }
 
@@ -266,5 +231,164 @@ public class FashionCleanupTests
     public void The_vendor_price_counts_before_the_market_price()
     {
         Assert.True(FashionCleanup.ShouldDiscard(ItemSource.Vendor, 900, 20000, 5000));
+    }
+}
+
+public class FashionWeekTests
+{
+    // Week 460 as fashionreportxiv.com showed it on Wednesday 2026-11-25: posted on Friday 2026-11-20, marked old after the reset.
+    private static string Json(bool fresh = false, long? updated = 1795167893814, int week = 460) => $$"""
+        {"lastOptions":{"week":"{{week}}","reportTitle":"Dread Sky Pirate Mod-beard","hints":[{"hint":"Jewels of Yellow","slot":"neck","ringNote":"none"}]},
+         "easy100":{"itemPairs":[{"slot":"neck","name":"Sphene Choker"}],"dyes":{"hands":"Charcoal Grey"}{{(updated is { } u ? $",\"_updatedAt\":{u - 1000}" : "")}}},
+         "easy80":{"itemPairs":[{"slot":"neck","name":"Sphene Choker"}],"dyes":{"hands":"Charcoal Grey","legs":"Charcoal Grey"}{{(updated is { } v ? $",\"_updatedAt\":{v}" : "")}}},
+         "easy80Fresh":{{(fresh ? "true" : "false")}},"easy100Fresh":{{(fresh ? "true" : "false")}}}
+        """;
+
+    private static DateTime Utc(string s) => DateTime.Parse(s, null, System.Globalization.DateTimeStyles.AdjustToUniversal);
+
+    private static readonly DateTime Posted = Utc("2026-11-20T09:44:53.814Z");
+
+    private static ReportStatus Status(string utc, bool fresh = false, long? updated = 1795167893814, int week = 460)
+    {
+        var report = WeeklyReport.Parse(Json(fresh, updated, week));
+        return ReportStatus.Of(report, report.Easy80, Utc(utc));
+    }
+
+    [Fact]
+    public void A_set_has_the_time_the_site_updated_it()
+    {
+        var report = WeeklyReport.Parse(Json());
+        Assert.Equal(Posted, report.Easy80.PostedUtc);
+        Assert.Null(WeeklyReport.Parse(Json(updated: null)).Easy80.PostedUtc);
+    }
+
+    [Theory]
+    [InlineData("2026-11-25T10:00:00Z", "2026-11-24T08:00:00Z")] // Wednesday
+    [InlineData("2026-11-24T08:00:00Z", "2026-11-24T08:00:00Z")] // the reset itself
+    [InlineData("2026-11-24T07:59:00Z", "2026-11-17T08:00:00Z")] // just before it
+    [InlineData("2026-11-23T20:00:00Z", "2026-11-17T08:00:00Z")] // Monday
+    public void The_last_reset_is_the_tuesday_at_08_utc_before(string utc, string reset)
+    {
+        Assert.Equal(Utc(reset), FashionSchedule.LastReset(Utc(utc)));
+    }
+
+    [Fact]
+    public void Before_friday_judging_opens_and_closes_ahead()
+    {
+        Assert.Equal((Utc("2026-11-27T08:00:00Z"), Utc("2026-12-01T08:00:00Z")), FashionSchedule.JudgingPeriod(Utc("2026-11-25T10:00:00Z")));
+    }
+
+    [Fact]
+    public void While_judging_runs_it_opened_on_friday_and_closes_at_the_reset()
+    {
+        Assert.Equal((Utc("2026-11-20T08:00:00Z"), Utc("2026-11-24T08:00:00Z")), FashionSchedule.JudgingPeriod(Utc("2026-11-22T16:00:00Z")));
+    }
+
+    [Theory]
+    [InlineData("2026-05-01T12:00:00Z", 431)] // the guides' "week of 5/1/2026 (Week 431)"
+    [InlineData("2026-10-09T12:00:00Z", 454)]
+    [InlineData("2026-11-24T07:59:00Z", 460)]
+    [InlineData("2026-11-24T08:00:00Z", 461)]
+    [InlineData("2026-11-25T10:00:00Z", 461)]
+    public void Weeks_are_numbered_as_the_guides_number_them(string utc, int week)
+    {
+        Assert.Equal(week, FashionSchedule.WeekAt(Utc(utc)));
+    }
+
+    [Fact]
+    public void During_its_own_week_a_fresh_set_is_this_weeks()
+    {
+        var status = Status("2026-11-21T10:00:00Z", fresh: true);
+        Assert.True(status.HintsAreThisWeeks);
+        Assert.True(status.SetIsThisWeeks);
+        Assert.Equal(460, status.CurrentWeek);
+        Assert.True(status.JudgingOpen);
+    }
+
+    [Fact]
+    public void After_the_reset_the_site_is_a_week_behind()
+    {
+        var status = Status("2026-11-25T10:00:00Z");
+        Assert.False(status.HintsAreThisWeeks);
+        Assert.False(status.SetIsThisWeeks);
+        Assert.Equal((460, 461), (status.Week, status.CurrentWeek));
+        Assert.Equal(Posted, status.SetPostedUtc);
+        Assert.False(status.JudgingOpen);
+        Assert.Equal(Utc("2026-11-27T08:00:00Z"), status.JudgingOpensUtc);
+    }
+
+    [Fact]
+    public void A_site_two_weeks_behind_is_two_weeks_behind()
+    {
+        Assert.Equal((460, 462), (Status("2026-12-02T10:00:00Z").Week, Status("2026-12-02T10:00:00Z").CurrentWeek));
+    }
+
+    [Fact]
+    public void A_set_kept_from_before_the_reset_turns_old_at_the_reset()
+    {
+        // Fetched while the site still marked it fresh, read again after the reset.
+        Assert.True(Status("2026-11-24T07:59:00Z", fresh: true).SetIsThisWeeks);
+        var after = Status("2026-11-24T08:00:00Z", fresh: true);
+        Assert.False(after.SetIsThisWeeks);
+        Assert.Equal(461, after.CurrentWeek);
+    }
+
+    [Fact]
+    public void On_friday_the_hints_can_be_this_weeks_before_the_set_is()
+    {
+        // The site shows week 461's hints; its sets are still the ones posted for week 460.
+        var status = Status("2026-11-27T09:00:00Z", week: 461);
+        Assert.True(status.HintsAreThisWeeks);
+        Assert.False(status.SetIsThisWeeks);
+        Assert.Equal(461, status.CurrentWeek);
+    }
+}
+
+public class FashionApprovalTests
+{
+    private static readonly FashionSet Set = new([new FashionPiece("neck", "Sphene Choker", null), new FashionPiece("feet", "Cotton Dress Shoes", "Soot Black")],
+                                                 [("hands", "Charcoal Grey"), ("legs", "Charcoal Grey")], false);
+
+    private static ReportStatus Status(bool open, bool thisWeeks, int week = 460, int current = 461) =>
+        new(week, current, week == current, thisWeeks, null, open, new DateTime(2026, 11, 27, 8, 0, 0, DateTimeKind.Utc), new DateTime(2026, 12, 1, 8, 0, 0, DateTimeKind.Utc));
+
+    [Fact]
+    public void A_set_ready_to_present_needs_no_approval()
+    {
+        Assert.Empty(FashionApproval.Reasons(Status(open: true, thisWeeks: true, current: 460), FashionApproval.SetLines(Set)));
+    }
+
+    [Fact]
+    public void Before_friday_with_last_weeks_set_both_reasons_are_given_with_the_pieces_and_dyes()
+    {
+        Assert.Equal(
+        [
+            "Judging is closed until Fri 27 Nov 08:00 UTC: the outfit would be prepared, not presented.",
+            "This outfit is for week 460, an earlier week. This week is week 461.",
+            "Pieces: Sphene Choker (neck), Cotton Dress Shoes (feet, Soot Black).",
+            "Dyes: hands Charcoal Grey, legs Charcoal Grey.",
+        ], FashionApproval.Reasons(Status(open: false, thisWeeks: false), FashionApproval.SetLines(Set)));
+    }
+
+    [Fact]
+    public void On_friday_before_the_site_posts_only_the_week_is_the_reason()
+    {
+        var reasons = FashionApproval.Reasons(Status(open: true, thisWeeks: false), FashionApproval.SetLines(Set));
+        Assert.StartsWith("This outfit is for week 460", reasons[0]);
+        Assert.DoesNotContain(reasons, r => r.StartsWith("Judging"));
+    }
+
+    [Fact]
+    public void This_weeks_set_while_judging_is_closed_only_says_so()
+    {
+        var reason = Assert.Single(FashionApproval.Reasons(Status(open: false, thisWeeks: true, current: 460), FashionApproval.SetLines(Set)));
+        Assert.StartsWith("Judging is closed", reason);
+    }
+
+    [Fact]
+    public void With_this_weeks_hints_but_no_set_yet_it_says_so()
+    {
+        var reasons = FashionApproval.Reasons(Status(open: true, thisWeeks: false, week: 461, current: 461), FashionApproval.SetLines(Set));
+        Assert.Equal("fashionreportxiv.com has this week's hints but has not posted this week's set yet: this one is from an earlier week.", reasons[0]);
     }
 }

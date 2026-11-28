@@ -183,7 +183,8 @@ internal sealed class RetainerTracker : IDisposable, ICache
         foreach (var c in containers)
             foreach (var item in Svc.Inventory.GetInventoryItems(c))
                 if (!item.IsEmpty)
-                    list.Add(new RetainerItem(c.ToString(), (int)item.InventorySlot, item.BaseItemId, item.IsHq, item.Quantity, item.IsCollectable, null));
+                    list.Add(new RetainerItem(c.ToString(), (int)item.InventorySlot, item.BaseItemId, item.IsHq, item.Quantity, item.IsCollectable, null,
+                            item.Stains.Length > 0 ? item.Stains[0] : (byte)0, item.Stains.Length > 1 ? item.Stains[1] : (byte)0));
         return list;
     }
 
@@ -242,4 +243,5 @@ public sealed record RetainerSnapshot
     public List<RetainerItem> Market { get; init; } = [];
 }
 
-public sealed record RetainerItem(string Container, int Slot, uint ItemId, bool Hq, int Quantity, bool Collectable, ulong? Price);
+/// <summary>An item a retainer holds. <see cref="Stain"/> and <see cref="Stain2"/> are its dyes in the two channels; null in snapshots taken before they were recorded.</summary>
+public sealed record RetainerItem(string Container, int Slot, uint ItemId, bool Hq, int Quantity, bool Collectable, ulong? Price, byte? Stain = null, byte? Stain2 = null);

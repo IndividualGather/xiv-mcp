@@ -12,27 +12,45 @@ These tools have their own module, **Gold Saucer**, under **Integrations maintai
 
 ## Fashion Report
 
+80 points are enough for the full MGP reward; 100 also gives the title "Fashion Leader", once. [fashionreportxiv.com](https://fashionreportxiv.com) lists, for each of the week's hints, the items known to match it, and the week's dye colors. XIV MCP uses those lists and what you have to put an outfit together that aims for 80 points, or 100 if you ask for it.
+
 | Tool | What it does |
 |---|---|
-| `get_fashion_report` | This week's theme, hints and ready-made sets from [fashionreportxiv.com](https://fashionreportxiv.com), with where you have each piece and whether you have its dye. Goes online (*Online lookups*). |
-| `complete_fashion_report` | Starts one background job for the "easy 80" set (or "easy 100"): gets the pieces, dyes them, puts them on and presents the outfit. |
+| `get_fashion_report` | This week's theme and hints, and the outfit XIV MCP would put together for you, with the expected score and where each piece comes from. Changes nothing. Also when judging opens and closes, and whether you unlocked the Fashion Report. Until the site posts this week's set, it only says which week the site shows and which week it is now. Goes online (*Online lookups*). |
+| `complete_fashion_report` | Puts that outfit together in one background job, aiming for 80 points (or 100): gets the pieces, dyes them, puts them on and presents the outfit. |
 | `present_fashion_report` | Puts on the given pieces, walks to the Masked Rose and presents your outfit for judging. |
 
-> "Do this week's Fashion Report for the easy 80 points."
+> "Do this week's Fashion Report for 80 points."
 
 ### How the job works
 
-`complete_fashion_report` reads this week's set and plans every piece:
+`complete_fashion_report` plans the cheapest outfit that reaches the score, then starts one job for it:
 
-1. **Getting each piece**, the cheapest way first: you carry it already; a retainer has it (a summoning bell, then `transfer_retainer_items`); it is in your glamour dresser or armoire (your inn room, then `retrieve_glamour_item`); a vendor sells it (`buy_item`); it is bought on the market board (`buy_from_market_board`), at most `max_market_price` gil (50,000 by default) and only in a city with a market board; or, with **AutoDuty**, a dungeon that drops it is run until it drops (`run_duty`). Pieces with no known way stop the job before it starts; `get_item_sources` shows other ways, such as crafting.
-2. **The dyes**, with `dye_item`: the pieces' colors, and the colors the set gives slots it has no piece for (e.g. "hands: Plum Purple"), on whatever you wear there. Most colors come from **Standard Spectrum Dye** now; if you have none, the job buys one from a vendor or on the market board.
-3. **Presenting** as the last step: it puts on the pieces, walks to the Masked Rose and presents. The best of your 4 weekly attempts counts.
+1. **Choosing the pieces.** For each hint, any item the site lists for it counts, not only the site's own pick. For the other slots, anything you wear or carry does. XIV MCP prefers what you already wear, then what you carry, then what a retainer or your armoire holds, then buying from a vendor (only one that sells it to you: seasonal event shops only sell an event's items to players who did its quests), then the market board (at most `max_market_price` gil, 50,000 by default). The glamour dresser is only used for the site's own piece of a slot. With **AutoDuty**, a dungeon that drops one of the site's pieces is a last way. Only pieces your current job and level can wear are chosen, and a piece that also covers another slot (a robe without legs) is never used. A slot with nothing in it gets a piece, since it scores nothing.
+2. **The dyes**, with `dye_item`. Only the week's exact color counts, on the weapon and the five armour slots, and only where the score needs it. Until the site has found the week's dyes, the plan leaves them out. A piece that already has the color in either of its two dye channels is used as it is, also one a retainer holds. A piece without dye, or one the job bought, is dyed; so is the empty second channel of a piece that has two. **A dye you put on a piece is only replaced after you approve in game**: the approval lists each piece with its old and new color. XIV MCP only asks when no outfit reaches the score without it; if you decline, nothing is done. Most colors come from **Standard Spectrum Dye** now. Each color uses one dye, so the job buys one for every color your bags do not cover.
+3. **Presenting** as the last step: it puts on the pieces (a ring for the left hand on the left hand), walks to the Masked Rose and presents. The best of your 4 weekly attempts counts.
+
+When no outfit reaches the score, nothing starts, and your assistant is told how far the best one gets. The plan also says about how much gil it spends, so you can settle for 80 when 100 would cost a lot. If you already have the Fashion Leader title, your assistant is told that 100 adds nothing over 80.
+
+Vendors that only stand inside houses (such as a Journeyman Salvager hired into a home) are never used: XIV MCP does not know which houses you can enter. Neither are seasonal event shops whose items you have not unlocked by their event quests.
+
+<Callout title="How the score is counted">
+  The game does not publish the scoring. XIV MCP uses the rules players have worked out: the weapon and each armour slot are worth 10 points, each accessory 8. A slot with a hint scores in full only with a matching piece, and 2 points otherwise. An empty slot scores 0. The week's exact dye on the weapon or an armour piece adds 2. In game, a dye of the right color family adds 1, but XIV MCP does not count it, because the game's own groups of colors do not match the Fashion Report's families. If those rules are right, the expected score can be a little low, never too high.
+</Callout>
 
 Right before presenting, XIV MCP uses a **Gold Saucer VIP Card** from your bags (more MGP), unless its bonus is already active. The card only works while standing still, so XIV MCP stops, gets off the mount and waits a moment first. Turn this off in `/xivmcp` → Modules → Gold Saucer → *Use a Gold Saucer VIP Card for the Fashion Report* (on by default), or pass `use_vip_card` to `present_fashion_report`. Without a card in your bags, the job presents anyway.
 
 After the judging, the job puts your gearset back on and, once you approve in game (the approval lists the pieces), **throws away the pieces it bought** (from a vendor or the market board) that are worth 5,000 gil or less: the vendor price, otherwise the lowest market board listing on your world. Only pieces the job itself bought can be thrown away: pieces you had already, or took from a retainer, the glamour dresser or the armoire, never are, and neither is a piece whose value is unknown. Turn this off or change the limit in `/xivmcp` → Modules → Gold Saucer → *Discard cheap pieces bought for the Fashion Report*. The gearset's glamour plate can't be applied in the Gold Saucer, so put it on again somewhere else.
 
 The Masked Rose judges from Friday 08:00 UTC until the weekly reset on Tuesday. Outside that, the job only prepares the outfit.
+
+### When the set is not ready
+
+fashionreportxiv.com posts each week some time after judging opens on Friday: first the hints, then the dyes once players have found them, then the ready-made sets. From the Tuesday reset until then, it still shows the week before. XIV MCP counts the weeks since the first Fashion Report in January 2018, the way the weekly guides number them, so it knows which week it is; a set counts as this week's when the site shows this week and has posted the set.
+
+Before `complete_fashion_report` starts a job while judging is closed, or while the site's hints are not this week's, XIV MCP asks you in game. The approval says why: when judging opens, and which week the hints are for, with the planned outfit (each piece, where it comes from, and what is dyed). If you decline, nothing is done, and your assistant is told what the approval said. The plan only needs the hints, so it can start before the site posts its ready-made sets.
+
+The site's guide is kept for 5 minutes, so `get_fashion_report` and `complete_fashion_report` called one after another download it once.
 
 ## Triple Triad
 

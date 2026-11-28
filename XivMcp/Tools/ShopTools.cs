@@ -363,6 +363,14 @@ internal static class ShopTools
         catch { return null; }
     }
 
+    /// <summary>Where Item Vendor Location says an NPC stands (its zone), or null when it doesn't know or isn't loaded. Framework thread.</summary>
+    internal static uint? VendorTerritory(uint npcId)
+    {
+        if (!ItemVendorLocationLoaded) return null;
+        try { return Svc.PluginInterface.GetIpcSubscriber<uint, (uint, (float, float))?>("ItemVendorLocation.GetVendorLocation").InvokeFunc(npcId) is { Item1: not 0 } l ? l.Item1 : null; }
+        catch { return null; }
+    }
+
     private static void RequireVendorPlugin()
     {
         if (!ItemVendorLocationLoaded)
