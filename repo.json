@@ -3,7 +3,7 @@
     "Author": "IndividualGather",
     "Name": "XIV MCP",
     "InternalName": "XivMcp",
-    "AssemblyVersion": "0.3.0.149",
+    "AssemblyVersion": "0.3.0.150",
     "Description": "XIV MCP runs a local MCP server (only reachable from your own PC, protected by an access token) so any AI assistant that supports the Model Context Protocol (Claude, ChatGPT, Codex, LM Studio and others) can see your game and help with it.\n\nRead your character live: stats and jobs, gear, inventory, currencies, quests, achievements and unlocks, party, targets, nearby objects, FATEs and the game's data sheets. Retainers and submersibles are remembered between visits.\n\nOptional modules, each behind its own switch in /xivmcp: game interaction and navigation, inventory and retainers, market and purchases (every non-gil purchase asks you in game), crafting and gathering, quests, custom deliveries, fishing, submersibles, plugin management, and background jobs that run for hours on their own.\n\nDocumentation: https://individualgather.github.io/xiv-mcp/",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/IndividualGather/xiv-mcp",
@@ -28,12 +28,12 @@
     "IconUrl": "https://raw.githubusercontent.com/IndividualGather/xiv-mcp/master/XivMcp/images/icon.png",
     "Punchline": "Uplink AI assistants to Final Fantasy XIV through the Model Context Protocol.",
     "AcceptsFeedback": true,
-    "DownloadLinkInstall": "https://github.com/IndividualGather/xiv-mcp/releases/download/v0.3.0.149/latest.zip",
-    "DownloadLinkUpdate": "https://github.com/IndividualGather/xiv-mcp/releases/download/v0.3.0.149/latest.zip",
-    "DownloadLinkTesting": "https://github.com/IndividualGather/xiv-mcp/releases/download/v0.3.0.149/latest.zip",
-    "LastUpdate": 1795802808,
+    "DownloadLinkInstall": "https://github.com/IndividualGather/xiv-mcp/releases/download/v0.3.0.150/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/IndividualGather/xiv-mcp/releases/download/v0.3.0.150/latest.zip",
+    "DownloadLinkTesting": "https://github.com/IndividualGather/xiv-mcp/releases/download/v0.3.0.150/latest.zip",
+    "LastUpdate": 1795879396,
     "IsHide": false,
     "IsTestingExclusive": false,
-    "Changelog": "## What's Changed\n* Idle camera: end it instead of waiting for it like a cutscene (#30, with review fix) by @IndividualGather in https://github.com/IndividualGather/xiv-mcp/pull/34\n* Idle camera: end it instead of waiting for it like a cutscene by @Faarcrow in https://github.com/IndividualGather/xiv-mcp/pull/30\n* Custom deliveries: player_ranks_up hands in the rank-up delivery and leaves only the story to the player by @Faarcrow in https://github.com/IndividualGather/xiv-mcp/pull/33\n* Quests: on the last quest of a round, Questionable stops as it is done instead of going on to a quest of its own by @Faarcrow in https://github.com/IndividualGather/xiv-mcp/pull/48\n* Travel to an NPC: wait out casts before the teleport, and ask again when Lifestream refuses by @Faarcrow in https://github.com/IndividualGather/xiv-mcp/pull/51\n* Walks: judge progress by the distance left along vnavmesh's path by @Faarcrow in https://github.com/IndividualGather/xiv-mcp/pull/53\n* Getting off the mount: wait for the landing, before Dismount and after by @Faarcrow in https://github.com/IndividualGather/xiv-mcp/pull/55\n* Triple Triad: farm with Saucy's all-cards mode, count matches from its stats, and target the opponent first by @Faarcrow in https://github.com/IndividualGather/xiv-mcp/pull/57\n* navigate_to: pick the NPC that stays over quest copies, and take an optional zone by @Faarcrow in https://github.com/IndividualGather/xiv-mcp/pull/61\n* Triple Triad: owning an opponent's card no longer counts as having unlocked them (#59, with review fix) by @IndividualGather in https://github.com/IndividualGather/xiv-mcp/pull/64\n* Triple Triad: owning an opponent's card no longer counts as having unlocked them by @Faarcrow in https://github.com/IndividualGather/xiv-mcp/pull/59\n* dye_item: open an armoury piece's context menu with the armoury chest as its owner (#36, with review fix) by @IndividualGather in https://github.com/IndividualGather/xiv-mcp/pull/65\n* dye_item: open an armoury piece's context menu with the armoury chest as its owner by @Faarcrow in https://github.com/IndividualGather/xiv-mcp/pull/36\n\n\n**Full Changelog**: https://github.com/IndividualGather/xiv-mcp/compare/v0.3.0.148...v0.3.0.149"
+    "Changelog": "## What's Changed\n* Quests: skip a craft or purchase step only when its items were owned before the step by @Faarcrow in https://github.com/IndividualGather/xiv-mcp/pull/49\n\n\n**Full Changelog**: https://github.com/IndividualGather/xiv-mcp/compare/v0.3.0.149...v0.3.0.150"
   }
 ]
