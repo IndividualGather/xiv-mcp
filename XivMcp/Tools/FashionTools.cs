@@ -274,12 +274,18 @@ internal static class FashionTools
         var steps = new List<JobManager.Step>();
         void Add(string tool, JsonObject args, string note) => steps.Add(new JobManager.Step { Id = $"s{steps.Count + 1}", Tool = tool, Args = args, Note = note });
 
-        foreach (var group in pieces.Where(p => p.Source == ItemSource.Retainer).GroupBy(p => p.Where.Retainer))
+        var fromRetainers = pieces.Where(p => p.Source == ItemSource.Retainer).GroupBy(p => p.Where.Retainer).ToList();
+        if (fromRetainers.Count > 0)
         {
-            if (steps.All(s => s.Tool != "navigate_to" || s.Args["destination"]?.ToString() != "summoning_bell"))
-                Add("navigate_to", new JsonObject { ["destination"] = "summoning_bell" }, "Goes to a summoning bell");
-            var transfers = new JsonArray(group.Select(p => (JsonNode)new JsonObject { ["item_id"] = p.ItemId, ["from"] = group.Key, ["to"] = "player", ["stacks"] = 1 }).ToArray());
-            Add("transfer_retainer_items", new JsonObject { ["transfers"] = transfers }, $"Takes {string.Join(", ", group.Select(p => p.Name))} from {group.Key}");
+            // transfer_retainer_items needs the retainer list open; closing it afterwards lets a paused retainer plugin go on.
+            Add("navigate_to", new JsonObject { ["destination"] = "summoning_bell" }, "Goes to a summoning bell");
+            Add("interact_with_object", new JsonObject { ["name"] = "Summoning Bell" }, "Opens the retainer list");
+            foreach (var group in fromRetainers)
+            {
+                var transfers = new JsonArray(group.Select(p => (JsonNode)new JsonObject { ["item_id"] = p.ItemId, ["from"] = group.Key, ["to"] = "player", ["stacks"] = 1 }).ToArray());
+                Add("transfer_retainer_items", new JsonObject { ["transfers"] = transfers }, $"Takes {string.Join(", ", group.Select(p => p.Name))} from {group.Key}");
+            }
+            Add("close_retainer", new JsonObject { ["close_list"] = true }, "Closes the retainer list");
         }
         var stored = pieces.Where(p => p.Source is ItemSource.GlamourDresser or ItemSource.Armoire).ToList();
         if (stored.Count > 0)
