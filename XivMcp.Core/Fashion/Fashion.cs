@@ -140,6 +140,29 @@ public static class FashionPlan
         : ItemSource.None;
 }
 
+/// <summary>How many dyes the Fashion Report job buys, so every dye step finds one in the bags.</summary>
+public static class FashionDyes
+{
+    /// <summary>
+    /// The dye items to buy, with how many of each. Each entry of <paramref name="uses"/> is one dye step: the dye items of its color in
+    /// the order dye_item tries them (it takes the first one in the bags). Steps are met from <paramref name="owned"/> first; a step
+    /// left without one buys the first dye item of its color, which a later step of the same color then also uses.
+    /// </summary>
+    public static IReadOnlyDictionary<uint, int> ToBuy(IReadOnlyList<IReadOnlyList<uint>> uses, Func<uint, int> owned)
+    {
+        var left = new Dictionary<uint, int>();
+        var buy = new Dictionary<uint, int>();
+        foreach (var candidates in uses.Where(c => c.Count > 0))
+        {
+            foreach (var item in candidates) left.TryAdd(item, owned(item));
+            var have = candidates.FirstOrDefault(i => left[i] > 0);
+            if (have != 0) left[have]--;
+            else buy[candidates[0]] = buy.GetValueOrDefault(candidates[0]) + 1;
+        }
+        return buy;
+    }
+}
+
 /// <summary>When the Masked Rose judges: from Friday 08:00 UTC until the weekly reset on Tuesday 08:00 UTC.</summary>
 public static class FashionSchedule
 {

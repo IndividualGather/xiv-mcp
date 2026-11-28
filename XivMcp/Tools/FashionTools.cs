@@ -212,7 +212,8 @@ internal static class FashionTools
                 foreach (var p in pieces.Where(p => p.Source == ItemSource.None))
                     if (await DutyTools.FindFarmDuty(p.ItemId, ct).ConfigureAwait(false) is { } duty) duties[p.ItemId] = duty;
                 pieces = pieces.Select(p => duties.ContainsKey(p.ItemId) ? p with { Source = ItemSource.Duty } : p).ToList();
-                return Plan(report, setName, set, pieces, jobs(), client(), args.Int("max_market_price", 50_000, 1, int.MaxValue), duties);
+                var dyes = await Game.Run(() => DyesToBuy(set, pieces)).ConfigureAwait(false);
+                return Plan(report, setName, set, pieces, jobs(), client(), args.Int("max_market_price", 50_000, 1, int.MaxValue), duties, dyes);
             },
         };
     }
@@ -248,10 +249,7 @@ internal static class FashionTools
         var already = false;
         if (piece.Dye is { } dye)
         {
-            var row = Svc.Data.GetExcelSheet<Stain>(Dalamud.Game.ClientLanguage.English).FirstOrDefault(s => s.Name.ExtractText().Equals(dye, StringComparison.OrdinalIgnoreCase));
-            if (row.RowId == 0) throw new ToolException($"The dye color '{dye}' is not known to the game.");
-            stain = row.RowId;
-            var dyeItems = row.Item.Where(i => i.RowId != 0).Select(i => i.RowId).ToList();
+            (stain, var dyeItems) = DyeItemsOf(dye);
             var im = InventoryManager.Instance();
             var have = dyeItems.FirstOrDefault(i => im->GetInventoryItemCount(i) > 0);
             haveDye = have != 0;
@@ -262,9 +260,30 @@ internal static class FashionTools
         return new PieceState(piece, item.RowId, name, where, FashionPlan.Choose(where), stain, dyeItem, haveDye, already);
     }
 
+    /// <summary>A dye color (as guides name it, in English) and its dye items, in the order dye_item tries them.</summary>
+    private static (uint Stain, List<uint> Items) DyeItemsOf(string dye)
+    {
+        var row = Svc.Data.GetExcelSheet<Stain>(Dalamud.Game.ClientLanguage.English).FirstOrDefault(s => s.Name.ExtractText().Equals(dye, StringComparison.OrdinalIgnoreCase));
+        if (row.RowId == 0) throw new ToolException($"The dye color '{dye}' is not known to the game.");
+        return (row.RowId, row.Item.Where(i => i.RowId != 0).Select(i => i.RowId).ToList());
+    }
+
+    /// <summary>
+    /// The dyes the job buys: one for each dye step (the set's pieces not dyed yet, and the colors for slots it has no piece for)
+    /// that the dyes in the bags don't cover. Framework thread.
+    /// </summary>
+    private static unsafe IReadOnlyDictionary<uint, int> DyesToBuy(FashionSet set, List<PieceState> pieces)
+    {
+        var uses = pieces.Where(p => p.Piece.Dye is not null && !p.AlreadyDyed).Select(p => p.Piece.Dye!)
+            .Concat(set.OtherDyes.Select(d => d.Dye))
+            .Select(dye => (IReadOnlyList<uint>)DyeItemsOf(dye).Items).ToList();
+        var im = InventoryManager.Instance();
+        return FashionDyes.ToBuy(uses, item => im->GetInventoryItemCount(item));
+    }
+
     /// <summary>The job: get the pieces (grouped by place), dye them, and present at the end.</summary>
     private static object Plan(WeeklyReport report, string setName, FashionSet set, List<PieceState> pieces, JobManager jobs, string? client, int maxMarketPrice,
-                               Dictionary<uint, (uint TerritoryType, string Name, string Mode)> duties)
+                               Dictionary<uint, (uint TerritoryType, string Name, string Mode)> duties, IReadOnlyDictionary<uint, int> dyes)
     {
         var missing = pieces.Where(p => p.Source == ItemSource.None).ToList();
         if (missing.Count > 0)
@@ -303,12 +322,12 @@ internal static class FashionTools
         foreach (var p in pieces.Where(p => p.Source == ItemSource.Market))
             Add("buy_from_market_board", new JsonObject { ["item"] = p.ItemId, ["quantity"] = 1, ["max_unit_price"] = maxMarketPrice },
                 $"Buys {p.Name} on the market board (at most {maxMarketPrice:N0} gil)");
-        foreach (var dyeItem in pieces.Where(p => p.Piece.Dye is not null && !p.HaveDye && !p.AlreadyDyed && p.DyeItem is not null).Select(p => p.DyeItem!).Distinct())
+        foreach (var (dyeId, count) in dyes)
         {
-            var dyeId = ResolveItem(dyeItem).RowId;
-            if (SoldByVendor(dyeId)) Add("buy_item", new JsonObject { ["item"] = dyeItem, ["quantity"] = 1 }, $"Buys {dyeItem}");
-            else Add("buy_from_market_board", new JsonObject { ["item"] = dyeItem, ["quantity"] = 1, ["max_unit_price"] = maxMarketPrice },
-                     $"Buys {dyeItem} on the market board");
+            var dyeItem = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(dyeId)?.Name.ExtractText() ?? dyeId.ToString();
+            if (SoldByVendor(dyeId)) Add("buy_item", new JsonObject { ["item"] = dyeId, ["quantity"] = count }, $"Buys {count} {dyeItem}");
+            else Add("buy_from_market_board", new JsonObject { ["item"] = dyeId, ["quantity"] = count, ["max_unit_price"] = maxMarketPrice },
+                     $"Buys {count} {dyeItem} on the market board");
         }
         foreach (var p in pieces.Where(p => p.Piece.Dye is not null && !p.AlreadyDyed))
             Add("dye_item", new JsonObject { ["item"] = p.ItemId, ["dye"] = p.Piece.Dye }, $"Dyes {p.Name} {p.Piece.Dye}");
