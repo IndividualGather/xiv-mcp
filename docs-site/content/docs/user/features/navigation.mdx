@@ -74,6 +74,14 @@ The Firmament is reached from the Foundation: XIV MCP teleports you to the Found
 
 Eureka, the Bozjan Southern Front, Zadnor and the Occult Crescent have shards of their own too, and XIV MCP finds them the same way. But these field operations count as duties, and `navigate_to` does not move you while you are in a duty.
 
+### Zones entered through a door
+
+Some zones have no aetheryte at all: you enter them by talking to someone in another zone, who asks "Enter Fortemps Manor?" (the House Fortemps guard in the Pillars), or by using an object there. XIV MCP reads these doors from the game data the first time it needs one: which NPC or object leads into which zone, where it stands, and what it asks of you (quests, a level, a fee). It then travels to the door like to any NPC, talks to it, answers Yes to its question, and goes on inside.
+
+Before setting off, it checks that the door will let you in: a door that needs a quest you have not finished, a higher level or more gil is not tried, and XIV MCP says what is missing. Some doors decide by themselves who may enter (the Sanctum of the Twelve's, for one, only lets in a booked wedding); when such a door offers no way in, XIV MCP closes its menu and says so. A question other than the door's own is left for you to answer. Where several doors lead into the same zone from one spot (one for each part of the story, of which the game shows one), it uses whichever stands there. Inn rooms and housing districts are not entered this way: `navigate_to` has destinations of their own for those.
+
+Doors that are objects instead of people (in Mare Lamentorum, Elpis and Living Memory) are found the same way, but have not been tried in game yet.
+
 ### Riding
 
 For a walk of 50 yalms or more, XIV MCP gets on a mount first (Mount Roulette), and flies where the zone allows it and you have found its aether currents. It gets off when you arrive. Turn this off in `/xivmcp` → Modules → Game & navigation → *Ride a mount for longer walks*.

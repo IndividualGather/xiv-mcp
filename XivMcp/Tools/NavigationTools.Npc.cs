@@ -4,6 +4,7 @@ using System.Linq;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
+using Dalamud.Game.ClientState.Objects.Types;
 using Lumina.Excel.Sheets;
 using XivMcp.Mcp;
 using XivMcp.Util;
@@ -44,8 +45,11 @@ internal static partial class NavigationTools
         return (Coord(p.X, map.OffsetX), Coord(p.Z, map.OffsetY));
     }
 
-    /// <summary>Travels to an NPC and walks up to it. Returns where it ended up.</summary>
-    internal static async Task<object> GoToNpc(NpcSpot spot, List<string> steps, CancellationToken ct)
+    /// <summary>
+    /// Travels to an NPC and walks up to it. Returns where it ended up. <paramref name="sameSpot"/>: other NPCs that may stand there
+    /// instead (one per stage of a story, of which the game shows one); any of them counts as arrived.
+    /// </summary>
+    internal static async Task<object> GoToNpc(NpcSpot spot, List<string> steps, CancellationToken ct, IReadOnlySet<uint>? sameSpot = null)
     {
         await Game.RunLoggedIn(() => { EnsureCanTravel(); return true; }).ConfigureAwait(false);
         await WaitOutCasts(ct).ConfigureAwait(false);
@@ -55,41 +59,42 @@ internal static partial class NavigationTools
         var unreachable = new HashSet<uint>();
         try
         {
-            return await GoToNpcOnce(spot, steps, retry: false, tried, unreachable, ct).ConfigureAwait(false);
+            return await GoToNpcOnce(spot, steps, retry: false, tried, unreachable, ct, sameSpot).ConfigureAwait(false);
         }
         catch (ToolException ex) when (ex.Message.Contains("runs into an obstacle", StringComparison.Ordinal) ||
                                        ex.Message.StartsWith("vnavmesh could not find a path", StringComparison.Ordinal))
         {
             steps.Add($"{ex.Message} Travelling there by another aetheryte or shard.");
-            return await GoToNpcOnce(spot, steps, retry: true, tried, unreachable, ct).ConfigureAwait(false);
+            return await GoToNpcOnce(spot, steps, retry: true, tried, unreachable, ct, sameSpot).ConfigureAwait(false);
         }
     }
 
     private static async Task<object> GoToNpcOnce(NpcSpot spot, List<string> steps, bool retry, HashSet<uint> tried, HashSet<uint> unreachable,
-                                                  CancellationToken ct)
+                                                  CancellationToken ct, IReadOnlySet<uint>? sameSpot = null)
     {
+        bool Is(IGameObject o) => o.BaseId == spot.NpcId || sameSpot?.Contains(o.BaseId) == true;
         // Already close enough to see it?
-        if (!retry && await WalkTo(spot.Name, o => o.BaseId == spot.NpcId, steps, ct).ConfigureAwait(false) is { } near) return near;
+        if (!retry && await WalkTo(spot.Name, Is, steps, ct).ConfigureAwait(false) is { } near) return near;
 
         await TravelNear(spot, steps, ct, retry, tried, unreachable).ConfigureAwait(false);
 
-        if (await WalkTo(spot.Name, o => o.BaseId == spot.NpcId, steps, ct).ConfigureAwait(false) is { } arrived) return arrived;
+        if (await WalkTo(spot.Name, Is, steps, ct).ConfigureAwait(false) is { } arrived) return arrived;
 
         // Not in sight yet: walk towards where it stands, then look again.
         if (!VnavmeshLoaded)
         {
             await GuideWalk(spot.Territory, spot.Position, spot.Name, ArriveRange + 2,
-                () => Svc.Objects.Any(o => o.BaseId == spot.NpcId && Game.DistanceToPlayer(o.Position) <= ArriveRange + 1), steps, ct).ConfigureAwait(false);
-            return await WalkTo(spot.Name, o => o.BaseId == spot.NpcId, steps, ct).ConfigureAwait(false)
+                () => Svc.Objects.Any(o => Is(o) && Game.DistanceToPlayer(o.Position) <= ArriveRange + 1), steps, ct).ConfigureAwait(false);
+            return await WalkTo(spot.Name, Is, steps, ct).ConfigureAwait(false)
                    ?? throw new ToolException($"You are where {spot.Name} should be, but the NPC is not there (it may only appear during a quest or event).");
         }
         // Map coordinates carry no height: walk to the nearest reachable point at the player's height (the highest floor there can be
         // a roof in a city with several levels), and stop as soon as the NPC is close; the final approach uses its real position.
         if (spot.ExactHeight)
-            await WalkTowardsExact(spot.Position, spot.Name, () => Svc.Objects.Any(o => o.BaseId == spot.NpcId && Game.DistanceToPlayer(o.Position) < 20), steps, ct).ConfigureAwait(false);
+            await WalkTowardsExact(spot.Position, spot.Name, () => Svc.Objects.Any(o => Is(o) && Game.DistanceToPlayer(o.Position) < 20), steps, ct).ConfigureAwait(false);
         else
-            await WalkTowards(spot.Position, spot.Name, () => Svc.Objects.Any(o => o.BaseId == spot.NpcId && Game.DistanceToPlayer(o.Position) < 20), steps, ct).ConfigureAwait(false);
-        return await WalkTo(spot.Name, o => o.BaseId == spot.NpcId, steps, ct).ConfigureAwait(false)
+            await WalkTowards(spot.Position, spot.Name, () => Svc.Objects.Any(o => Is(o) && Game.DistanceToPlayer(o.Position) < 20), steps, ct).ConfigureAwait(false);
+        return await WalkTo(spot.Name, Is, steps, ct).ConfigureAwait(false)
                ?? throw new ToolException($"Arrived where {spot.Name} should be, but the NPC isn't there (it may only appear during a quest or event).");
     }
 
@@ -116,6 +121,14 @@ internal static partial class NavigationTools
                 await EnterThroughAethernet(spot, entry.Aetheryte, entry.Quest, steps, ct).ConfigureAwait(false);
             }
             await CrossZone(spot, shards, steps, ct, retry, tried, unreachable).ConfigureAwait(false);
+            return;
+        }
+
+        // A zone without an aetheryte of its own (Fortemps Manor, the Rising Stones, ...) is entered through a door elsewhere.
+        if (await Game.Run(() => Svc.ClientState.TerritoryType != spot.Territory).ConfigureAwait(false)
+            && await Task.Run(() => EnteredThroughDoor(spot.Territory), ct).ConfigureAwait(false))
+        {
+            await EnterThroughDoor(spot, steps, ct).ConfigureAwait(false);
             return;
         }
 
