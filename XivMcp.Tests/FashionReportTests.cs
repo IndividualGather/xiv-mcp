@@ -74,6 +74,7 @@ public class GearSlotTests
     [InlineData("ear", GearSlots.Ears)]
     [InlineData("wrist", GearSlots.Wrists)]
     [InlineData("ring", GearSlots.RingRight)]
+    [InlineData("left_ring", GearSlots.RingLeft)]
     public void Fashion_report_slot_names_map_to_gear_slots(string name, int slot)
     {
         Assert.Equal(slot, GearSlots.FromName(name));

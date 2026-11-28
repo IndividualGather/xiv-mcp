@@ -57,7 +57,8 @@ public static class GearSlots
         "ear" or "ears" or "earrings" => Ears,
         "neck" or "necklace" => Neck,
         "wrist" or "wrists" or "bracelets" => Wrists,
-        "ring" or "rings" or "finger" => RingRight,
+        "ring" or "rings" or "finger" or "right_ring" or "right ring" => RingRight,
+        "left_ring" or "left ring" => RingLeft,
         _ => throw new ArgumentException($"'{name}' is not a gear slot."),
     };
 }

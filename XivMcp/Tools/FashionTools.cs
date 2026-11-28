@@ -51,22 +51,24 @@ internal static class FashionTools
         {
             Name = "equip_items",
             Description = "Puts on pieces of gear from the bags or the armoury chest, each into its slot (rings into a free ring slot; name a ring " +
-                          "twice to wear it on both hands), as if the player equipped them, one after another as the server confirms each. Waits for a gear change still in progress (e.g. right after switch_gearset) to finish first and tries a piece the game drops up to 3 times; concurrent calls wait for each other. Checks that the current job and level can wear each one. Out of combat only. Requires 'Items & " +
+                          "twice to wear it on both hands; 'left_ring' puts a ring on the left hand in particular), as if the player equipped them, one after another as the server confirms each. Waits for a gear change still in progress (e.g. right after switch_gearset) to finish first and tries a piece the game drops up to 3 times; concurrent calls wait for each other. Checks that the current job and level can wear each one. Out of combat only. Requires 'Items & " +
                           "retainers' in /xivmcp.",
             InputSchema = """
                 {
                   "type": "object",
                   "properties": {
-                    "items": { "type": "array", "items": { "type": ["string", "integer"] }, "minItems": 1, "description": "Item names or ids." }
-                  },
-                  "required": ["items"]
+                    "items": { "type": "array", "items": { "type": ["string", "integer"] }, "description": "Item names or ids." },
+                    "left_ring": { "type": ["string", "integer"], "description": "A ring to put on the left hand in particular (name or id), after 'items'." }
+                  }
                 }
                 """,
             ReadOnly = false,
             Handler = async (args, ct) =>
             {
-                var items = (args.Node("items")?.AsArray() ?? throw new ToolException("'items' is required.")).Select(n => n?.ToString() ?? "").ToList();
-                return new { equipped = await EquipAll(items, ct).ConfigureAwait(false) };
+                var items = args.Array("items")?.Select(n => n?.ToString() ?? "").ToList() ?? [];
+                var left = args.Node("left_ring")?.ToString();
+                if (items.Count == 0 && left is null) throw new ToolException("Give 'items' or 'left_ring'.");
+                return new { equipped = await EquipAll(items, ct, leftRing: left).ConfigureAwait(false) };
             },
         };
 
@@ -162,6 +164,7 @@ internal static class FashionTools
                   "type": "object",
                   "properties": {
                     "items": { "type": "array", "items": { "type": ["string", "integer"] }, "description": "Gear to put on first (names or ids)." },
+                    "left_ring": { "type": ["string", "integer"], "description": "A ring to put on the left hand in particular (a week's ring hint is for one hand). Rings in 'items' go on the right hand first." },
                     "use_vip_card": { "type": "boolean", "description": "Use a Gold Saucer VIP Card right before presenting (default: the setting in /xivmcp, on unless turned off)." }
                   }
                 }
@@ -172,7 +175,7 @@ internal static class FashionTools
                 var vipCard = args.Node("use_vip_card") is { } v ? v.GetValue<bool>() : config.FashionReportVipCard;
                 if (!FashionSchedule.IsJudgingOpen(DateTime.UtcNow)) throw new ToolException("The Masked Rose only judges from Friday 08:00 UTC until the weekly reset on Tuesday.");
                 var steps = new List<string>();
-                await EquipAll(args.Array("items")?.Select(n => n?.ToString() ?? "") ?? [], ct, item => steps.Add($"Put on {item}.")).ConfigureAwait(false);
+                await EquipAll(args.Array("items")?.Select(n => n?.ToString() ?? "") ?? [], ct, item => steps.Add($"Put on {item}."), args.Node("left_ring")?.ToString()).ConfigureAwait(false);
                 // Only what complete_fashion_report bought for the report, never items a caller names.
                 var discard = config.FashionReportDiscard ? BoughtForReport.Keys.ToList() : [];
                 return await Present(steps, vipCard, discard, config.FashionReportDiscardMaxValue, config.AllowOnlineData, ct).ConfigureAwait(false);
@@ -320,11 +323,13 @@ internal static class FashionTools
 
         var judging = FashionSchedule.IsJudgingOpen(DateTime.UtcNow);
         if (judging)
-            Add("present_fashion_report", new JsonObject
-            {
-                ["items"] = new JsonArray(pieces.Select(p => (JsonNode)p.ItemId).ToArray()),
-
-            }, "Puts on the outfit, presents it to the Masked Rose, and throws away cheap pieces it bought");
+        {
+            // A week's ring hint is for one hand: the site's piece for the left ring goes on the left hand.
+            bool Left(PieceState p) => p.Piece.Slot.Trim().Equals("left_ring", StringComparison.OrdinalIgnoreCase);
+            var present = new JsonObject { ["items"] = new JsonArray(pieces.Where(p => !Left(p)).Select(p => (JsonNode)p.ItemId).ToArray()) };
+            if (pieces.FirstOrDefault(Left) is { } left) present["left_ring"] = left.ItemId;
+            Add("present_fashion_report", present, "Puts on the outfit, presents it to the Masked Rose, and throws away cheap pieces it bought");
+        }
         if (steps.Count == 0) throw new ToolException("Nothing to do: judging is closed (Friday to the Tuesday reset) and you have everything already.");
 
         var job = jobs.Start($"Fashion Report: {report.Theme}", steps, client);
@@ -442,7 +447,7 @@ internal static class FashionTools
     /// Puts on an item; <paramref name="copies"/> is how many of it should be worn afterwards (2 for a ring named twice). Waits for
     /// the server to confirm the earlier inventory change first: a move sent while one is pending is dropped by the game.
     /// </summary>
-    private static async Task<object> Equip(string query, CancellationToken ct, int copies = 1)
+    private static async Task<object> Equip(string query, CancellationToken ct, int copies = 1, int? into = null)
     {
         // Right after a job change the game drops gear moves (e.g. the first piece after switch_gearset): try again after a moment.
         int? slot = null;
@@ -450,10 +455,10 @@ internal static class FashionTools
         {
             if (!await InventoryActionTools.WaitForNoPendingOperation(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
                 throw new ToolException("The game is still busy with an earlier inventory change.");
-            var (itemId, name, target, wanted) = await Game.RunLoggedIn(() => PrepareEquip(query, copies)).ConfigureAwait(false);
+            var (itemId, name, target, wanted) = await Game.RunLoggedIn(() => PrepareEquip(query, copies, into)).ConfigureAwait(false);
             if (target is null) return slot is null ? new { item = name, already = true } : (object)new { item = name, slot, attempts = attempt - 1 };
             slot = target;
-            var worn = await WaitFor(() => WornCount(itemId) >= wanted, TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
+            var worn = await WaitFor(() => into is { } s ? WornIn(s) == itemId : WornCount(itemId) >= wanted, TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
             switch (EquipRetry.Next(attempt, worn))
             {
                 case EquipStep.Done:
@@ -472,7 +477,7 @@ internal static class FashionTools
     /// Puts on several items, one after another, once a gear change still in progress (e.g. switch_gearset) has finished. One
     /// inventory action at a time: concurrent calls wait for each other.
     /// </summary>
-    private static async Task<List<object>> EquipAll(IEnumerable<string> items, CancellationToken ct, Action<string>? onEach = null)
+    private static async Task<List<object>> EquipAll(IEnumerable<string> items, CancellationToken ct, Action<string>? onEach = null, string? leftRing = null)
     {
         await InventoryActionTools.Gate.WaitAsync(ct).ConfigureAwait(false);
         try
@@ -487,6 +492,11 @@ internal static class FashionTools
                 done.Add(await Equip(item, ct, asked[item.Trim()]).ConfigureAwait(false));
                 onEach?.Invoke(item);
             }
+            if (leftRing is not null)
+            {
+                done.Add(await Equip(leftRing, ct, into: GearSlots.RingLeft).ConfigureAwait(false));
+                onEach?.Invoke(leftRing);
+            }
             return done;
         }
         finally { InventoryActionTools.Gate.Release(); }
@@ -496,7 +506,7 @@ internal static class FashionTools
     /// Checks the item and moves it into its slot; returns the slot (null if enough copies are worn already) and how many copies
     /// should be worn. Framework thread.
     /// </summary>
-    private static unsafe (uint ItemId, string Name, int? Slot, int Wanted) PrepareEquip(string query, int copies)
+    private static unsafe (uint ItemId, string Name, int? Slot, int Wanted) PrepareEquip(string query, int copies, int? into = null)
     {
         var item = ResolveItem(query);
         var name = item.Name.ExtractText();
@@ -504,11 +514,17 @@ internal static class FashionTools
         var flags = new[] { category.MainHand, category.OffHand, category.Head, category.Body, category.Gloves, category.Waist, category.Legs,
                             category.Feet, category.Ears, category.Neck, category.Wrists, category.FingerL, category.FingerR, category.SoulCrystal };
         var wanted = Math.Clamp(copies, 1, GearSlots.CopiesWearable(flags));
-        if (WornCount(item.RowId) >= wanted) return (item.RowId, name, null, wanted);
+        if (into is { } forced ? WornIn(forced) == item.RowId : WornCount(item.RowId) >= wanted) return (item.RowId, name, null, wanted);
         if (Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InCombat]) throw new ToolException("Can't change gear during combat.");
         var equipped = InventoryManager.Instance()->GetInventoryContainer(InventoryType.EquippedItems);
         var slot = GearSlots.Target(flags, s => equipped->GetInventorySlot(s)->ItemId != 0, s => equipped->GetInventorySlot(s)->ItemId == item.RowId)
             ?? throw new ToolException($"{name} is not gear.");
+        // A ring for one hand in particular (the Fashion Report judges each hand on its own).
+        if (into is { } hand)
+        {
+            if (slot is not (GearSlots.RingRight or GearSlots.RingLeft)) throw new ToolException($"{name} is not a ring.");
+            slot = hand;
+        }
 
         var player = Svc.Objects.LocalPlayer ?? throw new ToolException("Not logged in.");
         if (item.LevelEquip > player.Level) throw new ToolException($"{name} needs level {item.LevelEquip}; you are {player.Level}.");
@@ -520,6 +536,8 @@ internal static class FashionTools
         InventoryManager.Instance()->MoveItemSlot(from.Container, (ushort)from.Slot, InventoryType.EquippedItems, (ushort)slot, true);
         return (item.RowId, name, slot, wanted);
     }
+
+    private static unsafe uint WornIn(int slot) => InventoryManager.Instance()->GetInventoryContainer(InventoryType.EquippedItems)->GetInventorySlot(slot)->ItemId;
 
     private static unsafe int WornCount(uint itemId)
     {
